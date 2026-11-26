@@ -3,8 +3,7 @@
 //
 // evaluator.py gives PLY a grammar of the operators of a preprocessor
 // expression with C's precedence, and PLY builds an LALR parser from it
-// once. The tables of that parser are in pcpp_evaluator_tables.h, which
-// tools/pcpp_evaluator_tables.py writes from the live parser. Each
+// once. The tables of that parser are in pcpp_evaluator_tables.h. Each
 // production's action computes on `Value`, a subclass of Python's int
 // that holds a value within the range of a 64-bit `intmax_t` or
 // `uintmax_t`. An operation in which either operand is unsigned wraps

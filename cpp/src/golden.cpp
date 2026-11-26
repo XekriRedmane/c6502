@@ -44,7 +44,7 @@ namespace {
 namespace fs = std::filesystem;
 
 // The directories at the root whose files a command names by a path
-// relative to the root (tools/write_golden.py's `ROOT_DIRS`).
+// relative to the root (golden.h).
 constexpr std::string_view kRootDirs[] = {"examples/", "tests/", "golden/"};
 
 constexpr std::string_view kFormat = "c6502-golden 1";
@@ -128,7 +128,7 @@ std::pair<std::string, std::string> split_word(const std::string& line) {
 }
 
 // The spellings of the root a message can hold, with the separator after
-// them, longest first, as tools/write_golden.py's `_root_forms`.
+// them, longest first.
 struct Root {
   fs::path path;
   std::string posix;
@@ -214,8 +214,7 @@ bool names_root_file(std::string_view arg) {
 }
 
 // The path under golden/ of the text output `name` of the program
-// `label` in the manifest `manifest` (tools/write_golden.py's
-// `_text_path`).
+// `label` in the manifest `manifest` (golden.h).
 std::string text_path(const std::string& manifest, std::string label, const std::string& name) {
   if (label.size() > 2 && label.compare(label.size() - 2, 2, ".c") == 0) {
     label.resize(label.size() - 2);
@@ -258,8 +257,8 @@ JobResult run_job(const Manifest& m, const Job& job, const Root& root, const fs:
   JobResult r;
   compile_command::Options options;
   options.include_dir = compile_include_dir(root);
-  // tools/write_golden.py's workers run with `COLUMNS=80` until a job's
-  // `columns` step changes it.
+  // The terminal is 80 columns wide until a job's `columns` step
+  // changes it.
   options.columns = 80;
   const fs::path golden = root.path / "golden";
   fs::current_path(work);

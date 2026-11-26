@@ -30,9 +30,46 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
-sys.path.insert(0, str(_ROOT / "tools"))
 
 OUTPUT = _ROOT / "cpp" / "generated" / "rtlib_helpers.cpp"
+
+
+def _cpp_string(text: str) -> str:
+    """The C++ string literal of `text`, which holds only ASCII. A
+    control character is written as a three-digit octal escape, and a
+    digit after one starts a literal of its own, which MSVC would warn
+    about otherwise (C4125)."""
+    out = ['"']
+    for i, ch in enumerate(text):
+        code = ord(ch)
+        if code > 0x7E:
+            raise ValueError(f"non-ASCII character in {text!r}")
+        if ch.isdigit() and i > 0 and (ord(text[i - 1]) < 0x20 or text[i - 1] == "\x7f"):
+            out.append('""')
+        if ch in '"\\':
+            out.append("\\" + ch)
+        elif code < 0x20 or code == 0x7F:
+            out.append(f"\\{code:03o}")
+        else:
+            out.append(ch)
+    out.append('"')
+    return "".join(out)
+
+
+def _wrap(items: list[str], indent: str = "    ", width: int = 79) -> list[str]:
+    """Lines holding `items` separated by commas, each line at most
+    `width` columns."""
+    lines: list[str] = []
+    line = indent
+    for item in items:
+        piece = item + ","
+        if len(line) + len(piece) + (line != indent) > width and line != indent:
+            lines.append(line)
+            line = indent
+        line += ("" if line == indent else " ") + piece
+    if line != indent:
+        lines.append(line)
+    return lines
 
 
 def _check_acyclic(fns) -> None:
@@ -69,7 +106,6 @@ def generate() -> str:
     """Returns the text of cpp/generated/rtlib_helpers.cpp."""
     import asm_ast
     import ir_dump
-    from lalr_table import _cpp_string, _wrap
     from rtlib.helpers import DECIMAL_MODE_HELPERS, all_helper_functions
     fns = all_helper_functions()
     _check_acyclic(fns)

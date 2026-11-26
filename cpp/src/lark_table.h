@@ -1,11 +1,12 @@
-// The tables Lark computes from c99.lark, which cpp/generated/c99_lalr.cpp
-// holds, written by tools/lalr_table.py: the LALR automaton that
-// parser.py's Lark parser runs, with its states numbered canonically,
-// and the terminals of its basic lexer in the order Lark tries them.
+// The tables that cpp/generated/c99_lalr.cpp holds, which Lark computed
+// from the grammar of the Python parser before the port removed it:
+// the LALR automaton that Lark's parser ran, with its states numbered
+// canonically, and the terminals of its basic lexer in the order Lark
+// tries them.
 // lark_parser.h runs the automaton and lark_lexer.h the lexer.
 //
 // A symbol is a number. The terminals come first, numbered in the order
-// of their names by code point, which is how parser.py sorts the
+// of their names by code point, which is how the parser sorts the
 // terminals a syntax error lists, so `$END` is 0. The nonterminals
 // follow, in the same order. A state's row lists the symbols it has an
 // action for, in order, each with a shift (a goto, for a nonterminal)

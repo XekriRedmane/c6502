@@ -7,4 +7,4 @@
 - `mock.patch` used as a decorator, on a class or a method, leaves a `patchings` list on each test function, so a plugin can find the tests that `tests/no_inlining.py` decorates without a list of names. Check a decorator's effect by recording what it controls, and then run the same check with the flag forced the other way, which has to show the effect in every class.
 - To run the suite at a commit while editing goes on, add a worktree at the commit and point `C6502_CPP` at a copy of the built c6502cpp. A commit with no C++ change needs no build of its own.
 
-Related: [[codebase/rewriting-tests-with-scripts]], [[codebase/recording-test-calls]], [[principles/make-checks-show-their-coverage]]
+Related: [[codebase/rewriting-tests-with-scripts]], [[principles/make-checks-show-their-coverage]]

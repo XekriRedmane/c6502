@@ -1,6 +1,7 @@
-// The frozen captures: the records of tools/capture_passes.py and
-// tools/capture_binutils.py that tools/freeze_captures.py keeps, one
-// .xz archive per function under cpp/tests/frozen/<kind>/, which
+// The frozen captures: the records of the Python passes' and object-file
+// tools' calls over the corpus that were kept before step 8 removed the
+// Python compiler, one .xz archive per function under
+// cpp/tests/frozen/<kind>/, which
 // `c6502cpp check-frozen` unpacks into capture directories and checks
 // with `check-captures` and `check-binutils` (cpp/README.md, "The
 // frozen captures").

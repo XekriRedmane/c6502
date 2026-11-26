@@ -231,10 +231,8 @@ fuzz_out/
 a.out
 examples/zork/interpreter
 
-# The C++ port's build tree (cpp/README.md) and the pass calls that
-# tools/capture_passes.py records.
+# The C++ compiler's build tree (cpp/README.md).
 cpp/build/
-/captures/
 
 # Obsidian's per-machine state in the brain/ vault.
 brain/.obsidian/workspace.json

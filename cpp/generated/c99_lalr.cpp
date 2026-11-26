@@ -1,5 +1,7 @@
-// Generated from c99.lark by tools/lalr_table.py, with Lark 1.3.1.
-// Do not edit. tests/test_lalr_table.py regenerates it and compares.
+// The tables of the C parser (lark_table.h). Lark 1.3.1 computed them
+// from the grammar c99.lark of the Python parser, which step 8 of the
+// port removed, and this file is the grammar's source now: a change to
+// the grammar is made here by hand.
 #include "lark_table.h"
 
 namespace c6502::lark_table {

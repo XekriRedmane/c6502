@@ -8,7 +8,6 @@
 - [[codebase/git-bash-on-windows]]
 - [[codebase/long-runs-and-scratch-scripts]]
 - [[codebase/msbuild-stale-builds]]
-- [[codebase/recording-test-calls]]
 - [[codebase/rewriting-tests-with-scripts]]
 - [[codebase/surveying-test-dependencies]]
 - [[codebase/t3-restarts]]

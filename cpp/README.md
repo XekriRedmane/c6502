@@ -80,10 +80,14 @@ Warnings are on (`/W4`, `-Wall -Wextra`) and aren't errors yet.
 ```
 cpp/
   CMakeLists.txt
-  generated/          asdl.py --cpp output, checked in, never edited
-    asm_ast.h/.cpp    one header and one source per .asdl module
+  generated/          checked in
+    asm_ast.h/.cpp    one header and one source per .asdl module, which
+                      asdl.py --cpp writes, never edited
     rtlib_helpers.cpp the runtime helpers of rtlib/helpers.py, which
-                      tools/rtlib_table.py writes
+                      tools/rtlib_table.py writes, never edited
+    c99_lalr.cpp      the tables of the C parser (lark_table.h), which
+                      Lark computed from the Python parser's grammar
+                      and which are edited by hand since step 8
   src/
     asdl/runtime.*    Int, Box, isa/as, the dump format's Reader/Writer,
                       py_repr
@@ -99,8 +103,8 @@ cpp/
     binutils/assembler.*   binutils/assembler.py
     binutils/assemble_command.*   the `c6502cpp assemble` command
     binutils/link_command.*   the `c6502cpp link` command
-    binutils/checks.*    `c6502cpp check-binutils`, the checks of
-                      tools/capture_binutils.py's records
+    binutils/checks.*    `c6502cpp check-binutils`, the checks of the
+                      frozen binutils records
     golden.*          `c6502cpp check-golden`, the check of the golden
                       files without Python ("The checks after Python")
     frozen.*, unxz.*  the frozen captures' archives, and their .xz
@@ -110,7 +114,8 @@ cpp/
     py_int.*          Python's `int()` of a string and its integer
                       operators, in 128 bits with an error past them
     capture.*         the reader of capture files and their contexts
-    helper_checks.*   the C++ side of tools/capture_helpers.py
+    helper_checks.*   `c6502cpp check-helpers`, the checks of the
+                      helpers' records ("Checking the helpers")
     backend.*         the `c6502cpp backend` command's request and response
     asm_emit.*        asm_emit.py, the asm2 program as dasm's text
     pyrepr.*          Python's repr and formatting, for messages and text
@@ -237,11 +242,11 @@ cpp/
     bit_precise.*     the parts of bit_precise.py code generation,
                       c99_to_tac, and pp_numbers read
     pp_numbers.*      pp_numbers.py, the spelling of numbers (step 6)
-    lark_table.h      the tables of c99.lark, which cpp/generated/c99_lalr.cpp
-                      holds (tools/lalr_table.py writes it)
+    lark_table.h      the parser's tables, which cpp/generated/c99_lalr.cpp
+                      holds
     py_regex.*        Python 3.11's `re`, its parser, compiler, and matcher,
                       for c99.lark's terminals and `--passthru-includes`
-    py_regex_cases.*  the check of a record of `re` (tools/py_regex_records.py)
+    py_regex_cases.*  the check of a record of Python's `re`
     lark_lexer.*      Lark's basic lexer and its UnexpectedCharacters
     lark_parser.*     Lark's LALR ParserState as a recognizer, and its
                       UnexpectedToken
@@ -267,14 +272,16 @@ cpp/
                       directives, includes, and `write`
     pcpp_lexer.*      pcpp's PLY lexer, its rules tested in PLY's order
     pcpp_evaluator.*, pcpp_evaluator_tables.h   pcpp's `#if` evaluator
-                      and PLY's LALR loop, with the tables of the live
-                      parser (tools/pcpp_evaluator_tables.py)
+                      and PLY's LALR loop, with the tables that a script
+                      wrote from the live parser in step 6 and that are
+                      edited by hand since step 8
     pcpp_token.h      pcpp's token, with Python's reference semantics
     pcpp_text.*, pcpp_unicode.h   Python's `str`, `os.path`, and text
                       files as pcpp uses them, with the Unicode classes of
                       `\w`, `\d`, and the spaces and line breaks, and
-                      `re`'s simple case mappings
-                      (tools/pcpp_unicode_tables.py)
+                      `re`'s simple case mappings, which a script
+                      wrote from Python 3.11 in step 6 and which are
+                      edited by hand since step 8
     preprocessor_cases.*  the check of a recorded call of `preprocess`
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
@@ -284,7 +291,7 @@ cpp/
                       tests recorded from the Python unit tests
     tac_to_asm_case.h a recorded call of tac_to_asm from the Python unit tests
     record_case.h     a recorded call in the capture format, which
-                      tools/record_test_calls.py writes (step 8, G6)
+                      group G6's recorder wrote (step 8)
     lexer_case.h, constant_expression_case.h   recorded calls of
                       `tokenize` and of the constant-expression evaluator
                       (step 8, G8)
@@ -381,29 +388,29 @@ bytes for the four IRs of a compiled example.
 
 ## The captured calls
 
-`tools/capture_passes.py` runs the Python compiler over the corpus
-and records each call of the chosen asm passes, with its arguments,
-its input program, and its output, under `captures/` (ignored by git).
-Its docstring describes the corpus and the file format.
+A capture is a directory of records of calls of the Python compiler's
+functions, with each call's arguments, its input program, and its
+output. The capture harnesses recorded them over the corpus while the
+Python compiler was the reference, and every pass of steps 2 to 7 was
+checked by running the C++ function on each recorded input and
+comparing the dump of its result with the recorded output. The
+harnesses went with the Python compiler in step 8, and the records that
+are kept are the frozen captures ("The frozen captures" below), which
+`c6502cpp check-frozen` unpacks into capture directories and checks
+with the commands below.
+
 `c6502cpp check-captures <path>...` reads the files under each path.
 It checks that each file's dumps read and write back as the same bytes
 in C++, and for each pass in `src/passes/registry.cpp` it runs the C++
 pass on the recorded input and compares the dump of the result with
-the recorded output.
+the recorded output. `c6502cpp check-binutils` does the same for the
+records of the object-file tools.
 
-```sh
-uv run python tools/capture_passes.py --passes split_mem_to_mem -j 16
-uv run python tools/check_captures.py split_mem_to_mem
-```
-
-The whole corpus took 73 seconds with 16 processes and gave 7535 calls
-of `split_mem_to_mem`, 7049 of them distinct, in 215 MB. Of its 3576
-compiles, 1306 fail, which are the chapters' programs that c6502 must
-reject or can't compile and 14 fuzz programs whose unoptimized frames
-are over the 253-byte limit. A capture of every pass takes much more
-space. The examples and the games alone gave 21545 distinct calls of
-the 73 passes in about 1 GB, so a capture is best limited to the passes
-being ported.
+When the harness ran, the whole corpus took 73 seconds with 16
+processes and gave 7535 calls of `split_mem_to_mem`, 7049 of them
+distinct, in 215 MB. A capture of every pass took much more space. The
+examples and the games alone gave 21545 distinct calls of the 73 passes
+in about 1 GB, which is why only a few calls of each function are kept.
 
 ## The compile's context
 
@@ -1855,23 +1862,19 @@ it. It throws `InternalError` with Python's message (`AssemblerError:
 
 ## Checking the helpers
 
-Helpers aren't passes, so they are checked on the inputs the passes
-see. `tools/capture_helpers.py` compiles a corpus (by default the
-examples, the games, and the fuzz seeds, in both modes), wraps every
-pass of the capture harness's table, and evaluates each helper on each
-function the passes are given, in the context of the call: at every
-instruction index for the walks, on every instruction for the
-predicates, on every operand the function contains, and on every pair
-of operands for `may_alias` and `_operands_equal`. Its docstring
-describes the records and `function_values` the encoding of each
-value. `c6502cpp check-helpers <path>...` computes the same values in
-C++ (`src/helper_checks.cpp`) and compares them with the records,
-reporting the number of values compared for each helper.
-
-```sh
-uv run python tools/capture_helpers.py -j 15
-cpp/build/bin/c6502cpp check-helpers captures/helpers
-```
+Helpers aren't passes, so they were checked on the inputs the passes
+see. While the Python compiler was there, a harness compiled a corpus
+(by default the examples, the games, and the fuzz seeds, in both
+modes), wrapped every pass of the capture harness's table, and
+evaluated each helper on each function the passes were given, in the
+context of the call: at every instruction index for the walks, on
+every instruction for the predicates, on every operand the function
+contains, and on every pair of operands for `may_alias` and
+`_operands_equal`. `c6502cpp check-helpers <path>...` computes the same
+values in C++ (`src/helper_checks.cpp`) and compares them with such
+records, reporting the number of values compared for each helper. No
+such records are kept since step 8, so the helpers are checked by the
+doctest cases and through the passes that read them.
 
 On 19 Nov 2026 the capture of the default corpus (712 compiles, 14 of
 which fail as they do for `capture_passes.py`) took about 15 minutes
@@ -1888,11 +1891,8 @@ million in each context, `unreachable_by_pointer` 80167 names, and
 `DecimalArith`, and 39611 records have user zero-page globals in their
 context (Lode Runner's).
 
-A helper that a pass reads should be added to both sides when it is
-ported, so the check covers it.
-
-The code generation helpers have records of their own, which
-`capture_helpers.py --stage-only` writes without the others. A `tables`
+The code generation helpers had records of their own, which the
+harness could write without the others. A `tables`
 record holds the TAC program, the tables, and the shares each call of
 `find_shares` sees, and gives each helper's values over every symbol,
 member, TAC instruction, function, pair of functions, and share
@@ -1909,8 +1909,9 @@ for `size_of_name` with and without the type table and for
 
 ## Porting a pass
 
-These conventions apply to every pass ported after
-`split_mem_to_mem`, which is the model.
+These conventions applied to every pass ported after
+`split_mem_to_mem`, which is the model, and they apply to a pass
+written in C++ from the start.
 
 - **Files and names.** The Python module `passes/<name>.py` becomes
   `src/passes/<name>.h` and `.cpp`, and `passes/<dir>/<name>.py`
@@ -1970,18 +1971,17 @@ These conventions apply to every pass ported after
   `AssertionError` or `IRCheckError` as `c6502::InternalError`
   (`src/errors.h`). The messages are the Python ones, word for word,
   since the tests compare them.
-- **Registration and checks.** Each ported pass gets an entry in
-  `src/passes/registry.cpp` under its name in
-  `tools/capture_passes.py`'s `PASSES`, with a function that takes the
-  call's context, decodes its tagged-JSON arguments, and returns the
-  result's dump. The
-  Python tests of the pass (`tests/test_<name>.py`) are ported to
+- **Registration and checks.** Each pass has an entry in
+  `src/passes/registry.cpp` under its name, with a function that takes
+  the call's context, decodes its tagged-JSON arguments, and returns
+  the result's dump, so that `check-captures` runs its frozen records.
+  A keyword argument such as `zp_slot_symbols` is decoded with
+  `src/passes/capture_args.h`. The tests of a pass are
   `tests/test_<name>.cpp`, where `tests/asm_text.h` builds a test's
   program from the dump format and compares the instructions as dump
-  text, so a failure shows both listings. A keyword argument such as
-  `zp_slot_symbols` is decoded with `src/passes/capture_args.h`. A pass
-  is done when `tools/check_captures.py <name>` reports no difference
-  on a capture of the whole corpus.
+  text, so a failure shows both listings. `check-golden` shows what a
+  change to a pass does to the whole corpus, and `check-frozen` what it
+  does to the pass's frozen calls.
 - **The stage calls.** A call of step 4 that takes the compile's tables
   is registered by giving its entry in `src/passes/stage_registry.cpp`
   a `run`, which decodes the arguments with the codecs of
@@ -3051,61 +3051,57 @@ observer's result, which must be None for every program.
 
 ## The checks after Python
 
-Until the Python compiler is removed at the end of step 8, every check
-of the port compares C++ with Python. Two checks of step 8's group G5
-take over from those comparisons and run with no Python at all. The
-golden files hold what each command of the corpus gave, and the frozen
-captures hold a few recorded calls of each function that the C++
+Until the Python compiler was removed at the end of step 8, every check
+of the port compared C++ with Python. Two checks of step 8's group G5
+took over from those comparisons, and they run with no Python at all.
+The golden files hold what each command of the corpus gave, and the
+frozen captures hold a few recorded calls of each function that the C++
 checkers check. docs/cpp_port.md ("The checks after Python") gives the
 reasons for the choice. tests/test_golden.py runs both in the suite,
 and skips them when c6502cpp isn't built.
 
 ### The golden files
 
-tools/write_golden.py runs the jobs of tools/compare_backends.py with
-the Python compiler. They are each program of the corpus (the examples,
-the games' units, the chapters' programs, and seeds 0 to 99 of
-`fuzz.stmts`, `fuzz.calls`, and `fuzz.exprs`) in each of the modes `O`,
-`unopt`, `cO`, `c`, `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
-`tacO`, the `links` jobs, which compile and link the three games and
-link the damaged files and the bad command lines, and the `cli` jobs,
-which run compile.py's help, usage errors, and spellings of `-Ttext` at
-six terminal widths. A job's `columns` step sets the width for the
-commands after it, which is 80 before one. It writes them
-under `golden/`, which is checked in raw, as examples/*.asm are. Each
-mode has a manifest, `golden/<mode>.txt`, with a block for each job
-that lists its steps, each command line with its exit status, its
+The golden files hold the output of the jobs that compared the two
+compilers in step 8, which the frozen Python compiler ran before it
+was removed. They are each program of the corpus (the examples, the
+games' units, the chapters' programs, and seeds 0 to 99 of
+`fuzz.stmts`, `fuzz.calls`, and `fuzz.exprs`) in each of the modes
+`O`, `unopt`, `cO`, `c`, `lex`, `parse`, `resolve`, `resolveO`, `tac`,
+`tacO`, and `tacsim`, the `links` jobs, which compile and link the
+three games and link the damaged files and the bad command lines, and
+the `cli` jobs, which run compile.py's help, usage errors, and
+spellings of `-Ttext` at six terminal widths. A job's `columns` step
+sets the width for the commands after it, which is 80 before one. They
+are under `golden/`, which is checked in raw, as examples/*.asm are.
+Each mode has a manifest, `golden/<mode>.txt`, with a block for each
+job that lists its steps, each command line with its exit status, its
 stdout, its stderr, and the exception it raised, and the SHA-256 of
 each file the job left. The `-S` texts of `O` and `unopt` are files of
 their own, `golden/O/examples/sfx_tone.s` for `examples/sfx_tone.c`,
 so that a change to one program's text shows in a diff as a diff of
 that text. The other modes' texts are kept as their hashes. The fuzz
 programs' sources are in `golden/fuzz/`, since the generators that
-make them stay in Python until step 9, and the commands compile them
-from there. tools/write_golden.py's docstring gives the format.
+make them are in Python, and the commands compile them from there.
+src/golden.h gives the format.
 
-The mode `tacsim` holds the TAC interpreter's results, which are its
-only check on the corpus once tac_sim.py has no Python front end to
-take its TAC from. For each program it runs `main` on the TAC, on the
-TAC after the TAC optimizer, and under fuzz/tac_passes.py's observer,
-with tac_sim.py, as tools/compare_tac_sim.py does, and `check-golden`
-sends the backend's modes `tac-run` and `tac-observe` as that tool's
-C++ side does. The writer runs tac_sim.py in a thread with a 128 MB
-stack and a high recursion limit, so a program that recurses past
-Python's default limit has its value in the golden file, which the C++
-interpreter gives too.
+The mode `tacsim` holds the TAC interpreter's results on the corpus.
+For each program, `check-golden` runs `main` on the TAC, on the TAC
+after the TAC optimizer, and under fuzz/tac_passes.py's observer, with
+the backend's modes `tac-run` and `tac-observe`. The Python interpreter
+that wrote them ran in a thread with a 128 MB stack and a high
+recursion limit, so a program that recurses past Python's default
+limit has its value in the golden file, which the C++ interpreter
+gives too.
 
 A command names each file of the repository by its path relative to the
-root, as in `examples/zork/main.c`, and both the writer and the checker
-run it with `<root>/` in front and take `<root>/` out of what it
-writes. The messages then name the files the way the command line does,
-and the files are the same on every machine. The writer stops with an
-error when a message names the root in a form that the replacement
-misses.
+root, as in `examples/zork/main.c`, and the checker runs it with
+`<root>/` in front and takes `<root>/` out of what it writes. The
+messages then name the files the way the command line does, and the
+files are the same on every machine.
 
 ```sh
-uv run python tools/write_golden.py -j 12        # with the Python compiler
-cpp/build/bin/c6502cpp check-golden -j 12        # with the C++ compiler
+cpp/build/bin/c6502cpp check-golden -j 12
 cpp/build/bin/c6502cpp check-golden --manifest O --label examples/sfx_tone.c
 cpp/build/bin/c6502cpp check-golden -j 12 --update
 ```
@@ -3116,28 +3112,21 @@ with `--worker`, since a job changes the current directory. Each worker
 takes every job's steps in an empty directory. It runs each command
 line through `compile_command::run`, the code of `c6502cpp compile`,
 which reads it with compile.py's argparse and runs it as compile.py's
-`main` does under `C6502_CPP_BACKEND=1`, with each request answered by
-`backend::respond` in the same process. It writes the manifest's lines for
-what the job gave and compares them with the manifest's own, and each
-`-S` text with its file, and prints a `DIFFER` line for each job that
-differs, with the command and the first line that differs.
+`main` does, with each request answered by `backend::respond` in the
+same process. It writes the manifest's lines for what the job gave and
+compares them with the manifest's own, and each `-S` text with its
+file, and prints a `DIFFER` line for each job that differs, with the
+command and the first line that differs.
 
 A change made on purpose that changes an output shows as `DIFFER` lines.
 To accept it, run `check-golden --update`, which writes the manifests
 and the `-S` texts again from what the C++ compiler gave and removes the
 texts that no job names any longer, and review the change with `git
 diff golden/` before committing it, as a change to examples/*.asm is
-reviewed. A change to a job's commands, or a new mode, is made with
-the writer while Python is there, and by an edit of the manifest by
-hand after that.
-
-A mode of compare_backends.py is added in two places. Its
-`_program_commands` gives the mode's commands, and tools/write_golden.py's
-`MODES` gets an entry with the names of the files of its jobs that are
-kept as text (none, to keep each file as its hash). A mode that isn't
-compare_backends.py's, as `tacsim` isn't, gets a method of
-`_Recorder` named in `_OWN_MODES`, which adds a step of its own and
-its result lines, and src/golden.cpp's `run_job` gets the step.
+reviewed. A change to a job's commands, or a new job, is an edit of
+the manifest by hand, after which `--update` fills in what the commands
+give. A new mode needs a step of its own in src/golden.cpp's `run_job`
+too, as `tacsim` has.
 
 On 24 Nov 2026 the golden files held 19,672 jobs of 24,298 commands in
 38 MB, 31 MB of them the `-S` texts. The Python compiler wrote them in
@@ -3151,28 +3140,23 @@ with duplicate labels in every mode that runs label resolution.
 
 ### The frozen captures
 
-tools/freeze_captures.py keeps a few recorded calls of each function
-that the C++ checkers check. They come from the captures of
-tools/capture_passes.py (`--passes all`, `stage`, `tac-stage`, `tac`,
-and `front`, over the corpus) and of tools/capture_binutils.py (the
-corpus, run without `C6502_CPP_BACKEND` so that the Python assembler
-and linker are recorded, and the suite through its pytest plugin). For
-each function it keeps the 50 smallest calls that changed the result,
-and of the calls that raised, the smallest for each form of the
-error's message, which is its class and its text with the numbers and
-the quoted names and lists taken out. A function with fewer than 50
-calls that change the result has its smallest other calls added, so
-that every function is checked on something. The records of one
-function go in one archive, `cpp/tests/frozen/<kind>/<function>.xz`,
-an xz stream with a CRC32 check of the record files with their paths
-and lengths, and of the blobs that a binutils record names. A binutils
-record that names an object by a Windows path is left out, since Linux
-reads such a path as one file name. tools/freeze_captures.py's
-docstring gives the format and the rule for a change of the result.
+The frozen captures are a few recorded calls of each function that the
+C++ checkers check, kept from the captures of the Python passes and
+object-file tools over the corpus and the suite before the Python
+compiler was removed. For each function they hold the 50 smallest
+calls that changed the result, and of the calls that raised, the
+smallest for each form of the error's message, which is its class and
+its text with the numbers and the quoted names and lists taken out. A
+function with fewer than 50 calls that change the result has its
+smallest other calls added, so that every function is checked on
+something. The records of one function are in one archive,
+`cpp/tests/frozen/<kind>/<function>.xz`, an xz stream with a CRC32
+check of the record files with their paths and lengths, and of the
+blobs that a binutils record names. A binutils record that named an
+object by a Windows path was left out, since Linux reads such a path
+as one file name. src/frozen.h gives the format.
 
 ```sh
-uv run python tools/capture_passes.py --passes all -j 12
-uv run python tools/freeze_captures.py passes captures
 cpp/build/bin/c6502cpp check-frozen
 ```
 
@@ -3182,9 +3166,11 @@ temporary capture directory of each kind (src/frozen.h), and runs
 `check-captures` on the passes' records and `check-binutils` on the
 binutils records, so each mismatch and each count names its function.
 A change made on purpose that changes a function's result on a frozen
-call is taken in by freezing the call again from the Python capture
-while it is there. After that, the record's output has to be written
-by hand or the call dropped, since `check-frozen` has no `--update`.
+call needs the record's output written by hand or the call dropped,
+since `check-frozen` has no `--update`. The inputs are frozen, so a
+change to an earlier pass that would change a later pass's input goes
+unseen by the later pass's records, and the golden files are the check
+of that.
 
 On 24 Nov 2026 the frozen captures held 10,043 calls of 194 functions
 (the asm passes and the work after them through emission, the stage
@@ -3200,7 +3186,7 @@ and `row_address_tables` and `return_pointers_in_zero_page` (4.0 and
 50 calls. Every raising call would have added about 70 MB raw and 3.5
 MB with xz to the binutils archives, most of them the 552 links of the
 corpus's programs that leave a helper or a name of their game
-undefined, so the freezer keeps one call of each form of message.
+undefined, so only one call of each form of message is kept.
 `check-frozen` matched every call and record in 28 seconds in the MSVC
 build and in 4 seconds in the GCC build. With the two passes broken as
 above, it reported 3 of the 50 calls of `split_mem_to_mem` and 1 of
@@ -3208,12 +3194,17 @@ the 52 of `label_resolution`, each by its name.
 
 ## The unit tests' recorded calls
 
-Group G6 of step 8 moved the Python tests that call an asm pass, a
+This section records how groups G6 to G8 of step 8 turned the Python
+tests that called the compiler's functions directly into doctest cases,
+with a recorder that ran the Python tests and that went with the Python
+compiler in group R. The cases stay, and a test of a new function is
+written by hand.
+
+Group G6 moved the Python tests that call an asm pass, a
 stage call of code generation, or emission directly onto doctest cases
 of the C++ port, as docs/cpp_port.md's "The tests" proposes for tests on
-hand-built IR. `tools/record_test_calls.py record` runs test modules
-under pytest with a wrapper on each function that `check-captures` can
-run. These are the passes of `capture_passes.PASSES`, the stage calls of
+hand-built IR. The recorder ran test modules under pytest with a
+wrapper on each function that `check-captures` can run. These are the passes of `capture_passes.PASSES`, the stage calls of
 `STAGE_PASSES`, and asm_emit.py's `emit_instruction`, `emit_function`,
 and `emit_static_variable` with `apply_y_peephole`. A wrapper records a
 call only when its caller is a function of a test module, so each record
@@ -3223,13 +3214,7 @@ profile function lists every other call that the test's code makes into
 a module of the compiler, and a test with such a call isn't ported by its
 records alone.
 
-```sh
-uv run python tools/record_test_calls.py record --out C:/w/rec tests/test_carry_halve.py
-uv run python tools/record_test_calls.py cpp --out C:/w/rec \
-    --to cpp/tests/test_carry_halve_calls.cpp tests/test_carry_halve.py
-```
-
-`record_test_calls.py cpp` writes a case for each distinct call of a
+The recorder wrote a case for each distinct call of a
 module's tests that no other case in cpp/tests checks already. A case
 holds the record in the capture format, and `check_record`
 (`tests/record_case.h`) runs it as `check-captures` does. A call counts

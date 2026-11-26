@@ -1,7 +1,8 @@
 // Records of Python's `re` (src/py_regex_cases.h describes a record),
-// which `tools/py_regex_records.py` writes, and recorded calls of
-// `preprocessor.preprocess` with `--passthru-includes`. The records of
-// `re` are those of every pattern the tool writes by hand, the kinds a
+// which a script wrote from Python 3.11 in step 6 of the port, and
+// recorded calls of the Python preprocessor with `--passthru-includes`.
+// The records of `re` are those of every pattern the script wrote by
+// hand, the kinds a
 // user would give `--passthru-includes` and the common errors, and every
 // 30th of the others: random patterns of the syntax py_regex takes,
 // random strings of the characters special in a pattern, and patterns

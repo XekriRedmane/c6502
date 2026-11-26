@@ -11,4 +11,4 @@ A passing check is evidence only for what it examined. Each check fails, or prin
 - Record again before trusting a record made before the code changed.
 - To show that a new test fails without its fix, reset only the fixed source files to HEAD. A plain `git stash` hides the new test too, and the check passes without proving anything.
 
-**Evidence:** [[codebase/msbuild-stale-builds]], [[codebase/git-bash-on-windows]], [[codebase/recording-test-calls]], [[codebase/checks-after-python]], and [[codebase/tac-interpreter]].
+**Evidence:** [[codebase/msbuild-stale-builds]], [[codebase/git-bash-on-windows]], [[codebase/checks-after-python]], and [[codebase/tac-interpreter]].

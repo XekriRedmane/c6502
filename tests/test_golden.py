@@ -1,9 +1,10 @@
-"""Runs the checks of the C++ port that need no Python compiler
-(docs/cpp_port.md, "The checks after Python"): `c6502cpp check-golden`
-on the golden files under golden/, which tools/write_golden.py wrote
-with the frozen Python compiler, and `c6502cpp check-frozen` on the
-frozen captures under cpp/tests/frozen, which tools/freeze_captures.py
-kept. Both are skipped when c6502cpp isn't built."""
+"""Runs the checks of the C++ compiler that took over from the
+comparisons with the Python compiler (docs/cpp_port.md, "The checks
+after Python"): `c6502cpp check-golden` on the golden files under
+golden/, which the frozen Python compiler wrote before it was removed,
+and `c6502cpp check-frozen` on the frozen captures of the Python
+passes' calls under cpp/tests/frozen. Both are skipped when c6502cpp
+isn't built."""
 from __future__ import annotations
 
 import os

@@ -83,7 +83,9 @@ If no plan phase applies, skip this subsection.
 - Compile time on the corpus
 - Size and cycles of the emitted 6502 code
 - Slow or high-complexity code paths
-- For port work, `tools/compare_backends.py` and `c6502cpp check-golden` pass
+- `c6502cpp check-golden` and `c6502cpp check-frozen` pass, and a change
+  to the output made on purpose updates the golden files with
+  `check-golden --update`
 
 ### Principle Compliance
 

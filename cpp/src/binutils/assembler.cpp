@@ -437,16 +437,30 @@ Value evaluate(const Expr& e, const Constants& constants, const std::string& whe
 
 enum class Syntax { kImp, kAcc, kImm, kInd, kIndx, kIndy, kX, kY, kPlain };
 
+struct Instruction {
+  Mode mode = Mode::kImp;
+  ExprPtr expr;
+};
+
+struct DcBytes {
+  std::vector<U32> items;
+};
+
+struct DcWords {
+  int width = 2;
+  std::vector<ExprPtr> values;
+};
+
+struct DsFill {
+  Int count = 0;
+  int fill = 0;
+};
+
 struct Stmt {
   int line = 0;
   std::string op;
   U32 operand;
-  Mode mode = Mode::kImp;
-  ExprPtr expr;
-  std::vector<U32> strings;
-  std::vector<ExprPtr> values;
-  Int count = 0;
-  int fill = 0;
+  std::variant<Instruction, DcBytes, DcWords, DsFill> body;
   Int size = 0;
 };
 
@@ -709,16 +723,19 @@ class Assembler {
   void size_stmt(Stmt& st) const {
     const std::string w = where(st.line);
     if (st.op == "DC.B") {
-      st.strings = split_list(st.operand);
+      DcBytes bytes{split_list(st.operand)};
       st.size = 0;
-      for (const auto& s : st.strings) {
+      for (const auto& s : bytes.items) {
         st.size += !s.empty() && s[0] == '"' ? static_cast<Int>(s.size()) - 2 : Int(1);
       }
+      st.body = std::move(bytes);
       return;
     }
     if (st.op == "DC.W" || st.op == "DC.L") {
-      for (const auto& s : split_list(st.operand)) st.values.push_back(parse_expr(s, w));
-      st.size = static_cast<Int>(st.values.size()) * (st.op == "DC.W" ? 2 : 4);
+      DcWords words{.width = st.op == "DC.W" ? 2 : 4};
+      for (const auto& s : split_list(st.operand)) words.values.push_back(parse_expr(s, w));
+      st.size = static_cast<Int>(words.values.size()) * words.width;
+      st.body = std::move(words);
       return;
     }
     if (st.op == "DS.B") {
@@ -733,13 +750,11 @@ class Assembler {
         if (f.symbol) error(w + ": DS.B needs a constant fill");
         fill = static_cast<int>(f.addend & Int(0xFF));
       }
-      st.count = count.addend;
-      st.fill = fill;
+      st.body = DsFill{.count = count.addend, .fill = fill};
       st.size = count.addend;
       return;
     }
     auto [syntax, expr] = split_operand(st.op, st.operand, w);
-    st.expr = expr;
     const auto has = [&](Mode m) { return opcodes::opcode(st.op, m).has_value(); };
     Mode mode = Mode::kImp;
     switch (syntax) {
@@ -781,14 +796,14 @@ class Assembler {
       error(w + ": " + st.op + " has no " + std::string(opcodes::mode_name(mode)) +
             " addressing mode");
     }
-    st.mode = mode;
+    st.body = Instruction{.mode = mode, .expr = expr};
     st.size = opcodes::size(mode);
   }
 
   elf::SectionPtr section_for(const Item& it) const {
     const auto meta = item_meta_.find(it.name);
     const bool only_ds = std::all_of(it.stmts.begin(), it.stmts.end(),
-                                     [](const Stmt& st) { return st.op == "DS.B"; });
+                                     [](const Stmt& st) { return std::holds_alternative<DsFill>(st.body); });
     std::string name;
     bool zero = false;
     if (meta != item_meta_.end()) {
@@ -929,7 +944,7 @@ class Assembler {
     for (const Stmt& st : it.stmts) {
       const std::string w = where(st.line);
       const std::size_t pc = data.size();
-      const bool is_data = st.op == "DC.B" || st.op == "DC.W" || st.op == "DC.L" || st.op == "DS.B";
+      const bool is_data = !std::holds_alternative<Instruction>(st.body);
       if (it.function && is_data != in_data) {
         out_.symbols.push_back(std::make_shared<elf::Symbol>(
             elf::Symbol{.name = is_data ? "$d" : "$c",
@@ -937,8 +952,8 @@ class Assembler {
                         .section = sec}));
         in_data = is_data;
       }
-      if (st.op == "DC.B") {
-        for (const U32& s : st.strings) {
+      if (const auto* bytes = std::get_if<DcBytes>(&st.body)) {
+        for (const U32& s : bytes->items) {
           if (!s.empty() && s[0] == '"') {
             if (s.size() < 2 || s.back() != '"') error(w + ": bad string " + to_utf8(s));
             for (std::size_t i = 1; i + 1 < s.size(); ++i) {
@@ -953,25 +968,24 @@ class Assembler {
           const Value v = value_of(*parse_expr(s, w), w);
           field(*sec, data, v, 1, local, w, false);
         }
-      } else if (st.op == "DC.W" || st.op == "DC.L") {
-        const int width = st.op == "DC.W" ? 2 : 4;
-        for (const auto& e : st.values) {
+      } else if (const auto* words = std::get_if<DcWords>(&st.body)) {
+        for (const auto& e : words->values) {
           const Value v = value_of(*e, w);
-          field(*sec, data, v, width, local, w, false);
+          field(*sec, data, v, words->width, local, w, false);
         }
-      } else if (st.op == "DS.B") {
+      } else if (const auto* space = std::get_if<DsFill>(&st.body)) {
         if (sec->type == elf::SHT_NOBITS) {
-          sec->nobits_size = py_int::to_int64(py_int::add(sec->nobits_size, st.count, w), w);
+          sec->nobits_size = py_int::to_int64(py_int::add(sec->nobits_size, space->count, w), w);
           continue;
         }
-        if (st.count > kMaxFill) {
+        if (space->count > kMaxFill) {
           throw CompileError("OverflowError",
-                             w + ": DS.B of " + str(st.count) +
+                             w + ": DS.B of " + str(space->count) +
                                  " bytes, where the C++ assembler fills at most 16 MB");
         }
-        data.append(static_cast<std::size_t>(st.count), static_cast<char>(st.fill));
+        data.append(static_cast<std::size_t>(space->count), static_cast<char>(space->fill));
       } else {
-        emit_instr(st, *sec, data, labels, local, w);
+        emit_instr(st.op, std::get<Instruction>(st.body), *sec, data, labels, local, w);
       }
       const Int took = static_cast<Int>(data.size() - pc);
       if (sec->type != elf::SHT_NOBITS && took != st.size) {
@@ -982,13 +996,13 @@ class Assembler {
     if (sec->type != elf::SHT_NOBITS) sec->data = std::move(data);
   }
 
-  void emit_instr(const Stmt& st, elf::Section& sec, std::string& data,
-                  const std::map<std::string, Int>& labels, const Locals& local,
-                  const std::string& w) {
-    data += static_cast<char>(*opcodes::opcode(st.op, st.mode));
-    if (st.mode == Mode::kImp || st.mode == Mode::kAcc) return;
-    const Value v = value_of(*st.expr, w);
-    if (st.mode == Mode::kRel) {
+  void emit_instr(const std::string& op, const Instruction& in, elf::Section& sec,
+                  std::string& data, const std::map<std::string, Int>& labels,
+                  const Locals& local, const std::string& w) {
+    data += static_cast<char>(*opcodes::opcode(op, in.mode));
+    if (in.mode == Mode::kImp || in.mode == Mode::kAcc) return;
+    const Value v = value_of(*in.expr, w);
+    if (in.mode == Mode::kRel) {
       if (v.select != Byte::kWhole) error(w + ": a branch takes a label");
       if (v.symbol) {
         if (const auto it = labels.find(*v.symbol); it != labels.end()) {
@@ -1010,16 +1024,16 @@ class Assembler {
       data += '\0';
       return;
     }
-    if (st.mode == Mode::kImm) {
+    if (in.mode == Mode::kImm) {
       field(sec, data, v, 1, local, w, false);
       return;
     }
-    const int width = opcodes::size(st.mode) - 1;
+    const int width = opcodes::size(in.mode) - 1;
     if (width == 1 && v.select == Byte::kWhole && !v.symbol && (v.addend < 0 || v.addend > 0xFF)) {
       error(w + ": $" + pyrepr::hex(v.addend, 0) + " isn't in zero page");
     }
     if (width == 1 && v.symbol && !in_zero_page(v, w)) {
-      error(w + ": " + st.op + " (" + std::string(opcodes::mode_name(st.mode)) +
+      error(w + ": " + op + " (" + std::string(opcodes::mode_name(in.mode)) +
             ") needs a zero-page address, and " + *v.symbol + " isn't known to be in zero page");
     }
     field(sec, data, v, width, local, w, width == 1);

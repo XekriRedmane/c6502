@@ -150,6 +150,11 @@ ir::Function move_steps_onto_edges(ir::Function fn, const NameSet& ssa_names) {
     ir::Binary moved{.op = step->op, .src1 = step->src1, .src2 = step->src2, .dst = copy_dst};
     instrs[*found] = std::move(moved);
     instrs.erase(instrs.begin() + static_cast<std::ptrdiff_t>(i));
+    for (auto& [label, at] : label_at) {
+      if (at > i) {
+        --at;
+      }
+    }
     changed = true;
   }
   if (!changed) {

@@ -223,3 +223,47 @@ TEST_CASE("var_unchanged doesn't look past an instruction a rewrite replaced wit
   env.instructions[1] = copy;
   CHECK(c6502::passes::var_unchanged(ir::Var{.name = "g"}, 0, 2, env, ctx));
 }
+
+TEST_CASE("tac_move_steps_onto_edges finds a label after the steps it moved") {
+  c6502::testing::check_stage_case(
+      "tac_move_steps_onto_edges",
+      "{\"args\": [], \"kwargs\": {\"symbols\": null, \"ssa_dsts\": {\"set\": [\"t1\", \"t2\", "
+      "\"t3\", \"x1\", \"x2\", \"x3\"]}}}",
+      "Function(\"f\" true [] [\n"
+      "  Binary(Add Var(\"x1\") Constant(ConstInt(1)) Var(\"t1\"))\n"
+      "  JumpIfTrue(Var(\"c\") \".lx\")\n"
+      "  Copy(Var(\"t1\") Var(\"z1\"))\n"
+      "  Binary(Add Var(\"x2\") Constant(ConstInt(1)) Var(\"t2\"))\n"
+      "  JumpIfTrue(Var(\"c\") \".ly\")\n"
+      "  Copy(Var(\"t2\") Var(\"z2\"))\n"
+      "  Binary(Add Var(\"x3\") Constant(ConstInt(1)) Var(\"t3\"))\n"
+      "  Jump(\".l\")\n"
+      "  Label(\".l\")\n"
+      "  Ret(None)\n"
+      "  Label(\".n\")\n"
+      "  Copy(Var(\"t3\") Var(\"z3\"))\n"
+      "  Ret(None)\n"
+      "  Label(\".lx\")\n"
+      "  Ret(None)\n"
+      "  Label(\".ly\")\n"
+      "  Ret(None)\n"
+      "])\n",
+      "Function(\"f\" true [] [\n"
+      "  JumpIfTrue(Var(\"c\") \".lx\")\n"
+      "  Binary(Add Var(\"x1\") Constant(ConstInt(1)) Var(\"z1\"))\n"
+      "  JumpIfTrue(Var(\"c\") \".ly\")\n"
+      "  Binary(Add Var(\"x2\") Constant(ConstInt(1)) Var(\"z2\"))\n"
+      "  Binary(Add Var(\"x3\") Constant(ConstInt(1)) Var(\"t3\"))\n"
+      "  Jump(\".l\")\n"
+      "  Label(\".l\")\n"
+      "  Ret(None)\n"
+      "  Label(\".n\")\n"
+      "  Copy(Var(\"t3\") Var(\"z3\"))\n"
+      "  Ret(None)\n"
+      "  Label(\".lx\")\n"
+      "  Ret(None)\n"
+      "  Label(\".ly\")\n"
+      "  Ret(None)\n"
+      "])\n",
+      "");
+}

@@ -1,9 +1,23 @@
 // Calls of the TAC optimizer's passes on inputs that the corpus doesn't
 // reach, written by hand, each with the result the pass must give.
+#include <string>
+#include <variant>
+
+#include "asdl/runtime.h"
 #include "doctest.h"
+#include "errors.h"
+#include "passes/optimization/ssa_destruction.h"
 #include "stage_case.h"
+#include "tac_ast.h"
 
 namespace {
+
+namespace ir = c6502::tac_ast;
+
+ir::Function fn_of(const std::string& body) {
+  return std::get<ir::Function>(
+      c6502::asdl::load<ir::Type_top_level>("Function(\"f\" true [] [\n" + body + "])\n"));
+}
 
 constexpr const char* kCountdownLoop =
     "Function(\"f\" true [] [\n"
@@ -121,4 +135,15 @@ TEST_CASE("tac_from_ssa breaks a cycle of copies without a symbol table") {
       "  Ret(Var(\"a\"))\n"
       "])\n",
       "");
+}
+
+TEST_CASE("from_ssa rejects a Phi whose destination is a Constant") {
+  const ir::Function fn = fn_of(
+      "  Label(\".a\")\n"
+      "  Jump(\".b\")\n"
+      "  Label(\".b\")\n"
+      "  Phi(Constant(ConstInt(0)) [PhiArg(\".a\" Var(\"x\"))])\n"
+      "  Ret(None)\n");
+  CHECK_THROWS_WITH_AS(c6502::passes::from_ssa(fn), "from_ssa: a Phi's destination is a Constant",
+                       c6502::InternalError);
 }

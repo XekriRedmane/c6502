@@ -48,7 +48,7 @@ const std::string& conditional_target(const ir::Type_instruction& instr) {
     case K::JumpIfMasked:
       return std::get<ir::JumpIfMasked>(instr).target;
     default:
-      throw InternalError("AttributeError: the instruction has no target");
+      throw InternalError("from_ssa: the instruction isn't a conditional jump");
   }
 }
 
@@ -79,7 +79,7 @@ bool is_terminator(const ir::Type_instruction& instr) {
 const std::string& var_name(const ir::Type_val& v) {
   const auto* var = asdl::as<ir::Var>(v);
   if (var == nullptr) {
-    throw InternalError("AttributeError: 'Constant' object has no attribute 'name'");
+    throw InternalError("from_ssa: a Phi's destination is a Constant");
   }
   return var->name;
 }
@@ -309,7 +309,7 @@ ir::Function from_ssa(ir::Function fn, SymbolTable* symbols) {
     const auto& succ_first = cfg.blocks.find(sid)->instructions.front();
     const auto* succ_label_instr = asdl::as<ir::Label>(succ_first);
     if (succ_label_instr == nullptr) {
-      throw InternalError("AttributeError: the Phi's block doesn't start with a Label");
+      throw InternalError("from_ssa: the block of a Phi doesn't start with a Label");
     }
     const std::string succ_label = succ_label_instr->name;
     if (conditional_target(*last) != succ_label) {

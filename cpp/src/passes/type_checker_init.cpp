@@ -87,10 +87,10 @@ Int floating_bits_to_int(Int bits, bool single, const Type& target) {
   if (!truncated) {
     const Int exponent_mask = single ? Int(0x7F800000) : Int(0x7FF0000000000000LL);
     const Int mantissa_mask = single ? Int(0x007FFFFF) : Int(0x000FFFFFFFFFFFFFLL);
-    if ((bits & exponent_mask) == exponent_mask && (bits & mantissa_mask) != 0) {
-      throw CompileError("ValueError", "cannot convert float NaN to integer");
-    }
-    throw CompileError("OverflowError", "cannot convert float infinity to integer");
+    const bool nan = (bits & exponent_mask) == exponent_mask && (bits & mantissa_mask) != 0;
+    fail(std::string("a constant initializer converts ") + (nan ? "a NaN" : "an infinity") +
+         " to the integer type " + c_type(target) +
+         ", which can't represent it (C99 §6.3.1.4p1, §6.6p4)");
   }
   if (const auto exact = truncated->exact()) {
     return *exact;

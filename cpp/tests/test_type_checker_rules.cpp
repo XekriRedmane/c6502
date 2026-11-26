@@ -55,6 +55,19 @@ TEST_CASE("type checker: &* of an expression is the operand's decayed pointer") 
   }
 }
 
+TEST_CASE("type checker: a constant initializer can't convert an infinity or a NaN to an integer") {
+  CHECK(error_of("static int x = 1e309;") ==
+        "TypeCheckError: a constant initializer converts an infinity to the integer type int, "
+        "which can't represent it (C99 §6.3.1.4p1, §6.6p4)");
+  CHECK(error_of("static unsigned char x = -1e309;") ==
+        "TypeCheckError: a constant initializer converts an infinity to the integer type "
+        "unsigned char, which can't represent it (C99 §6.3.1.4p1, §6.6p4)");
+  CHECK(error_of("static long x = (long)(0.0 / 0.0);") ==
+        "TypeCheckError: a constant initializer converts a NaN to the integer type long, which "
+        "can't represent it (C99 §6.3.1.4p1, §6.6p4)");
+  CHECK(error_of("static int x = 1.5e4;") == "no error");
+}
+
 TEST_CASE("type checker: the usual arithmetic conversions of two integer types") {
   using T = ir::Type_data_type;
   auto common = [](const T& a, const T& b) { return c6502::asdl::py_repr(tc::common_type(a, b)); };

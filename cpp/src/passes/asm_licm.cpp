@@ -164,33 +164,6 @@ std::optional<Candidate> match_candidate(Instrs instrs, std::size_t start,
   return std::nullopt;
 }
 
-// Returns the indices that can run right after `instrs[p]`.
-std::vector<std::size_t> successors_of(Instrs instrs, std::size_t p,
-                                       const LabelMap& labels) {
-  const auto& inst = instrs[p];
-  if (isa<ir::Ret, ir::Return>(inst)) {
-    return {};
-  }
-  if (const auto* j = as<ir::Jump>(inst)) {
-    const long t = labels.find(j->target);
-    if (t >= 0) {
-      return {static_cast<std::size_t>(t)};
-    }
-    return {};
-  }
-  std::vector<std::size_t> out;
-  if (p + 1 < instrs.size()) {
-    out.push_back(p + 1);
-  }
-  if (const auto* b = as<ir::Branch>(inst)) {
-    const long t = labels.find(b->target);
-    if (t >= 0) {
-      out.push_back(static_cast<std::size_t>(t));
-    }
-  }
-  return out;
-}
-
 // Returns whether moving the store `instrs[k .. k + span_len)` to just
 // before the header changes no value that anything reads: not the dst
 // inside the loop or after it, and not A or the flags around either
@@ -220,7 +193,7 @@ bool hoist_preserves_values(Instrs instrs, const LabelMap& labels,
     changed = false;
     for (std::size_t p = header_idx; p <= back_edge_idx; ++p) {
       const bool out = p == last ? true : done[p - header_idx] != 0;
-      for (std::size_t q : successors_of(instrs, p, labels)) {
+      for (std::size_t q : asm_dead_store::successors(instrs, p, labels)) {
         if (in_body(q) && q != header_idx && done[q - header_idx] && !out) {
           done[q - header_idx] = 0;
           changed = true;
@@ -246,7 +219,7 @@ bool hoist_preserves_values(Instrs instrs, const LabelMap& labels,
     if (out) {
       continue;
     }
-    for (std::size_t q : successors_of(instrs, p, labels)) {
+    for (std::size_t q : asm_dead_store::successors(instrs, p, labels)) {
       if (in_body(q)) {
         continue;
       }

@@ -269,6 +269,25 @@ TEST_CASE("collect_address_taken_names reads a label's halves in every operand")
                        "__local_f__e"});
 }
 
+TEST_CASE("asm_dead_store::successors") {
+  const List instrs = {
+      branch(ir::EQ{}, ".t"),
+      mov(imm(1), kA),
+      ir::Jump{.target = ".gone"},
+      label(".t"),
+      ret(),
+      branch(ir::NE{}, ".t"),
+  };
+  const LabelMap labels = label_map(instrs);
+  using V = std::vector<std::size_t>;
+  CHECK(asm_dead_store::successors(instrs, 0, labels) == V{1, 3});
+  CHECK(asm_dead_store::successors(instrs, 1, labels) == V{2});
+  CHECK(asm_dead_store::successors(instrs, 2, labels).empty());
+  CHECK(asm_dead_store::successors(instrs, 3, labels) == V{4});
+  CHECK(asm_dead_store::successors(instrs, 4, labels).empty());
+  CHECK(asm_dead_store::successors(instrs, 5, labels) == V{3});
+}
+
 TEST_CASE("may_alias: immediates never alias") {
   const ir::Type_operand i = imm(5);
   CHECK_FALSE(alias(i, i));

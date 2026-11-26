@@ -74,41 +74,6 @@ bool is_relational(O op) {
          op == O::GreaterOrEqual;
 }
 
-Type constant_type(const ir::Type_const& c) {
-  using C = ir::Kind_const;
-  switch (ir::kind(c)) {
-    case C::ConstInt:
-      return ir::Int{};
-    case C::ConstLong:
-      return ir::Long{};
-    case C::ConstLongLong:
-      return ir::LongLong{};
-    case C::ConstUInt:
-      return ir::UInt{};
-    case C::ConstULong:
-      return ir::ULong{};
-    case C::ConstULongLong:
-      return ir::ULongLong{};
-    case C::ConstChar:
-      return ir::SChar{};
-    case C::ConstUChar:
-      return ir::UChar{};
-    case C::ConstBool:
-      return ir::Bool{};
-    case C::ConstNullptr:
-      return ir::NullptrT{};
-    case C::ConstFloat:
-      return ir::Float{};
-    case C::ConstDouble:
-      return ir::Double{};
-    case C::ConstBitInt: {
-      const auto& b = std::get<ir::ConstBitInt>(c);
-      return ir::BitInt{.width = b.width, .is_signed = b.is_signed};
-    }
-  }
-  throw InternalError("unexpected const: " + asdl::py_repr(c));
-}
-
 Type check_cast(TypeChecker& tc, ir::Cast& e) {
   const Type target = e.target_type;
   if (!(is_object_type(target) || is_void(target))) {

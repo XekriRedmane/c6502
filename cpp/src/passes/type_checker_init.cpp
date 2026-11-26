@@ -460,7 +460,7 @@ Int parse_decimal(std::string_view digits) {
 }  // namespace
 
 Int coerce_init_const_value(const ir::Type_const& c, const Type& target_type) {
-  const Type src_type = const_source_type(c);
+  const Type src_type = constant_type(c);
   Int raw = 0;
   if (asdl::isa<ir::ConstNullptr>(c)) {
     // `nullptr` has a null `void *`'s representation (C23 §7.21.2p3),
@@ -521,7 +521,7 @@ Int coerce_init_value(Int value, const Type& source_type, const Type& target_typ
   return value;
 }
 
-Type const_source_type(const ir::Type_const& c) {
+Type constant_type(const ir::Type_const& c) {
   using C = ir::Kind_const;
   switch (ir::kind(c)) {
     case C::ConstInt:
@@ -541,7 +541,7 @@ Type const_source_type(const ir::Type_const& c) {
     case C::ConstDouble:
       return ir::Double{};
     case C::ConstChar:
-      return ir::Char{};
+      return ir::SChar{};
     case C::ConstUChar:
       return ir::UChar{};
     case C::ConstBool:
@@ -553,7 +553,7 @@ Type const_source_type(const ir::Type_const& c) {
       return ir::BitInt{.width = b.width, .is_signed = b.is_signed};
     }
   }
-  throw InternalError("unexpected c99 const: " + asdl::py_repr(c));
+  throw InternalError("constant_type: a constant of no kind the type checker knows");
 }
 
 AddressInit address_constant(const Exp& exp, const std::string& name, const SymbolTable* symbols,

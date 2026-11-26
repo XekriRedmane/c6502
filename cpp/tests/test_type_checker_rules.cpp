@@ -68,6 +68,16 @@ TEST_CASE("type checker: a constant initializer can't convert an infinity or a N
   CHECK(error_of("static int x = 1.5e4;") == "no error");
 }
 
+TEST_CASE("type checker: a ConstChar initializes as a signed char") {
+  const ir::Type_const minus_one = ir::ConstChar{.value = -1};
+  CHECK(static_cast<long long>(tc::coerce_init_const_value(minus_one, ir::Int{})) == -1);
+  CHECK(static_cast<long long>(tc::coerce_init_const_value(minus_one, ir::Long{})) == -1);
+  CHECK(static_cast<long long>(tc::coerce_init_const_value(minus_one, ir::UInt{})) == 0xFFFF);
+  CHECK(static_cast<long long>(tc::coerce_init_const_value(minus_one, ir::Float{})) == 0xBF800000);
+  CHECK(static_cast<long long>(tc::coerce_init_const_value(minus_one, ir::Bool{})) == 1);
+  CHECK(tc::constant_type(minus_one) == ir::Type_data_type(ir::SChar{}));
+}
+
 TEST_CASE("type checker: the usual arithmetic conversions of two integer types") {
   using T = ir::Type_data_type;
   auto common = [](const T& a, const T& b) { return c6502::asdl::py_repr(tc::common_type(a, b)); };

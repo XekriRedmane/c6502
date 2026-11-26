@@ -198,7 +198,9 @@ Int coerce_init_const_value(const c99_ast::Type_const& c, const Type& target_typ
 // a static initializer's value: an integer, or the IEEE 754 bits of a
 // floating type.
 Int coerce_init_value(Int value, const Type& source_type, const Type& target_type);
-Type const_source_type(const c99_ast::Type_const& c);
+// Returns the type of the constant `c`. A `ConstChar` is a `signed
+// char`, as the constant evaluator and `c99_to_tac` take it.
+Type constant_type(const c99_ast::Type_const& c);
 // Returns the address constant `exp` initializes a static pointer with.
 // `symbols` and `types` may be null.
 AddressInit address_constant(const Exp& exp, const std::string& name, const SymbolTable* symbols,

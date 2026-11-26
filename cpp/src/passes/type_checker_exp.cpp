@@ -728,13 +728,16 @@ Type check_address_of(TypeChecker& tc, ir::AddressOf& e) {
     }
   }
   if (auto* d = std::get_if<ir::Dereference>(&inner)) {
-    const Type ptr_type = tc.check_exp(*d->exp);
-    if (is_pointer_type(ptr_type)) {
-      const Type stripped = strip_quals(ptr_type);
-      d->data_type = *std::get<ir::Pointer>(stripped).referenced_type;
-      e.data_type = stripped;
-      return stripped;
+    tc.check_exp(*d->exp);
+    decay_in_place(d->exp);
+    const std::optional<Type> ptr_type = checked_type(*d->exp);
+    if (!opt_pointer(ptr_type)) {
+      fail("unary '*' requires a pointer operand, got " + class_name(ptr_type));
     }
+    const Type stripped = strip_quals(*ptr_type);
+    d->data_type = *std::get<ir::Pointer>(stripped).referenced_type;
+    e.data_type = stripped;
+    return stripped;
   }
   const Type t_inner = tc.check_exp(inner);
   Type result = ir::Pointer{.referenced_type = t_inner};

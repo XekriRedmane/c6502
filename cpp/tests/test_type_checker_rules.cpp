@@ -32,6 +32,29 @@ std::string error_of(const std::string& src) {
 
 }  // namespace
 
+TEST_CASE("type checker: &* of an expression is the operand's decayed pointer") {
+  SUBCASE("an element of a two-dimensional array") {
+    CHECK(error_of("int h(void) { int a[2][3]; int *q = &*a[1]; return *q; }") == "no error");
+  }
+  SUBCASE("an array") {
+    CHECK(error_of("int h(void) { int a[3]; int *q = &*a; return *q; }") == "no error");
+  }
+  SUBCASE("a compound literal of array type") {
+    CHECK(error_of("int g(void) { int *p = &*(int[]){1, 2}; return *p; }") == "no error");
+  }
+  SUBCASE("a function") {
+    CHECK(error_of("int f(void); int g(void) { int (*p)(void) = &*f; return p(); }") ==
+          "no error");
+  }
+  SUBCASE("a pointer") {
+    CHECK(error_of("int g(int *p) { int *q = &*p; return *q; }") == "no error");
+  }
+  SUBCASE("an integer") {
+    CHECK(error_of("int g(void) { int x = 0; int *p = &*x; return *p; }") ==
+          "TypeCheckError: unary '*' requires a pointer operand, got Int");
+  }
+}
+
 TEST_CASE("type checker: the usual arithmetic conversions of two integer types") {
   using T = ir::Type_data_type;
   auto common = [](const T& a, const T& b) { return c6502::asdl::py_repr(tc::common_type(a, b)); };

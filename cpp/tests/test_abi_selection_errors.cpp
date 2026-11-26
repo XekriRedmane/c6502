@@ -45,3 +45,18 @@ TEST_CASE("select_abi: an unnamed register parameter is named by its position") 
       "passed in a register\n",
       "");
 }
+
+TEST_CASE("fixed_address_layouts: a fixed-address declaration without a function type") {
+  c6502::testing::check_stage_call(
+      "fixed_address_layouts",
+      c99_args(
+          R"~(  FunctionDecl(function_decl(\"f\" [] None Int None \"zp_abi\" [] false 53248 [] None false))\n)~",
+          R"~({"pool": {"object": "passes.optimization.pool.Pool", "fields": {"start": 128}}})~"),
+      kClassicContext, false,
+      "Program([\n"
+      "  Function(\"main\" true [] [\n"
+      "    Ret(Constant(ConstInt(0)))\n"
+      "  ])\n"
+      "])\n",
+      "exception: AssertionError: the declaration of `f` has no FunType\n", "");
+}

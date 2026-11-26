@@ -748,7 +748,7 @@ OrderedMap<std::string, ZpLayout> fixed_address_layouts(const tac::Program& prog
     }
     const auto* ft = fun_type_of(fn_decl);
     if (ft == nullptr) {
-      throw InternalError("AttributeError: the declaration of `" + name + "` has no FunType");
+      throw InternalError("the declaration of `" + name + "` has no FunType");
     }
     if (!fits_return_registers(*ft->ret)) {
       fail("zp_abi function `" + name +

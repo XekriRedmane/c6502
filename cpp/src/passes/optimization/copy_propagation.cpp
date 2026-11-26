@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "bit_precise.h"
+#include "passes/optimization/var_visit.h"
 
 namespace c6502::passes {
 
@@ -15,7 +16,6 @@ namespace {
 namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 using framework::PassContext;
-using K = ir::Kind_instruction;
 using CK = ir::Kind_const;
 
 using CopySources = std::map<std::string, ir::Type_val, std::less<>>;
@@ -172,120 +172,17 @@ CopySources resolve_chains(const CopySources& copy_src) {
 }
 
 void rewrite(ir::Type_instruction& instr, const CopySources& resolved) {
-  const auto sub = [&](ir::Type_val& v) {
-    if (const auto* var = std::get_if<ir::Var>(&v)) {
-      const auto it = resolved.find(var->name);
-      if (it != resolved.end()) {
-        v = it->second;
-      }
-    }
-  };
-  switch (ir::kind(instr)) {
-    case K::Ret: {
-      auto& r = std::get<ir::Ret>(instr);
-      if (r.val) {
-        sub(*r.val);
-      }
-      return;
-    }
-    case K::SignExtend:
-      sub(std::get<ir::SignExtend>(instr).src);
-      return;
-    case K::ZeroExtend:
-      sub(std::get<ir::ZeroExtend>(instr).src);
-      return;
-    case K::Truncate:
-      sub(std::get<ir::Truncate>(instr).src);
-      return;
-    case K::IntToFloat:
-      sub(std::get<ir::IntToFloat>(instr).src);
-      return;
-    case K::IntToDouble:
-      sub(std::get<ir::IntToDouble>(instr).src);
-      return;
-    case K::FloatToInt:
-      sub(std::get<ir::FloatToInt>(instr).src);
-      return;
-    case K::DoubleToInt:
-      sub(std::get<ir::DoubleToInt>(instr).src);
-      return;
-    case K::FloatToDouble:
-      sub(std::get<ir::FloatToDouble>(instr).src);
-      return;
-    case K::DoubleToFloat:
-      sub(std::get<ir::DoubleToFloat>(instr).src);
-      return;
-    case K::Unary:
-      sub(std::get<ir::Unary>(instr).src);
-      return;
-    case K::Binary: {
-      auto& b = std::get<ir::Binary>(instr);
-      sub(b.src1);
-      sub(b.src2);
-      return;
-    }
-    case K::Copy:
-      sub(std::get<ir::Copy>(instr).src);
-      return;
-    case K::Load:
-      sub(std::get<ir::Load>(instr).src_ptr);
-      return;
-    case K::Store: {
-      auto& s = std::get<ir::Store>(instr);
-      sub(s.src);
-      sub(s.dst_ptr);
-      return;
-    }
-    case K::IndexedLoad:
-      sub(std::get<ir::IndexedLoad>(instr).index);
-      return;
-    case K::IndexedStore: {
-      auto& s = std::get<ir::IndexedStore>(instr);
-      sub(s.index);
-      sub(s.src);
-      return;
-    }
-    case K::IndexedSymbolStore: {
-      auto& s = std::get<ir::IndexedSymbolStore>(instr);
-      sub(s.index);
-      sub(s.src);
-      return;
-    }
-    case K::JumpIfTrue:
-      sub(std::get<ir::JumpIfTrue>(instr).condition);
-      return;
-    case K::JumpIfFalse:
-      sub(std::get<ir::JumpIfFalse>(instr).condition);
-      return;
-    case K::JumpIfCmp: {
-      auto& j = std::get<ir::JumpIfCmp>(instr);
-      sub(j.src1);
-      sub(j.src2);
-      return;
-    }
-    case K::JumpIfMasked:
-      sub(std::get<ir::JumpIfMasked>(instr).val);
-      return;
-    case K::FunctionCall:
-      for (auto& a : std::get<ir::FunctionCall>(instr).args) {
-        sub(a);
-      }
-      return;
-    case K::IndirectCall: {
-      auto& c = std::get<ir::IndirectCall>(instr);
-      sub(c.ptr);
-      for (auto& a : c.args) {
-        sub(a);
-      }
-      return;
-    }
-    case K::Phi:
-      for (auto& a : std::get<ir::Phi>(instr).args) {
-        sub(std::get<ir::PhiArg>(a).source);
-      }
-      return;
-    default:
-      return;
+  std::optional<ir::Type_instruction> out =
+      rewrite_uses_in(instr, [&](const ir::Type_val& v) -> std::optional<ir::Type_val> {
+        if (const auto* var = std::get_if<ir::Var>(&v)) {
+          if (const auto it = resolved.find(var->name); it != resolved.end()) {
+            return it->second;
+          }
+        }
+        return std::nullopt;
+      });
+  if (out) {
+    instr = std::move(*out);
   }
 }
 

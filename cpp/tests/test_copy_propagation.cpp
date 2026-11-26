@@ -1875,3 +1875,31 @@ TEST_CASE("tac_copy_propagate: test_cse.TestCseSim.test_repeated_subscripts_and_
       "])\n",
       "");
 }
+
+TEST_CASE("tac_copy_propagate: the operands of the indexed loads and stores") {
+  // The pointer and the index of an IndirectIndexedLoad and an
+  // IndirectIndexedStore, the value the store writes, and the index of
+  // an IndexedConstLoad are reads like any other.
+  c6502::testing::check_stage_case(
+      "tac_copy_propagate",
+      "{\"args\": [], \"kwargs\": {\"symbols\": null, \"ssa_dsts\": {\"set\": [\"i.1\", \"p.1\", \"q.1\", \"v.1\", \"w.1\", \"x.1\", \"y.1\"]}}}",
+      "Function(\"f\" true [] [\n"
+      "  Copy(Constant(ConstUChar(3)) Var(\"i.1\"))\n"
+      "  Copy(Var(\"q.1\") Var(\"p.1\"))\n"
+      "  Copy(Var(\"w.1\") Var(\"v.1\"))\n"
+      "  IndirectIndexedLoad(Var(\"p.1\") Var(\"i.1\") Var(\"x.1\") false)\n"
+      "  IndirectIndexedStore(Var(\"p.1\") Var(\"i.1\") Var(\"v.1\") false)\n"
+      "  IndexedConstLoad(1024 Var(\"i.1\") Var(\"y.1\") false)\n"
+      "  Ret(Var(\"y.1\"))\n"
+      "])\n",
+      "Function(\"f\" true [] [\n"
+      "  Copy(Constant(ConstUChar(3)) Var(\"i.1\"))\n"
+      "  Copy(Var(\"q.1\") Var(\"p.1\"))\n"
+      "  Copy(Var(\"w.1\") Var(\"v.1\"))\n"
+      "  IndirectIndexedLoad(Var(\"q.1\") Constant(ConstUChar(3)) Var(\"x.1\") false)\n"
+      "  IndirectIndexedStore(Var(\"q.1\") Constant(ConstUChar(3)) Var(\"w.1\") false)\n"
+      "  IndexedConstLoad(1024 Constant(ConstUChar(3)) Var(\"y.1\") false)\n"
+      "  Ret(Var(\"y.1\"))\n"
+      "])\n",
+      "");
+}

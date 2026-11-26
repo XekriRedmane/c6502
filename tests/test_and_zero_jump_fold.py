@@ -1,4 +1,5 @@
-"""Tests for `passes.optimization.and_zero_jump_fold`.
+"""Tests for the TAC pass and_zero_jump_fold
+(cpp/src/passes/optimization/and_zero_jump_fold.h).
 
 The pass rewrites `Binary(BitwiseAnd, %ext, ConstInt(C), %res);
 JumpIfTrue/False(%res, t)` — where `%ext` traces through a
@@ -10,59 +11,21 @@ chain (~6 asm instructions) and now collapses through the
 existing `and_sign_bit_branch` peephole to `LDA u; BPL t` (2
 instructions).
 
-Coverage:
-  * Sign-bit folds for both sense flips.
-  * Mask values other than 0x80.
-  * Operand-order symmetry (constant on either side of the AND).
-  * Guards: multi-use %res, non-uchar source, mask above 0xFF.
-  * End-to-end sim: the optimized pipeline produces the expected
-    return value (correctness anchor — opt vs. unopt agreement is
-    enforced by `test_sim_differential`, but a focused sim test
-    here catches regressions before the full chapter sweep runs).
+The folds for both senses, other masks than 0x80, the constant on
+either side of the AND, and the guards (a multi-use %res, a source that
+isn't an unsigned char, a mask above 0xFF) are doctest cases in
+cpp/tests/test_fold_producer_jumps_calls.cpp. The tests here run
+programs with the idiom in the simulator under `-O` and check the
+value each returns. `test_sim_differential` checks that the optimized
+and unoptimized pipelines agree, and these catch a regression before
+the full chapter sweep runs.
 """
 from __future__ import annotations
 
 import unittest
 
-import tac_ast
-from passes.optimization.and_zero_jump_fold import fold_narrow_and_jump
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-def _var(name: str) -> tac_ast.Var:
-    return tac_ast.Var(name=name)
-
-
-def _cint(v: int) -> tac_ast.Constant:
-    return tac_ast.Constant(const=tac_ast.ConstInt(value=v))
-
-
-def _fn(*instrs) -> tac_ast.Function:
-    return tac_ast.Function(
-        name="f", is_global=True, params=[],
-        instructions=list(instrs),
-    )
-
-
-class TestGuards(unittest.TestCase):
-    """Cases that must NOT fold — preserve correctness when the
-    pattern doesn't fit."""
-
-
-    def test_no_symbols_is_noop(self) -> None:
-        # Without a symbol table the source-type check can't run, so
-        # the pass returns the function unchanged.
-        fn = _fn(
-            tac_ast.ZeroExtend(src=_var("@u"), dst=_var("%ext")),
-            tac_ast.Binary(
-                op=tac_ast.BitwiseAnd(),
-                src1=_var("%ext"), src2=_cint(0x80), dst=_var("%res"),
-            ),
-            tac_ast.JumpIfFalse(condition=_var("%res"), target=".t"),
-        )
-        out = fold_narrow_and_jump(fn, symbols=None)
-        self.assertEqual(out.instructions, fn.instructions)
 
 
 @needs_c6502cpp

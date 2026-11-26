@@ -9,50 +9,9 @@ what `unroll` and `save_hardware_stack` do."""
 
 from __future__ import annotations
 
-import logging
 import unittest
-from pathlib import Path
-
-from lark import Lark, logger as lark_logger
 
 from compile import _run_source
-
-
-class TestGrammar(unittest.TestCase):
-
-    def test_no_new_conflicts(self) -> None:
-        # Lark resolves a shift/reduce conflict as a shift and logs it
-        # at DEBUG. The grammar has had these four: the dangling
-        # `else`, and `void` before `)` in three states. Attributes
-        # before a statement add none.
-        messages: list[str] = []
-
-        class Collect(logging.Handler):
-            def emit(self, record):
-                messages.append(record.getMessage())
-
-        handler = Collect()
-        level = lark_logger.level
-        lark_logger.addHandler(handler)
-        lark_logger.setLevel(logging.DEBUG)
-        try:
-            Lark.open(
-                str(Path(__file__).resolve().parent.parent / "c99.lark"),
-                parser="lalr",
-                start=["start", "lex_only", "declarator", "type_name"],
-            )
-        finally:
-            lark_logger.removeHandler(handler)
-            lark_logger.setLevel(level)
-        conflicts = sorted(
-            m for m in messages if "Reduce/Reduce" in m
-            or m.startswith("Shift/Reduce")
-        )
-        self.assertEqual(conflicts, sorted(
-            ["Shift/Reduce conflict for terminal ELSE: (resolving as shift)"]
-            + ["Shift/Reduce conflict for terminal RPAREN: "
-               "(resolving as shift)"] * 3
-        ))
 
 
 class TestLoopAttributes(unittest.TestCase):

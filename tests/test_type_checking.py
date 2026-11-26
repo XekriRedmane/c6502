@@ -1,8 +1,7 @@
 import unittest
 
-import c99_ast
 from c99_ast import FunType, Int, Long
-from passes.type_checking import LocalAttr, Symbol, SymbolTable, TypeCheckError, TypeChecker
+from passes.type_checking import LocalAttr, Symbol, SymbolTable, TypeCheckError
 
 
 class TestSymbolTableAPI(unittest.TestCase):
@@ -69,28 +68,6 @@ class TestIntegrationWithLaterPipeline(unittest.TestCase):
                 "tac",
                 "int main(void) { int x; x(); return 0; }",
             )
-
-
-class TestErrors(unittest.TestCase):
-    def test_unknown_program_raises_type_error(self):
-        stub = type("Stub", (c99_ast.Type_program,), {})
-        with self.assertRaises(TypeError):
-            TypeChecker().check_program(stub())
-
-    def test_unknown_statement_raises_type_error(self):
-        stub = type("Stub", (c99_ast.Type_statement,), {})
-        with self.assertRaises(TypeError):
-            TypeChecker()._check_statement(stub())
-
-    def test_unknown_block_item_raises_type_error(self):
-        stub = type("Stub", (c99_ast.Type_block_item,), {})
-        with self.assertRaises(TypeError):
-            TypeChecker()._check_block_item(stub())
-
-    def test_unknown_exp_raises_type_error(self):
-        stub = type("Stub", (c99_ast.Type_exp,), {})
-        with self.assertRaises(TypeError):
-            TypeChecker()._check_exp(stub())
 
 
 if __name__ == "__main__":

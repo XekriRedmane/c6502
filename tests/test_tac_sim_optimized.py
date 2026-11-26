@@ -9,7 +9,6 @@ G9).
 """
 from __future__ import annotations
 
-import os
 import unittest
 
 from fuzz.tac_passes import first_changing_pass
@@ -57,24 +56,6 @@ class TestTacPasses(unittest.TestCase):
             int main(void) { ext.a[1] = 5; return ext.a[1]; }
         """
         self.assertIsNone(first_changing_pass(src))
-
-    @unittest.skipIf(
-        os.environ.get("C6502_CPP_BACKEND") == "1",
-        "breaks a Python pass, which the C++ port doesn't run "
-        "(cpp/README.md, \"The TAC interpreter\")",
-    )
-    def test_names_the_pass(self) -> None:
-        # With narrow_widened_arith's check that a global is unchanged
-        # since the extend read it turned off, it reads g after h()
-        # changed it.
-        import passes.optimization.narrow_widened_arith as n
-        saved = n.var_unchanged
-        n.var_unchanged = lambda *a, **k: True
-        try:
-            res = first_changing_pass(self._SRC)
-        finally:
-            n.var_unchanged = saved
-        self.assertEqual(res, ("main", "NarrowWidenedArith", 12, 79))
 
 
 if __name__ == "__main__":

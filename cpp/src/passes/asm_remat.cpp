@@ -280,12 +280,12 @@ class Pass {
       : ctx_(ctx),
         slots_(zp_slot_symbols != nullptr ? *zp_slot_symbols : SymbolAddrs{}),
         runtime_(runtime_zp_addrs(ctx)),
-        private_(collect_private_statics(prog)) {}
+        unaliased_statics_(collect_unaliased_statics(prog)) {}
 
   void rewrite_function(ir::Function& fn) const;
 
  private:
-  static NameSet collect_private_statics(const ir::Program& prog);
+  static NameSet collect_unaliased_statics(const ir::Program& prog);
 
   void rewrite_uses(InstrVec& out, const NameSet& writable) const;
   std::vector<std::size_t> eligible_uses(const InstrVec& out, std::size_t i,
@@ -309,10 +309,12 @@ class Pass {
   const AsmContext& ctx_;
   SymbolAddrs slots_;
   SymbolAddrs runtime_;
-  NameSet private_;
+  // The internal statics whose address the unit never takes, which no
+  // store through a pointer can reach.
+  NameSet unaliased_statics_;
 };
 
-NameSet Pass::collect_private_statics(const ir::Program& prog) {
+NameSet Pass::collect_unaliased_statics(const ir::Program& prog) {
   NameSet statics;
   NameSet taken;
   for (const auto& tl : prog.top_level) {
@@ -485,7 +487,7 @@ bool Pass::store_may_reach(const ir::Type_operand& dst,
   if (isa<ir::Indirect, ir::IndirectY, ir::IndirectZp, ir::IndirectZpY>(dst) ||
       (idx != nullptr && idx->name.empty())) {
     const std::string& name = operand_name(recomp);
-    return name.empty() || private_.find(name) == private_.end();
+    return name.empty() || unaliased_statics_.find(name) == unaliased_statics_.end();
   }
   if (isa<ir::Data, ir::IndexedData>(dst)) {
     return false;

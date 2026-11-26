@@ -36,8 +36,8 @@ struct TextStageResult {
 // Runs `stage` on `text`, the preprocessor's output, with `-O` when
 // `optimize` is set. `inline_calls` is false when `--tac -O` doesn't
 // inline the calls of small `static` functions, as for a test that
-// patches `compile.inline_functions` (tests/no_inlining.py). Throws the
-// `CompileError` of the pass that rejects the program.
+// sets `compile.inline_small_functions` to False (tests/no_inlining.py).
+// Throws the `CompileError` of the pass that rejects the program.
 TextStageResult run_text_stage(TextStage stage, const std::string& text, bool optimize,
                                bool inline_calls);
 

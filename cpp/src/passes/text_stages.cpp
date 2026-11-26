@@ -30,9 +30,8 @@ TextStageResult run_text_stage(TextStage stage, const std::string& text, bool op
   type_checking::CheckedProgram tables = type_checking::check_program(prog);
   tac_ast::Program tac = c99_to_tac::translate_program(prog, tables.symbols, &tables.types);
   if (optimize) {
-    // `_run_stage("tac")` calls the module's `inline_functions`, which
-    // tests/no_inlining.py replaces with a function that returns the
-    // TAC unchanged.
+    // `_run_stage("tac")` skips the inliner when a test has set
+    // `compile.inline_small_functions` to False (tests/no_inlining.py).
     if (inline_calls) {
       tac = inline_functions(std::move(tac), tables.symbols, prog);
     }

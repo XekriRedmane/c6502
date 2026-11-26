@@ -2225,8 +2225,9 @@ inlines.
 `_run_stage("codegen", text)`, which the tests call with the
 preprocessor's output, sends the text with `preprocess` off. The
 request says whether `-O`
-inlines, which is false when a test has patched
-`compile.inline_functions` (tests/no_inlining.py, `compile._inlining`).
+inlines, which is false when a test has set
+`compile.inline_small_functions` to False (tests/no_inlining.py,
+`compile._inlining`).
 The simulator harness sends the source text too and takes back the
 finished asm program, which it assembles. The program and its tables
 stay in C++, since Python reads nothing of them afterward.
@@ -2287,7 +2288,7 @@ Under the variable, compile.py's `main` runs the command through
 two sides talk in frames (`C6502CPP_FRAMES=1`), which
 compile_command.cpp's `framed` describes. Python sends a header line
 with the include directory, the terminal's width that `shutil` gives,
-whether `-O` inlines (tests/no_inlining.py's patch reaches C++ this
+whether `-O` inlines (tests/no_inlining.py's flag reaches C++ this
 way), and whether the IR checks are on. The C++ side sends each write
 as a frame, which Python writes to `sys.stdout` or `sys.stderr`, so the
 two streams keep their order in a test that sends both to one

@@ -66,17 +66,21 @@ def _cpp_backend() -> bool:
     return os.environ.get("C6502_CPP_BACKEND") == "1"
 
 
+# Whether `-O` inlines the calls of small `static` functions
+# (passes/optimization/inline_functions.py). A test that checks a
+# function's own code sets it to False for its compiles
+# (tests/no_inlining.py). It is defined before anything this module
+# imports, so the shim that compile.py becomes once the Python compiler
+# is removed keeps it.
+inline_small_functions = True
+
+
 def _inlining() -> bool:
-    """Whether `-O` inlines the calls of small `static` functions. A
-    test that checks a function's own code turns that off by patching
-    `compile.inline_functions`, which `translate_for_codegen` calls
-    (tests/no_inlining.py), and the request to the C++ port carries the
-    choice, since the C++ side runs its own inliner. On the command
-    line's early path under `C6502_CPP_BACKEND=1` the module stops before
-    it imports the inliner, and both names are missing, so nothing has
-    patched it."""
-    module = globals()
-    return module.get("inline_functions") is module.get("_INLINER")
+    """Whether `-O` inlines the calls of small `static` functions, as
+    `inline_small_functions` says. `translate_for_codegen` and
+    `_run_stage` read it, and the request to the C++ port carries it,
+    since the C++ side runs its own inliner."""
+    return inline_small_functions
 
 
 def _cpp_compile(
@@ -641,9 +645,6 @@ from passes.type_checking import (
 from c99_to_tac import translate_program as translate_to_tac
 from passes.return_in_zero_page import return_pointers_in_zero_page
 from passes.optimization.inline_functions import inline_functions
-# The inliner itself, which `_inlining` tells apart from the stand-in
-# that tests/no_inlining.py patches in as `inline_functions`.
-_INLINER = inline_functions
 from passes.constant_store_order import apply_constant_store_order
 from passes.shared_tails import apply_shared_tails
 from passes.outline_runs import apply_outline_runs
@@ -973,7 +974,8 @@ def translate_for_codegen(prog, symbols, types, optimize: bool):
     simulator harness both start their compiles here."""
     tac = translate_to_tac(prog, symbols, types)
     if optimize:
-        tac = inline_functions(tac, symbols, prog)
+        if _inlining():
+            tac = inline_functions(tac, symbols, prog)
         tac = return_pointers_in_zero_page(tac, symbols)
     return tac
 
@@ -1005,7 +1007,8 @@ def _run_stage(
         )
         tac = translate_to_tac(prog, symbols, types)
         if optimize:
-            tac = inline_functions(tac, symbols, prog)
+            if _inlining():
+                tac = inline_functions(tac, symbols, prog)
             tac = optimize_tac(tac, symbols)
         return pretty(tac) + "\n"
     if stage == "codegen":

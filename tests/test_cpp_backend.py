@@ -635,7 +635,7 @@ class TestTrees(unittest.TestCase):
                 self.assertEqual(got[0], got[1])
 
     def test_tac_without_inlining(self):
-        # tests/no_inlining.py's patch of `compile.inline_functions`
+        # tests/no_inlining.py's `compile.inline_small_functions`
         # reaches the C++ side's `--tac -O`.
         import compile
         source = (
@@ -1115,7 +1115,7 @@ class TestCommandLine(unittest.TestCase):
         self.assertEqual(raised[0], "FileNotFoundError")
 
     def test_main_in_process_without_inlining(self):
-        # tests/no_inlining.py's patch of `compile.inline_functions`
+        # tests/no_inlining.py's `compile.inline_small_functions`
         # reaches `c6502cpp compile`.
         Path(self.tmp.name, "s.c").write_text(
             "static int small(int x) { return x + 1; }\n"

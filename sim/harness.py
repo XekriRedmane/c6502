@@ -89,9 +89,10 @@ def compile_to_asm(
     import sys
     if os.environ.get("C6502_CPP_BACKEND") == "1":
         # No preprocessor arguments and no file name, as `preprocess`
-        # is called below. A test may have patched compile.py's inliner
-        # (tests/no_inlining.py), and when compile.py isn't loaded,
-        # nothing has patched it, so this doesn't load compile.py.
+        # is called below. A test may have turned off compile.py's
+        # inlining (tests/no_inlining.py), and when compile.py isn't
+        # loaded, nothing has turned it off, so this doesn't load
+        # compile.py.
         import cpp_backend
         loaded = sys.modules.get("compile")
         return cpp_backend.compile_source(

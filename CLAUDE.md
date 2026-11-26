@@ -350,7 +350,7 @@ then the back end's region, the work after it, the link metadata, and
 `asm_emit`. The runtime helpers' HARGS footprints come from the copy
 of rtlib/helpers.py compiled into c6502cpp (cpp/generated/rtlib_helpers.cpp,
 written by tools/rtlib_table.py). The request also holds a flag that is
-false when `compile.inline_functions` has been patched
+false when a test has set `compile.inline_small_functions` to False
 (tests/no_inlining.py), so that such a test's `static` functions stay
 functions in C++ too (`compile._inlining`). The response holds what the
 preprocessor wrote to stderr, which `cpp_backend.py` writes to

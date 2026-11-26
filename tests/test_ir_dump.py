@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import unittest
+from pathlib import Path
 
 import asm_ast
 import c99_ast
@@ -13,7 +14,7 @@ from ir_dump import DumpError, dump, load
 
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_EXAMPLE = os.path.join(_ROOT, "examples", "paint_hud_strip_p1.c")
+_SAMPLES = Path(__file__).resolve().parent / "ir_dump"
 
 
 def cpp_cli() -> str | None:
@@ -76,43 +77,19 @@ _SAMPLE_TEXT = (
 )
 
 
-def _compiled_irs(text: str | None = None):
-    """Returns the c99, TAC, asm, and asm2 programs of the C source
-    `text`, or of an example when it is None, compiled with -O."""
-    import compile as compile_module
-    from preprocessor import preprocess
-    from passes.type_checking import check_program
-    from passes.zp_globals import plan_zero_page, zero_page_in_effect
-
-    if text is None:
-        with open(_EXAMPLE) as f:
-            text = f.read()
-    source = preprocess(text)
-    resolved = compile_module._resolved(source, optimize=True)
-    prog, symbols, types = check_program(resolved)
-    tac = compile_module.translate_for_codegen(prog, symbols, types, True)
-    seen = {}
-    real_lower = compile_module.lower_to_asm2
-
-    def lower(asm):
-        seen["asm"] = asm
-        seen["asm2"] = real_lower(asm)
-        return seen["asm2"]
-
-    compile_module.lower_to_asm2 = lower
-    # The programs are the Python back end's, whose `lower_to_asm2` the
-    # C++ one under C6502_CPP_BACKEND=1 doesn't call.
-    saved_backend = os.environ.pop("C6502_CPP_BACKEND", None)
-    try:
-        zp = plan_zero_page(tac, symbols, types, promote=True)
-        with zero_page_in_effect(zp):
-            compile_module._codegen(prog, symbols, types, True, zp, tac)
-    finally:
-        compile_module.lower_to_asm2 = real_lower
-        if saved_backend is not None:
-            os.environ["C6502_CPP_BACKEND"] = saved_backend
-    return {"c99_ast": prog, "tac_ast": tac, "asm_ast": seen["asm"],
-            "asm2_ast": seen["asm2"]}
+def _sample_irs() -> dict[str, str]:
+    """Returns the dump of each of the four IRs of
+    examples/paint_hud_strip_p1.c compiled with -O, by IR module, as
+    tests/ir_dump/ holds them. The Python compiler wrote them on 25 Nov
+    2026 (the c99 program after the type checker, the TAC from
+    `translate_for_codegen`, and the asm and asm2 programs that
+    `lower_to_asm2` takes and gives), so the test reads the IRs of a real
+    program without a compiler."""
+    return {
+        module: (_SAMPLES / f"paint_hud_strip_p1.{module}.txt").read_bytes()
+        .decode("utf-8")
+        for module in ("c99_ast", "tac_ast", "asm_ast", "asm2_ast")
+    }
 
 
 class TestFormat(unittest.TestCase):
@@ -179,24 +156,23 @@ class TestFormat(unittest.TestCase):
 
 
 class TestRealPrograms(unittest.TestCase):
-    """Dumps and reads back the four IRs of a compiled example, and,
+    """Reads and dumps again the four IRs of a compiled example, and,
     when the C++ CLI is built, has it read and dump each one again."""
 
     @classmethod
     def setUpClass(cls):
-        cls.irs = _compiled_irs()
+        cls.texts = _sample_irs()
 
     def test_python_round_trip(self):
-        for module, prog in self.irs.items():
+        for module, text in self.texts.items():
             with self.subTest(module=module):
-                text = dump(prog)
-                back = load(text, module)
-                self.assertEqual(back, prog)
-                self.assertEqual(dump(back), text)
+                prog = load(text, module)
+                self.assertEqual(dump(prog), text)
+                self.assertEqual(load(dump(prog), module), prog)
 
     @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
     def test_cpp_reads_and_writes_the_same_bytes(self):
-        texts = {m: dump(p) for m, p in self.irs.items()}
+        texts = dict(self.texts)
         texts["asm_ast sample"] = _SAMPLE_TEXT
         for key, text in texts.items():
             module = key.split()[0]

@@ -9,10 +9,9 @@ being updated to match.
 The order of the passes comes from `c6502cpp pass-order`
 (cpp/src/pass_order.h), which lists the passes of each of the
 optimizer's drivers in the order a compile runs them. A pass is
-matched to its document through its module in `_MODULES`, the dotted
-name of the Python module that defined it, for which cpp/src holds a
-C++ source of the same path (`passes.asm_licm` and
-cpp/src/passes/asm_licm.cpp). A module's last name component is the
+matched to its document through its module in `_MODULES`, a dotted
+name for the C++ source of the same path under cpp/src that defines
+it (`passes.asm_licm` for cpp/src/passes/asm_licm.cpp). A module's last name component is the
 document's file stem, except for the modules in `_STEM_ALIASES`."""
 
 import re
@@ -271,7 +270,7 @@ def _read_readme(test: unittest.TestCase) -> None:
     alpha_start = text.index("## Alphabetical list")
     order_start = text.index("## Pipeline order")
     peep_start = text.index(
-        "The peephole fixed point (`compile._peephole_fixedpoint`)",
+        "The peephole fixed point (cpp/src/passes/peephole_fixedpoint.cpp)",
     )
     unopt_start = text.index("### Without `-O`")
     test.alpha = _LINK.findall(text[alpha_start:order_start])

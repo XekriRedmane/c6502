@@ -1,11 +1,11 @@
 # Self-store drop
 
 `apply_self_store_drop` in
-[passes/self_store_drop.py](../../passes/self_store_drop.py) deletes
-the `STA M` of an `LDA M; STA M` pair, which writes a byte back to
-the place it was just read from. It runs in the peephole fixed point,
-which both pipelines run, but no program in the test corpus makes it
-fire in the unoptimized pipeline.
+[cpp/src/passes/self_store_drop.h](../../cpp/src/passes/self_store_drop.h)
+deletes the `STA M` of an `LDA M; STA M` pair, which writes a byte
+back to the place it was just read from. It runs in the peephole fixed
+point, which both pipelines run, but no program in the test corpus
+makes it fire in the unoptimized pipeline.
 
 The store writes M's own value back to M and changes no register or
 flag, so it can go regardless of whether M is read later. That saves

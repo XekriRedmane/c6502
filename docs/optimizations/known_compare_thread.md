@@ -1,7 +1,7 @@
 # Jump threading on known compares
 
 `thread_known_compares` in
-[passes/optimization/known_compare_thread.py](../../passes/optimization/known_compare_thread.py)
+[cpp/src/passes/optimization/known_compare_thread.h](../../cpp/src/passes/optimization/known_compare_thread.h)
 sends a TAC jump past the equality tests at its target that the jump's
 own path has decided. It runs under `-O`, after SSA destruction, in
 the fixed point with [branching directly on `&&` and

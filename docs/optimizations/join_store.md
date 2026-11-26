@@ -1,6 +1,7 @@
 # Join store
 
-`apply_join_store` in [passes/join_store.py](../../passes/join_store.py)
+`apply_join_store` in
+[cpp/src/passes/join_store.h](../../cpp/src/passes/join_store.h)
 handles a value that each arm of a branch leaves in one of the
 function's own zero-page slots, and that the code where the arms join
 copies into memory with `LDA t; STA M`. Each arm stores the value

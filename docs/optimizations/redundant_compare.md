@@ -1,7 +1,7 @@
 # Redundant compare
 
 `apply_redundant_compare` in
-[passes/redundant_compare.py](../../passes/redundant_compare.py)
+[cpp/src/passes/redundant_compare.h](../../cpp/src/passes/redundant_compare.h)
 deletes a compare at a label when the only way to reach the label is
 a branch right after an identical compare. It runs in the peephole
 fixed point, which both pipelines run, but no program in the test
@@ -179,11 +179,11 @@ C for the carry of a byte add, in Zork's `branch_to_offset`
 the add and the compare, as long as none writes `m`. The add sets N
 and Z from the sum where the compare set them from the difference, so
 N and Z must be dead after the branch on both paths
-(`_carry_of_add`). V comes out the same, since `CMP` leaves it alone.
+(`carry_of_add`). V comes out the same, since `CMP` leaves it alone.
 It saves 2 bytes and 3 cycles with `m` in zero page.
 
 A compare with $80 or 1 whose branch on C can branch on N or Z goes
-too (`_compares_as_flags`). `CMP #$80` sets C to bit 7 of the
+too (`compares_as_flags`). `CMP #$80` sets C to bit 7 of the
 register, which N holds when the instruction that set the register
 set N from it, so `CMP #$80; BCS` is `BMI` and `BCC` is `BPL`. `CMP
 #1` sets C when the register isn't 0, which Z tells, so `BCC` is `BEQ`
@@ -205,7 +205,7 @@ group in `ai_choose_target`. Both listings are from two compiles,
 before and after the rewrite was added.
 
 A signed byte compare of a value that a branch has shown to be
-nonnegative drops its overflow test (`_signed_compare_of_nonnegative`).
+nonnegative drops its overflow test (`signed_compare_of_nonnegative`).
 The compare `SEC; SBC #k; BVC L; EOR #$80; L: BMI T` with k from 0 to
 128 can't overflow when A is from 0 to 127, so V is clear, the `BVC`
 is always taken, and the `EOR` never runs. A is from 0 to 127 when

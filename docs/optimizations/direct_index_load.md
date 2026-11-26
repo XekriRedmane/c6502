@@ -1,7 +1,7 @@
 # Direct load into X or Y
 
 `apply_direct_index_load` in
-[passes/direct_index_load.py](../../passes/direct_index_load.py)
+[cpp/src/passes/direct_index_load.h](../../cpp/src/passes/direct_index_load.h)
 rewrites a load into A followed by `TAX` or `TAY` as a single `LDX` or
 `LDY`, when nothing reads A afterwards. It runs in the peephole fixed
 point, in both the optimized and the unoptimized pipelines.

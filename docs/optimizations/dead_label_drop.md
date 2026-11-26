@@ -1,10 +1,10 @@
 # Dead label drop
 
 `apply_dead_label_drop` in
-[passes/dead_label_drop.py](../../passes/dead_label_drop.py) deletes
-every label in a function that no jump, branch, or phi argument
-names. It runs in the peephole fixed point, in both the optimized and
-the unoptimized pipelines, just before
+[cpp/src/passes/dead_label_drop.h](../../cpp/src/passes/dead_label_drop.h)
+deletes every label in a function that no jump, branch, or phi
+argument names. It runs in the peephole fixed point, in both the
+optimized and the unoptimized pipelines, just before
 [unreachable code drop](unreachable_drop.md) and
 [branch inversion](branch_invert.md).
 

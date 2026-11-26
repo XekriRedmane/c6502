@@ -1,7 +1,7 @@
 # A byte written back through its pointer
 
 `apply_pointer_self_store_drop` in
-[passes/pointer_self_store.py](../../passes/pointer_self_store.py)
+[cpp/src/passes/pointer_self_store.h](../../cpp/src/passes/pointer_self_store.h)
 follows, within a basic block, which bytes hold a byte read through a
 zero-page pointer, `(N),Y` with `Y = k`. It makes two rewrites.
 

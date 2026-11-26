@@ -1,7 +1,7 @@
 # Byte-granular dead-code elimination
 
 `byte_dce` in
-[passes/optimization_asm/byte_dce.py](../../passes/optimization_asm/byte_dce.py)
+[cpp/src/passes/optimization_asm/byte_dce.h](../../cpp/src/passes/optimization_asm/byte_dce.h)
 drops each `Mov` or `Phi` that writes a byte of a temporary nothing
 reads. It runs in the asm SSA fixed point inside `optimize_program`,
 after the two copy propagations in each round, and repeats internally

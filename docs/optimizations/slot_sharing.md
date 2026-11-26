@@ -1,9 +1,10 @@
 # Values kept in a callee's parameter bytes
 
-`find_shares` in [passes/slot_sharing.py](../../passes/slot_sharing.py)
-runs under `-O` after ABI selection and before the parameter
-slots get addresses. It finds values that can live in the zero-page
-bytes of a callee's parameter instead of in the caller's own pool:
+`find_shares` in
+[cpp/src/passes/slot_sharing.h](../../cpp/src/passes/slot_sharing.h)
+runs under `-O` after ABI selection and before the parameter slots get
+addresses. It finds values that can live in the zero-page bytes of a
+callee's parameter instead of in the caller's own pool:
 
 - A parameter that a function passes on unchanged to another
   function's parameter. The two slots get the same address, so the

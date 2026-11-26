@@ -1,11 +1,11 @@
 # Redundant store elimination
 
 `apply_redundant_store_elimination` in
-[passes/redundant_store.py](../../passes/redundant_store.py) drops a
-copy `LDA S; STA D` when D already holds the value of S, because the
-same copy ran earlier in the block and nothing since has written S
-or D. It runs in the peephole fixed point, in both the optimized and
-the unoptimized pipelines, right after
+[cpp/src/passes/redundant_store.h](../../cpp/src/passes/redundant_store.h)
+drops a copy `LDA S; STA D` when D already holds the value of S,
+because the same copy ran earlier in the block and nothing since has
+written S or D. It runs in the peephole fixed point, in both the
+optimized and the unoptimized pipelines, right after
 [redundant load elimination](redundant_load.md).
 
 The common source is pointer staging. Each dereference of a pointer
@@ -70,8 +70,8 @@ or `p`, so the store leaves both records in place.
 
 When A is read after the copy, the pass drops only the `STA` and
 keeps the `LDA`. The unit test
-`test_load_kept_when_a_is_read_after_the_pair` in
-[tests/test_redundant_store.py](../../tests/test_redundant_store.py)
+`TestRedundantStoreKeepsLiveLoad.test_load_kept_when_a_is_read_after_the_pair`
+in [cpp/tests/test_redundant_store.cpp](../../cpp/tests/test_redundant_store.cpp)
 has this shape, where the copy reloads the minuend of a following
 `SBC`.
 

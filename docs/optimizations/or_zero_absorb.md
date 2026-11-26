@@ -1,7 +1,7 @@
 # OR-with-zero absorb
 
 `absorb_zero_load` in
-[passes/optimization_asm/or_zero_absorb.py](../../passes/optimization_asm/or_zero_absorb.py)
+[cpp/src/passes/optimization_asm/or_zero_absorb.h](../../cpp/src/passes/optimization_asm/or_zero_absorb.h)
 rewrites `LDA #0; ORA x` as `LDA x`. It runs last in each round of
 the asm SSA fixed point inside `optimize_program`, after
 `byte_dce`, so it runs before move coalescing and register

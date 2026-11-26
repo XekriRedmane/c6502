@@ -1,6 +1,7 @@
--- Reference documentation. The lexer implementation is in c99.lark.
+-- Reference documentation. The lexer's terminals are in
+-- cpp/generated/c99_lalr.cpp, and cpp/src/lark_lexer.h runs them.
 -- C23 §6.4.4.2 adds the binary constant and the digit separator, a
--- `'` between two digits. pp_numbers.py reads the value and reports
+-- `'` between two digits. cpp/src/pp_numbers.h reads the value and reports
 -- a separator in any other place.
 
 integer-constant:

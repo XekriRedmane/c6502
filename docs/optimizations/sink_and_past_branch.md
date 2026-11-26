@@ -1,7 +1,7 @@
 # Sinking an AND past a bit test
 
 `SinkAndPastBranch` in
-[passes/optimization/sink_and_past_branch.py](../../passes/optimization/sink_and_past_branch.py)
+[cpp/src/passes/optimization/sink_and_past_branch.h](../../cpp/src/passes/optimization/sink_and_past_branch.h)
 moves the computation of `x & C`, on a byte `x`, from just before a
 `JumpIfMasked` that tests `x` into the start of both successor
 blocks. It runs in the TAC fixed-point loop, after

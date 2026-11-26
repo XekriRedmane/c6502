@@ -1,7 +1,7 @@
 # Backward copy propagation
 
 `backward_copy_propagate` in
-[passes/optimization_asm/backward_copy_propagation.py](../../passes/optimization_asm/backward_copy_propagation.py)
+[cpp/src/passes/optimization_asm/backward_copy_propagation.h](../../cpp/src/passes/optimization_asm/backward_copy_propagation.h)
 makes a temporary's definition store straight to the memory the
 temporary is later copied to, and deletes the copy. It runs in the
 asm SSA fixed point inside `optimize_program`, after

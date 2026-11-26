@@ -1,11 +1,11 @@
 # Round-trip load drop
 
 `apply_round_trip_load_drop` in
-[passes/round_trip_load.py](../../passes/round_trip_load.py) deletes
-the `LDA M` of an `STA M; LDA M` pair when the instruction before the
-store already set N and Z from A. It runs in the peephole fixed
-point, which both pipelines run, but no program in the test corpus
-makes it fire in the unoptimized pipeline.
+[cpp/src/passes/round_trip_load.h](../../cpp/src/passes/round_trip_load.h)
+deletes the `LDA M` of an `STA M; LDA M` pair when the instruction
+before the store already set N and Z from A. It runs in the peephole
+fixed point, which both pipelines run, but no program in the test
+corpus makes it fire in the unoptimized pipeline.
 
 After `STA M`, A and M hold the same byte, so a following `LDA M`
 leaves A as it was. Its only other effect is to set N and Z from

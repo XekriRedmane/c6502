@@ -1,10 +1,10 @@
 # Branch threading on a known flag
 
 `apply_branch_thread` in
-[passes/branch_thread.py](../../passes/branch_thread.py) points a
-branch whose target is another branch on the same flag at where that
-second branch goes. It runs in the peephole fixed point, which both
-pipelines run.
+[cpp/src/passes/branch_thread.h](../../cpp/src/passes/branch_thread.h)
+points a branch whose target is another branch on the same flag at
+where that second branch goes. It runs in the peephole fixed point,
+which both pipelines run.
 
 A path that takes `BCS L` arrives at `L` with C set. If the first
 instruction at `L` is `BCC M`, that path never takes it, so the `BCS`

@@ -1,7 +1,7 @@
 # Sign-bit test without AND
 
 `apply_and_sign_bit_branch` in
-[passes/and_sign_bit_branch.py](../../passes/and_sign_bit_branch.py)
+[cpp/src/passes/and_sign_bit_branch.h](../../cpp/src/passes/and_sign_bit_branch.h)
 turns `LDA M; AND #$80; BEQ` into `LDA M; BPL` and `LDA M; AND #$80;
 BNE` into `LDA M; BMI`. It runs in the peephole fixed point, which
 both pipelines run, but no program in the test corpus makes it fire
@@ -93,7 +93,7 @@ AND #$80; BEQ .if_end@0`.
 The `LDA` needn't be right before the `AND`. When the instruction that
 last wrote A set N from it, with only stores and conditional branches
 between, and a label in between is reached that way on every path in
-(`redundant_compare._flags_from`), `AND #$80; BEQ` / `BNE` is `BPL` /
+(`flags_from` in cpp/src/passes/redundant_compare.h), `AND #$80; BEQ` / `BNE` is `BPL` /
 `BMI`. A must be dead on both paths, and N and Z too, since without the
 `AND`, Z comes from all of A. In Zork's `ascii_to_zchar`
 (examples/zork/input.c), `a = get_alphabet_for_char(c) -

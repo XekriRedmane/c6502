@@ -1,11 +1,12 @@
 # Row-address tables
 
 `apply_row_address_tables` in
-[passes/optimization/row_address_tables.py](../../passes/optimization/row_address_tables.py)
+[cpp/src/passes/optimization/row_address_tables.h](../../cpp/src/passes/optimization/row_address_tables.h)
 computes the address of a row of a 2-D array by looking it up in a
 table of the rows' addresses, when the rows aren't a power of two
-bytes long. `compile.optimized_asm` calls it on the whole program
-before the TAC optimizer, so its input is the TAC from `c99_to_tac`.
+bytes long. `optimized_tac` in
+cpp/src/passes/translate_for_codegen.cpp calls it on the whole
+program before the TAC optimizer, so its input is the TAC from `c99_to_tac`.
 It doesn't run in the unoptimized pipeline.
 
 `A[i][j]` on an array of N rows of R bytes, more than 255 bytes in

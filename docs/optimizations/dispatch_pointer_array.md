@@ -1,11 +1,11 @@
 # Dispatch on a small pointer table
 
 `dispatch_const_pointer_arrays` in
-[passes/optimization/dispatch_pointer_array.py](../../passes/optimization/dispatch_pointer_array.py)
+[cpp/src/passes/optimization/dispatch_pointer_array.h](../../cpp/src/passes/optimization/dispatch_pointer_array.h)
 rewrites `arr[i][j]`, where `arr` is a small file-scope table of
 pointers to other statics, as a compare-and-branch on `i` that reads
-`target_k[j]` directly in each arm. `compile.optimized_asm` calls it
-on the whole program right after the TAC optimizer returns, so its
+`target_k[j]` directly in each arm. `optimized_tac` in
+cpp/src/passes/translate_for_codegen.cpp calls it on the whole program right after the TAC optimizer returns, so its
 input is the TAC after SSA destruction. It doesn't run in the
 unoptimized pipeline.
 

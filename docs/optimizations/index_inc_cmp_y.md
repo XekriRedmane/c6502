@@ -1,9 +1,9 @@
 # INY and CPY for an incremented table byte
 
 `apply_index_inc_cmp_y` in
-[passes/index_inc_cmp_y.py](../../passes/index_inc_cmp_y.py) turns a
-table byte plus or minus one, staged through a temporary and then
-compared, into `LDY`, `INY` or `DEY`, and `CPY`. It runs in the
+[cpp/src/passes/index_inc_cmp_y.h](../../cpp/src/passes/index_inc_cmp_y.h)
+turns a table byte plus or minus one, staged through a temporary and
+then compared, into `LDY`, `INY` or `DEY`, and `CPY`. It runs in the
 peephole fixed point, in both pipelines, but only fires with
 `-O`. The unoptimized pipeline keeps its temporaries on the
 soft stack, and the pass matches only a zero-page or absolute one.

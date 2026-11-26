@@ -1,9 +1,9 @@
 # Memory constant propagation
 
 `apply_mem_const_prop` in
-[passes/mem_const_prop.py](../../passes/mem_const_prop.py) tracks
-which memory bytes hold a known constant within a basic block, and
-replaces a later read of such a byte with the constant as an
+[cpp/src/passes/mem_const_prop.h](../../cpp/src/passes/mem_const_prop.h)
+tracks which memory bytes hold a known constant within a basic block,
+and replaces a later read of such a byte with the constant as an
 immediate operand. It runs in the peephole fixed point, in both the
 optimized and the unoptimized pipelines, just before [constant AND
 and ORA fold](const_arith_fold.md). Across the chapter test corpus it

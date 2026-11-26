@@ -1,7 +1,7 @@
 # Moving a constant out of an offset
 
 `ReassocOffsetConstant` in
-[passes/optimization/reassoc_offset.py](../../passes/optimization/reassoc_offset.py)
+[cpp/src/passes/optimization/reassoc_offset.h](../../cpp/src/passes/optimization/reassoc_offset.h)
 rewrites the address `p + (x + k)` as `(p + x) + k`, where `p` is a
 pointer variable and `k` a constant. It runs in the TAC fixed-point
 loop, right after [constant combining](reassoc_const.md). It doesn't

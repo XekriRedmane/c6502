@@ -1,7 +1,7 @@
 # Dead static elimination
 
 `apply_dead_static_elimination` in
-[passes/optimization_asm/dead_static.py](../../passes/optimization_asm/dead_static.py)
+[cpp/src/passes/optimization_asm/dead_static.h](../../cpp/src/passes/optimization_asm/dead_static.h)
 drops each internal-linkage static object that no instruction and no
 initializer refers to. It runs at the end of each call of
 `optimize_program`, after every function has been through the asm SSA

@@ -1,10 +1,10 @@
 # Store X or Y directly
 
 `apply_via_a_store_fold` in
-[passes/via_a_store_fold.py](../../passes/via_a_store_fold.py) turns
-`TXA; STA M` into `STX M` and `TYA; STA M` into `STY M`. It runs in
-the peephole fixed point, which both pipelines run, but no program in
-the test corpus makes it fire in the unoptimized pipeline.
+[cpp/src/passes/via_a_store_fold.h](../../cpp/src/passes/via_a_store_fold.h)
+turns `TXA; STA M` into `STX M` and `TYA; STA M` into `STY M`. It runs
+in the peephole fixed point, which both pipelines run, but no program
+in the test corpus makes it fire in the unoptimized pipeline.
 
 `STX` and `STY` store an index register without going through A, so
 the transfer is unnecessary when nothing afterward reads the copy in

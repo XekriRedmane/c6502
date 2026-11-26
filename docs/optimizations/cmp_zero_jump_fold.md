@@ -1,7 +1,7 @@
 # Comparison and jump fold
 
 `CMP_ZERO_RULE` in
-[passes/optimization/cmp_zero_jump_fold.py](../../passes/optimization/cmp_zero_jump_fold.py)
+[cpp/src/passes/optimization/cmp_zero_jump_fold.h](../../cpp/src/passes/optimization/cmp_zero_jump_fold.h)
 fuses a comparison with the conditional jump that reads its result
 into one direct conditional jump. It runs in the TAC fixed-point loop
 as part of the `fold_producer_jumps` `RuleSet`, together with the
@@ -67,7 +67,7 @@ so the `JumpIfCmp` always jumps when its operator holds.
 - For `uint16_t e`, `e > 0xFF` becomes `JumpIfCmp(<=, @0.e, 255u,
   .if_end@0)`. `tac_to_asm` lowers an unsigned compare of 2 bytes or
   more with a constant as `e < k` or `e >= k` with the constant on the
-  right (`_variable_first`), here `e >= 0x100`, whose low byte's
+  right (`variable_first`), here `e >= 0x100`, whose low byte's
   subtract of 0 the peepholes drop. The compare of the high byte with
   1 that's left becomes a test of it ([redundant
   compare](redundant_compare.md)), so the final code is `TXA; BEQ
@@ -156,7 +156,7 @@ Copy propagation doesn't remove such a `Copy` when something else
 reads the extend's result, since the `Copy` changes the signedness,
 which `<` takes its sense from. So every narrowing looks through a
 `Copy` from a variable to the extend behind it
-(`_try_narrow_through_zero_extend`). A `Copy` never changes the
+(`narrow_through_zero_extend`). A `Copy` never changes the
 width, and the extend's value is 0 to 255 as an `int` or an
 `unsigned int`. Lode Runner's `editor_clear_high_scores` clears its
 table with `for (uint8_t i = 0; i < sizeof HI_SCORES; i++)`, where
@@ -235,7 +235,7 @@ CMP x; BCC`, and leave `x` to be loaded again by whatever reads it
 next. For a 1-byte `JumpIfCmp` the lowering first moves a constant on
 the left to the right, mirroring the operator, and then rewrites `x >
 k` as `x >= k + 1` and `x <= k` as `x < k + 1`
-(`tac_to_asm._constant_on_right`). `if (c >= 'A' && c <= 'Z') c |=
+(`constant_on_right` in cpp/src/tac_to_asm_compare.cpp). `if (c >= 'A' && c <= 'Z') c |=
 0x20;` becomes `LDA c; CMP #$41; BCC end; CMP #$5B; BCS end; ORA
 #$20`, with `c` in A throughout, where the second test had been `LDA
 #$5A; CMP c; BCC end` and the `ORA` had needed `LDA c` before it. The
@@ -246,7 +246,8 @@ chain of `SBC`s is as long either way.
 ## Lowering an unsigned ordering kept as a value
 
 A comparison whose result is kept, rather than jumped on, is lowered
-by `tac_to_asm._translate_unsigned_ordering` when it's unsigned: a
+by `translate_unsigned_ordering` (cpp/src/tac_to_asm_arith.cpp) when
+it's unsigned: a
 chain of `SBC`s, and `LDA #0; ROL A` to turn C into 0 or 1. The `SBC`
 sets C when its left operand is at least its right, which answers `>=`
 directly and `<` only inverted. For `a < b`, which `a > b` becomes by

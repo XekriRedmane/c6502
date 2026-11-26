@@ -1,11 +1,12 @@
 # Tail merge
 
-`apply_tail_merge` in [passes/tail_merge.py](../../passes/tail_merge.py)
-replaces a branch over a return sequence with a branch to another
-copy of the same sequence. It runs in the peephole fixed point, which
-both pipelines run, but it can't fire in the unoptimized pipeline,
-where every function exits through the compound `Ret` atom and the
-pass matches only sequences that end in the bare `Return`.
+`apply_tail_merge` in
+[cpp/src/passes/tail_merge.h](../../cpp/src/passes/tail_merge.h)
+replaces a branch over a return sequence with a branch to another copy
+of the same sequence. It runs in the peephole fixed point, which both
+pipelines run, but it can't fire in the unoptimized pipeline, where
+every function exits through the compound `Ret` atom and the pass
+matches only sequences that end in the bare `Return`.
 
 A function with several early returns of the same value ends each
 one with the same few instructions, such as `LDX #$00; TXA; RTS` for

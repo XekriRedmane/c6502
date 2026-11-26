@@ -1,12 +1,13 @@
 # Tables split into low and high bytes
 
 `apply_split_tables` in
-[passes/optimization/split_tables.py](../../passes/optimization/split_tables.py)
+[cpp/src/passes/optimization/split_tables.h](../../cpp/src/passes/optimization/split_tables.h)
 stores a `static const` table of 2-byte elements (or wider ones) as
 the low bytes of every element followed by the high bytes, when the
 program reads it only by an index that fits in a byte. Each read then
 uses the element number as the index, with no shift.
-`compile.optimized_asm` calls it on the whole program right after the
+`optimized_tac` in cpp/src/passes/translate_for_codegen.cpp calls it
+on the whole program right after the
 [dispatch on a small pointer table](dispatch_pointer_array.md), so its
 input is the TAC after SSA destruction. It doesn't run in the
 unoptimized pipeline.

@@ -1,13 +1,13 @@
 # Asm loop-invariant store hoisting
 
-`apply_licm` in [passes/asm_licm.py](../../passes/asm_licm.py) moves
-a store that writes the same value on every iteration of a loop to
-just before the loop. It runs once, after
-[prologue synthesis](prologue_synthesis.md) and before the first
-peephole fixed point, under `-O` only. Inside each function
-it repeats until nothing more moves, trying the innermost loops
-first, so a store hoisted out of an inner loop can then leave the
-loop around it.
+`apply_licm` in
+[cpp/src/passes/asm_licm.h](../../cpp/src/passes/asm_licm.h) moves a
+store that writes the same value on every iteration of a loop to just
+before the loop. It runs once, after [prologue
+synthesis](prologue_synthesis.md) and before the first peephole fixed
+point, under `-O` only. Inside each function it repeats until nothing
+more moves, trying the innermost loops first, so a store hoisted out
+of an inner loop can then leave the loop around it.
 
 The pass moves three shapes, each a store into a `Data` or `ZP`
 cell. They are `Mov(Imm, M)`, `LDA #c; STA M`, and `LDA src; STA M`

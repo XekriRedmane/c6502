@@ -1,7 +1,7 @@
 # Y known zero after a DEY loop
 
 `apply_dec_branch_indirect_y_fold` in
-[passes/dec_branch_indirect_y_fold.py](../../passes/dec_branch_indirect_y_fold.py)
+[cpp/src/passes/dec_branch_indirect_y_fold.h](../../cpp/src/passes/dec_branch_indirect_y_fold.h)
 drops the `LDY #$00` in front of a `(DPTR),Y` access that directly
 follows the fall-through of a `DEY; BNE` loop. It runs in the peephole
 fixed point, in both pipelines, but only fires with `-O`,

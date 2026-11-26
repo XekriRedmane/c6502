@@ -7,6 +7,14 @@ surfaced the bugs and gaps below. Each one is also documented inline
 in `tests/test_sim_asm.py`'s `SKIPS` table with a category string;
 this file fleshes out the *why* and a sketch of the fix.
 
+The findings date from the Python compiler, and the modules and
+functions they name are that compiler's. Each of those modules is
+now the C++ file of the same path under cpp/src, whose functions keep
+their names without a leading underscore ([cpp_port.md](cpp_port.md)),
+and the tests of the removed modules are now the cases in cpp/tests,
+such as cpp/tests/test_long_branches_calls.cpp for
+`tests/test_long_branches.py`.
+
 Numbers are at the time of the simulator's first run:
 
   402 chapter files pass through the asm sim

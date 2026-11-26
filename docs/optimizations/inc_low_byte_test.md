@@ -1,7 +1,7 @@
 # Testing the low byte after an INC chain
 
 `apply_inc_low_byte_test` in
-[passes/inc_low_byte_test.py](../../passes/inc_low_byte_test.py)
+[cpp/src/passes/inc_low_byte_test.h](../../cpp/src/passes/inc_low_byte_test.h)
 folds a test of the low byte of a value just incremented by an
 [INC chain](inc_peephole.md) into the chain's first branch. It runs
 in the peephole fixed point, which both pipelines run, but only the

@@ -1,4 +1,5 @@
--- Reference documentation. The lexer implementation is in c99.lark.
+-- Reference documentation. The lexer's terminals are in
+-- cpp/generated/c99_lalr.cpp, and cpp/src/lark_lexer.h runs them.
 
 character-constant:
     "'" c-char-sequence "'"

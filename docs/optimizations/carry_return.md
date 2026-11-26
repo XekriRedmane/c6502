@@ -1,7 +1,7 @@
 # Carry-flag return peepholes
 
-[passes/carry_return.py](../../passes/carry_return.py) contains three
-peepholes for functions declared
+[cpp/src/passes/carry_return.h](../../cpp/src/passes/carry_return.h)
+contains three peepholes for functions declared
 `[[c6502::return_bool_in_carry]]`, which return their result in
 the carry flag ([attributes.md](../attributes.md) describes the
 attribute). `apply_carry_return_tails`, `apply_carry_const_fold`, and

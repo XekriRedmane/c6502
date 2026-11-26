@@ -1,7 +1,7 @@
 # A loop counted down to 0
 
 `CountLoopsDown` in
-[passes/optimization/count_down.py](../../passes/optimization/count_down.py)
+[cpp/src/passes/optimization/count_down.h](../../cpp/src/passes/optimization/count_down.h)
 makes a loop whose byte counter is read only by its own test and its
 own step count the passes left, down to 0. It runs once after the TAC
 fixed point, in SSA form. It doesn't run in the unoptimized pipeline.

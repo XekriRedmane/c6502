@@ -99,9 +99,10 @@ operand the result is whatever the NMOS 6502's decimal mode produces.
 `__c6502_bcd_add((uint8_t)0x0F, (uint8_t)0x0F)` is `0x14`, for
 example. The compiler folds constants, and the simulator and the TAC
 interpreter compute, with the same model of the CPU, copied from
-py65's `opADC` and `opSBC` (`builtin_functions.adc_byte` and
-`sbc_byte`). `tests/test_bcd_builtins.py` checks that model against
-py65 for every pair of bytes and both carries. For the accumulator and
+py65's `opADC` and `opSBC` (`adc_byte` and `sbc_byte` in
+cpp/src/builtin_functions.h, with a Python copy in
+builtin_functions.py). `tests/test_bcd_builtins.py` checks the Python
+copy against py65 for every pair of bytes and both carries. For the accumulator and
 the carry, py65 gives what the NMOS algorithm in Appendix A of
 6502.org's "Decimal Mode" tutorial gives. That comes from comparing
 the two algorithms, and it hasn't been checked on an NMOS 6502. The

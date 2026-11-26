@@ -1,7 +1,7 @@
 # A widened byte multiplied before the constant
 
 `DistributeConstant` in
-[passes/optimization/distribute_constant.py](../../passes/optimization/distribute_constant.py)
+[cpp/src/passes/optimization/distribute_constant.h](../../cpp/src/passes/optimization/distribute_constant.h)
 rewrites `(x + c) * k` and `(x - c) * k` as `x * k + c * k` and `x * k
 - c * k`, where `x` is a byte zero-extended to the multiply's width
 and `c` and `k` are constants. It runs in the TAC fixed point right

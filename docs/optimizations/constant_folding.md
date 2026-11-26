@@ -1,7 +1,7 @@
 # Constant folding
 
 `ConstantFold` (`constant_fold`) in
-[passes/optimization/constant_folding.py](../../passes/optimization/constant_folding.py)
+[cpp/src/passes/optimization/constant_folding.h](../../cpp/src/passes/optimization/constant_folding.h)
 evaluates TAC instructions whose operands are all constants and
 replaces each one with a `Copy` of the result. It runs first in each
 sweep of the TAC fixed-point loop, after SSA construction, and only
@@ -75,7 +75,7 @@ removes the `x - 1` path. The function compiles to `LDA x; CLC; ADC
 #$C0; RTS`. The unoptimized compile of the same source calls `mul16`
 twice.
 
-The const-array-subscript fold (`_fold_indexed_load`) works the same
+The const-array-subscript fold (`fold_indexed_load`) works the same
 way. With `static const uint16_t steps[4] = {100, 250, 600, 1500};`,
 `return base + steps[2];` reaches the pass as `IndexedLoad(steps,
 4uc, %2.1)` once the byte index has folded, and the pass rewrites it

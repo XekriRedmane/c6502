@@ -1,7 +1,7 @@
 # Sinking increments
 
 `SinkIncrements` in
-[passes/optimization/sink_increment.py](../../passes/optimization/sink_increment.py)
+[cpp/src/passes/optimization/sink_increment.h](../../cpp/src/passes/optimization/sink_increment.h)
 moves `Y = X + c` or `Y = X - c` down to just after the last
 instruction that reads `X`, as long as nothing in between reads `Y`.
 It runs in the TAC fixed-point loop, after the truncate-of-extend

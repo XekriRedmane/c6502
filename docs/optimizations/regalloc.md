@@ -1,14 +1,14 @@
 # Byte-granular register allocation
 
 `color_graph` in
-[passes/optimization_asm/regalloc.py](../../passes/optimization_asm/regalloc.py)
+[cpp/src/passes/optimization_asm/regalloc.h](../../cpp/src/passes/optimization_asm/regalloc.h)
 gives each value of a function a zero-page byte, or the X or Y
 register, and `apply_coloring` in
-[passes/optimization_asm/apply_coloring.py](../../passes/optimization_asm/apply_coloring.py)
+[cpp/src/passes/optimization_asm/apply_coloring.h](../../cpp/src/passes/optimization_asm/apply_coloring.h)
 rewrites the function's operands to match. Both run once per function
 in each of the two runs of the asm-level SSA optimizer
-(`_optimize_function` in
-[passes/optimization_asm/optimizer.py](../../passes/optimization_asm/optimizer.py)),
+(`optimize_function` in
+[cpp/src/passes/optimization_asm/optimizer.h](../../cpp/src/passes/optimization_asm/optimizer.h)),
 after the copy propagation and dead-code fixed point and [move
 coalescing](coalescing.md), and before SSA destruction. The
 preliminary run uses the default zero-page partition and is used
@@ -36,9 +36,9 @@ shift.
 ## How it works
 
 `compute_liveness` in
-[liveness.py](../../passes/optimization_asm/liveness.py) computes
-which names are live at each point, and `build_interference` in
-[interference.py](../../passes/optimization_asm/interference.py)
+[liveness.h](../../cpp/src/passes/optimization_asm/liveness.h)
+computes which names are live at each point, and `build_interference`
+in [interference.h](../../cpp/src/passes/optimization_asm/interference.h)
 joins two names with an edge when one is defined while the other is
 live. All of a block's Phi destinations interfere with each other.
 The builder also marks each name that's live across a `Call`.
@@ -82,7 +82,7 @@ blocked for the whole function.
 ## Placement in X and Y
 
 `scan_function` in
-[hwreg_eligibility.py](../../passes/optimization_asm/hwreg_eligibility.py)
+[hwreg_eligibility.h](../../cpp/src/passes/optimization_asm/hwreg_eligibility.h)
 finds the names that could live in X or in Y. Every definition and
 every use must be one of these.
 
@@ -105,7 +105,8 @@ because `LDX abs,X` and `LDY abs,Y` don't exist. The eligibility is
 per name before coalescing, and a coalesced node is eligible only
 when all its members are.
 
-`_try_hwreg_assign` in `regalloc.py` then pins names in this order.
+`try_hwreg_assign` in cpp/src/passes/optimization_asm/regalloc.cpp
+then pins names in this order.
 
 1. A `register` local must go in Y. If it can't, compilation stops
    with a `RegallocError`, because the local has nowhere else to live.
@@ -270,7 +271,7 @@ graph, which excludes statics, parameters, and the sources of a
 - X or Y for a value live across a call that writes the register.
   The pin check counts a call as writing X and Y unless the routine
   is declared `preserves_x` / `preserves_y`
-  (`_instr_writes_hwregs`), so a `register` local can live in Y
+  (`instr_writes_hwregs`), so a `register` local can live in Y
   across a call to `COUT1`, but across any other call it's a compile
   error. [loop_counter_to_x](loop_counter_to_x.md) can move a
   counter into X across a call that changes X later, saving and

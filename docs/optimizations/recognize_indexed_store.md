@@ -1,7 +1,7 @@
 # Indexed store to a fixed address
 
 `RecognizeIndexedStore` in
-[passes/optimization/recognize_indexed_store.py](../../passes/optimization/recognize_indexed_store.py)
+[cpp/src/passes/optimization/recognize_indexed_store.h](../../cpp/src/passes/optimization/recognize_indexed_store.h)
 turns a byte store through `C + i`, where `C` is a constant address
 and `i` a one-byte index, into an `IndexedStore`, which `tac_to_asm`
 lowers to `STA C,X`. It runs in the TAC fixed-point loop, after
@@ -10,7 +10,7 @@ the unoptimized pipeline. The walk back from the store to the index
 is shared with the [indexed load](recognize_indexed_load.md) and
 [indirect-indexed](recognize_indirect_indexed.md) recognizers, and
 lives in
-[passes/optimization/extend_add_chain.py](../../passes/optimization/extend_add_chain.py).
+[cpp/src/passes/optimization/extend_add_chain.h](../../cpp/src/passes/optimization/extend_add_chain.h).
 
 A pointer with a fixed value, such as `static uint8_t * const screen
 = (uint8_t * const)0x0400`, becomes a constant through the

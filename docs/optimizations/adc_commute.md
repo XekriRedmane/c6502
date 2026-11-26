@@ -1,12 +1,12 @@
 # Commuted ADC, AND, and ORA
 
 `apply_adc_commute` in
-[passes/adc_commute.py](../../passes/adc_commute.py) rewrites `STA
-temp; ...; LDA mem; CLC; ADC temp; STA mem` so that the `ADC` reads
-`mem` and the `LDA mem` goes away. It runs in the peephole fixed
-point, which both pipelines run, but no program in the test corpus
-makes it fire in the unoptimized pipeline, where the spill slot is
-on the soft stack and the pass accepts only a `Data` or `ZP` one.
+[cpp/src/passes/adc_commute.h](../../cpp/src/passes/adc_commute.h)
+rewrites `STA temp; ...; LDA mem; CLC; ADC temp; STA mem` so that the
+`ADC` reads `mem` and the `LDA mem` goes away. It runs in the peephole
+fixed point, which both pipelines run, but no program in the test
+corpus makes it fire in the unoptimized pipeline, where the spill slot
+is on the soft stack and the pass accepts only a `Data` or `ZP` one.
 
 A compound assignment `mem += v`, with `v` just computed into A,
 spills A to a temporary, loads `mem`, and adds the temporary. A

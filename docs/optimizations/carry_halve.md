@@ -1,10 +1,10 @@
 # A halved sum's ninth bit from the carry
 
 `apply_carry_halve` in
-[passes/carry_halve.py](../../passes/carry_halve.py) drops the high
-byte of `(x + y) / 2` when `x` and `y` are bytes (or one is a constant
-below 256) and the quotient is used as a byte. It runs in the peephole
-fixed point, which both pipelines run.
+[cpp/src/passes/carry_halve.h](../../cpp/src/passes/carry_halve.h)
+drops the high byte of `(x + y) / 2` when `x` and `y` are bytes (or
+one is a constant below 256) and the quotient is used as a byte. It
+runs in the peephole fixed point, which both pipelines run.
 
 C promotes both operands to `int`, so the sum has a high byte, which
 is only the carry out of the low bytes' add. The quotient's low byte

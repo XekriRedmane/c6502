@@ -1,7 +1,7 @@
 # A call that doesn't return
 
 `noreturn_calls` in
-[passes/optimization/noreturn_call.py](../../passes/optimization/noreturn_call.py)
+[cpp/src/passes/optimization/noreturn_call.h](../../cpp/src/passes/optimization/noreturn_call.h)
 ends the path at a call to a function declared `[[noreturn]]`. It puts
 a `Ret` right after the call and drops the instructions after it, up
 to the next label. It runs once per function in the TAC optimizer,
@@ -95,11 +95,11 @@ and the reads.
 
 A call to a `[[noreturn]]` function that passes no arguments isn't an
 edge of the call graph, in either pipeline
-([passes/call_edges.py](../../passes/call_edges.py)). Once the call is
-made, nothing reads the caller's parameters or locals again, nor those
-of any function the caller was called from, so the callee's bytes may
-overlap theirs, and the callee may call the caller again without
-making a cycle. `c99_to_tac` sets `noreturn` on the TAC
+([cpp/src/passes/call_edges.h](../../cpp/src/passes/call_edges.h)).
+Once the call is made, nothing reads the caller's parameters or locals
+again, nor those of any function the caller was called from, so the
+callee's bytes may overlap theirs, and the callee may call the caller
+again without making a cycle. `c99_to_tac` sets `noreturn` on the TAC
 `FunctionCall`, and every pass that walks the call graph takes its
 edges from `call_edges.graph_calls`. These are zp_abi eligibility and
 the soft-stack demotion (`abi_selection`), the parameter slots

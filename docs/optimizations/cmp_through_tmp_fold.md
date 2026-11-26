@@ -1,7 +1,7 @@
 # Operands without a staging temporary
 
 `apply_cmp_through_tmp_fold` in
-[passes/cmp_through_tmp_fold.py](../../passes/cmp_through_tmp_fold.py)
+[cpp/src/passes/cmp_through_tmp_fold.h](../../cpp/src/passes/cmp_through_tmp_fold.h)
 rewrites `LDA src; STA tmp; LDA other; CMP tmp` as `LDA other; CMP
 src`, and does the same when the last instruction is an `ADC`, `SBC`,
 `AND`, `ORA`, or `EOR` of `tmp`, after an optional `CLC` or `SEC`. It

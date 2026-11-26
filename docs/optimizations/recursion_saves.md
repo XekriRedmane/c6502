@@ -1,10 +1,10 @@
 # Saves around a recursive call
 
 `plan_saves` in
-[passes/recursion_saves.py](../../passes/recursion_saves.py) decides
-which values a recursive function saves on the hardware stack around
-each call that can recurse, and `tac_to_asm` emits the `PHA` and
-`PLA` instructions. It applies only to calls marked
+[cpp/src/passes/recursion_saves.h](../../cpp/src/passes/recursion_saves.h)
+decides which values a recursive function saves on the hardware stack
+around each call that can recurse, and `tac_to_asm` emits the `PHA`
+and `PLA` instructions. It applies only to calls marked
 `[[c6502::save_hardware_stack]]`, and only under `-O`.
 
 A function on a cycle of calls normally can't have a [private local

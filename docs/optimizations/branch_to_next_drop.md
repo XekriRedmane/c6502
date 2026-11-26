@@ -1,7 +1,7 @@
 # Branch to next label
 
 `apply_branch_to_next_drop` in
-[passes/branch_to_next_drop.py](../../passes/branch_to_next_drop.py)
+[cpp/src/passes/branch_to_next_drop.h](../../cpp/src/passes/branch_to_next_drop.h)
 deletes a conditional branch to the label right after it, and a `JMP`
 to one of the labels right after it. It runs in the peephole fixed
 point, in both the optimized and the unoptimized pipelines, right

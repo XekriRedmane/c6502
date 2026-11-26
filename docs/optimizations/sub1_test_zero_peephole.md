@@ -1,12 +1,12 @@
 # Subtract-and-test fusion
 
 `apply_sub1_test_zero_peephole` in
-[passes/sub1_test_zero_peephole.py](../../passes/sub1_test_zero_peephole.py)
+[cpp/src/passes/sub1_test_zero_peephole.h](../../cpp/src/passes/sub1_test_zero_peephole.h)
 drops the separate test against zero in a post-decrement loop test
 such as `i-- > 0`, and branches on the carry that the subtract has
 already set. It runs in two places. The asm optimizer
-(`_optimize_function` in
-[passes/optimization_asm/optimizer.py](../../passes/optimization_asm/optimizer.py))
+(`optimize_function` in
+[cpp/src/passes/optimization_asm/optimizer.h](../../cpp/src/passes/optimization_asm/optimizer.h))
 runs it on each function before asm SSA construction, which happens
 only in the optimized pipeline. It runs again in the peephole fixed
 point, in both pipelines.

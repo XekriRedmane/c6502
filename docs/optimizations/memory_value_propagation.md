@@ -1,7 +1,7 @@
 # Memory value propagation
 
 `apply_memory_value_propagation` in
-[passes/memory_value_propagation.py](../../passes/memory_value_propagation.py)
+[cpp/src/passes/memory_value_propagation.h](../../cpp/src/passes/memory_value_propagation.h)
 tracks what each zero-page byte holds across the whole control-flow
 graph of a function, and rewrites reads of a copy to read the
 original. It runs in the peephole fixed point, in both the optimized
@@ -249,8 +249,7 @@ and what A, X, and Y held. A function has no summary when it, or
 something it calls, writes through a pointer, into a frame, or at an
 index into a zero-page object, sets up a soft-stack frame, or calls a
 function outside the program that returns. A call to a function that
-never returns (`[[noreturn]]`, which `compile.optimized_asm` passes
-in) adds nothing, since the code after it never runs.
+never returns (`[[noreturn]]`, which `optimized_region` passes in) adds nothing, since the code after it never runs.
 
 In Zork's `objects.c` (examples/zork), the property
 instructions read `OPERANDS[1]` after calls to `get_property_ptr`,

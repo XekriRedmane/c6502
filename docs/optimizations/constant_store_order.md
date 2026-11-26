@@ -1,7 +1,7 @@
 # Constant store order
 
 `apply_constant_store_order` in
-[passes/constant_store_order.py](../../passes/constant_store_order.py)
+[cpp/src/passes/constant_store_order.h](../../cpp/src/passes/constant_store_order.h)
 groups the stores of a run of stores by the value stored, so that each
 value is loaded into A once. The values are constants, or bytes loaded
 from memory that the run doesn't change. It runs in the asm peephole

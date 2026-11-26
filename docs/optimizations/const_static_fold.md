@@ -1,7 +1,7 @@
 # Const-static fold
 
 `fold_const_statics` in
-[passes/optimization_asm/const_static_fold.py](../../passes/optimization_asm/const_static_fold.py)
+[cpp/src/passes/optimization_asm/const_static_fold.h](../../cpp/src/passes/optimization_asm/const_static_fold.h)
 replaces each read of a byte of a `static` const scalar with an
 immediate holding that byte, and drops the static's storage. It runs
 once at the start of each call of `optimize_program`, before the

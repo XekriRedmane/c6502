@@ -1,11 +1,11 @@
 # Shifts by a loop
 
 `tac_to_asm` lowers a 1- or 2-byte shift by a variable count as a loop
-of one-bit shifts with the count in X (`_shift_loop` in
-[tac_to_asm.py](../../tac_to_asm.py)), where it called `asl8`,
-`asl16`, `lsr8`, `lsr16`, `asr8`, or `asr16`. A shift of those widths
+of one-bit shifts with the count in X (`shift_loop` in
+[cpp/src/tac_to_asm_arith.cpp](../../cpp/src/tac_to_asm_arith.cpp)),
+where it called `asl8`, `asl16`, `lsr8`, `lsr16`, `asr8`, or `asr16`. A shift of those widths
 by a constant count that isn't lowered as a fixed run of shifts
-(`passes/shift_cost.inline_shift_ok`) is the same loop with the count
+(`inline_shift_ok` in cpp/src/passes/shift_cost.h) is the same loop with the count
 loaded as a constant. It applies in both pipelines. Shifts of 4 and 8
 bytes keep their helpers.
 
@@ -113,7 +113,7 @@ of its operands and result in HARGS.
   `inline_shift_ok` accepts.
 - A constant count of 0 is a copy.
 - A `>>` is arithmetic when the value is signed, unless its top byte
-  is known to be zero (`passes/significant_bytes.py`), when it's
+  is known to be zero (cpp/src/passes/significant_bytes.h), when it's
   logical.
 - When the count is the destination, it's loaded into X before the
   copy into the destination overwrites it.

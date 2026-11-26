@@ -4,9 +4,9 @@
 through a pointer at a constant offset, by copying the pointer into
 DPTR and reading or writing each byte through `(DPTR),Y`. Under `-O`,
 when the pointer is in zero page, it copies the pointer into DPTR
-again before each byte after the first (`Translator._restage`, with
+again before each byte after the first (`restage` in cpp/src/tac_to_asm_calls.cpp, with
 the rules in
-[passes/pointer_restage.py](../../passes/pointer_restage.py)).
+[cpp/src/passes/pointer_restage.h](../../cpp/src/passes/pointer_restage.h)).
 [Memory value propagation](memory_value_propagation.md) then reads or
 writes every byte through the pointer itself, and the copies into
 DPTR go. It doesn't run in the unoptimized pipeline.

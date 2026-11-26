@@ -1,8 +1,8 @@
 # Loop-invariant compare key in A
 
 `apply_loop_invariant_a` in
-[passes/loop_invariant_a.py](../../passes/loop_invariant_a.py) keeps
-a key that a loop compares against on every iteration in A, and
+[cpp/src/passes/loop_invariant_a.h](../../cpp/src/passes/loop_invariant_a.h)
+keeps a key that a loop compares against on every iteration in A, and
 compares each loop value against it. It runs once under `-O`,
 after the third peephole fixed point, just before
 `expand_long_branches`. Within a function it repeats until no more

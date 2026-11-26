@@ -1,7 +1,7 @@
 # An operation of a choice of constants
 
 `FoldIntoConstantPhi` in
-[passes/optimization/phi_constant_fold.py](../../passes/optimization/phi_constant_fold.py)
+[cpp/src/passes/optimization/phi_constant_fold.h](../../cpp/src/passes/optimization/phi_constant_fold.h)
 computes an operation on a `Phi` whose arguments are all constants in
 the `Phi`'s arguments, so that the join picks the result instead of
 the operand. It runs in the TAC fixed-point loop, right after

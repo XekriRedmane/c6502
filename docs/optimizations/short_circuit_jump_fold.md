@@ -1,7 +1,7 @@
 # Branching directly on `&&` and `||`
 
 `FoldShortCircuitJump` in
-[passes/optimization/short_circuit_jump_fold.py](../../passes/optimization/short_circuit_jump_fold.py)
+[cpp/src/passes/optimization/short_circuit_jump_fold.h](../../cpp/src/passes/optimization/short_circuit_jump_fold.h)
 removes the 0-or-1 value that `&&` and `||` compute when the only
 reader of that value is the conditional jump right after it. The
 short-circuit jumps then go straight to where that conditional jump

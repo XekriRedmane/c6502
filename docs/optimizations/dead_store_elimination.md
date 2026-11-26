@@ -1,7 +1,7 @@
 # Dead-store elimination
 
 `eliminate_dead_stores` in
-[passes/optimization/dead_store_elimination.py](../../passes/optimization/dead_store_elimination.py)
+[cpp/src/passes/optimization/dead_store_elimination.h](../../cpp/src/passes/optimization/dead_store_elimination.h)
 removes TAC instructions whose result nothing reads. It runs on
 SSA-form TAC in the optimizer's fixed point, right after copy
 propagation, and only under `-O`.

@@ -1,7 +1,7 @@
 # Inlining small functions
 
 `inline_functions` in
-[passes/optimization/inline_functions.py](../../passes/optimization/inline_functions.py)
+[cpp/src/passes/optimization/inline_functions.h](../../cpp/src/passes/optimization/inline_functions.h)
 replaces the calls of a `static` function with copies of its body,
 when the copies are estimated to take no more bytes than the calls
 and the function did. It runs once over the whole program, on the TAC

@@ -1,7 +1,7 @@
 # A global read after it's stored
 
 `ReadStoredGlobals` in
-[passes/optimization/read_stored_global.py](../../passes/optimization/read_stored_global.py)
+[cpp/src/passes/optimization/read_stored_global.h](../../cpp/src/passes/optimization/read_stored_global.h)
 makes an instruction read a global just stored from a temporary in
 place of the temporary, so that the temporary's only reader is the
 store and [copy folding](copy_folding.md) can make the computation

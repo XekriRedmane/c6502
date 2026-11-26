@@ -12,6 +12,12 @@ This document describes the design (what changes, why, and which
 edge cases matter) and a step-by-step build plan that was carried
 out in stages, each verified against the chapter corpus.
 
+The plan was carried out in the Python compiler, so the build plan
+and the table of files at the end name its modules. Each of those
+modules that was written is now the C++ file of the same path under
+cpp/src, and `c99.lark` is now the parser's tables in
+cpp/generated/c99_lalr.cpp ([cpp_port.md](cpp_port.md)).
+
 ---
 
 ## Motivation
@@ -225,7 +231,7 @@ parse → resolve → check → c99_to_tac
                   asm-level SSA + opts + regalloc
                                 │
                                 ▼
-              replace_pseudoregisters_bare_exit ← consumes abi
+                  replace_program_bare_exit ← consumes abi
                                 │
                                 ▼
                         prologue_synthesis      ← consumes abi
@@ -290,8 +296,8 @@ The same hazard exists at Phi destruction in `from_ssa` and is
 already solved there: storage-key-based topological sort plus a
 fresh temp Pseudo for cycles. The call-site arg-write sequence
 needs the same treatment. The implementation can reuse
-`_order_parallel_copies` from `passes.optimization_asm.ssa_destruction`
-verbatim — it's storage-key-driven and operates on `Mov`
+`order_parallel_copies` from
+cpp/src/passes/optimization_asm/parallel_copies.h verbatim — it's storage-key-driven and operates on `Mov`
 sequences regardless of where they came from.
 
 ### Address-of-callee restriction (re-stated)
@@ -323,7 +329,7 @@ later resolves the param's Pseudo to `Frame(M + 3 + j_offset
 `tac_ast.Var(name=p)` references inside the body lower to
 `asm_ast.Pseudo(name=p, offset=k)` exactly as today — but the
 asm-level pipeline knows (via the abi dict, threaded into
-`replace_pseudoregisters_bare_exit`) that this Pseudo
+`replace_program_bare_exit`) that this Pseudo
 represents a ZP-resident param. The Pseudo is resolved to
 `ZP(layout.addrs[flat_byte_index], 0)` — the same address the
 caller wrote to.
@@ -332,7 +338,7 @@ The asm-level SSA construction needs to know that a ZP-ABI
 param starts its life at a specific ZP address, NOT at a
 soft-stack offset. The pre-push at SSA entry — which seeds the
 stack with `Pseudo(p, offset=k)` — keeps the Pseudo form
-through asm-SSA renaming; only the late `replace_pseudoregisters_bare_exit`
+through asm-SSA renaming; only the late `replace_program_bare_exit`
 substitution differs. Renamed versions of the param (`p.bk.v1`,
 etc.) are NOT pinned to the entry ZP address — they're regular
 SSA names that asm-level regalloc colors freely.
@@ -350,7 +356,7 @@ Two options:
   regalloc avoids that color for any name that interferes.
   (Mirrors classic "pre-colored register" handling.)
 - **Treat the param like a static.** Don't add the param name
-  to the graph at all; let `replace_pseudoregisters_bare_exit`
+  to the graph at all; let `replace_program_bare_exit`
   resolve it to ZP at the end. Body regalloc may pick the same
   color for a body name, BUT — and this is the key — the param
   is dead after the first instruction that defines a body
@@ -429,7 +435,7 @@ interference graph. The new requirements:
    forces them to callee-saved or to spill, so the body's
    regalloc avoids the caller-saved pool for cross-call values
    automatically. The PARALLEL-COPY hazard at the arg writes
-   themselves is handled separately by `_order_parallel_copies`.
+   themselves is handled separately by `order_parallel_copies`.
 
 2. **Incoming params.** The function's own params at ZP
    addresses must be reflected in the body's interference

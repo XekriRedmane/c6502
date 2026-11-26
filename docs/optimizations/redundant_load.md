@@ -1,10 +1,10 @@
 # Redundant load elimination
 
 `apply_redundant_load_elimination` in
-[passes/redundant_load.py](../../passes/redundant_load.py) drops a
-load into A, X, or Y when the register already holds the value being
-loaded. It runs in the peephole fixed point, in both the optimized
-and the unoptimized pipelines, later in each iteration than
+[cpp/src/passes/redundant_load.h](../../cpp/src/passes/redundant_load.h)
+drops a load into A, X, or Y when the register already holds the value
+being loaded. It runs in the peephole fixed point, in both the
+optimized and the unoptimized pipelines, later in each iteration than
 `apply_direct_index_load`, so that its input holds `LDX M` where the lowering wrote
 `LDA M; TAX`.
 
@@ -65,7 +65,7 @@ The pass has five more rewrites that use the same lists.
   different offsets, reach different bytes, since nothing in the four
   instructions changes X. The same goes for Y when none of the four
   has the `LDY #off` of a soft-stack or indirect operand
-  (`_same_index_apart`). Zork's `instr_call` stores a local's two
+  (`same_index_apart`). Zork's `instr_call` stores a local's two
   bytes that way, and its second byte no longer goes through a slot:
 
   ```
@@ -197,7 +197,7 @@ reads it.
 A transfer straight back goes too: in `TAX; TXA` the second leaves A,
 X, and N/Z as the first left them. So does a transfer the instruction
 before a run of branches already made, the second `TXA` of `TXA; BEQ
-two; TXA; BPL three` (`_repeats_transfer`), since a branch changes no
+two; TXA; BPL three` (`repeats_transfer`), since a branch changes no
 register or flag and nothing else reaches the second. `return add(v, v);`, with `v`
 arriving in A and both of `add`'s arguments in registers, compiles to
 `TAX; JMP add`.
@@ -261,7 +261,7 @@ holds it.
 
 The first phase swaps `LDX M1; LDA M2` (or `LDY M1`) to `LDA M2; LDX
 M1` when X holds M2 and A doesn't, and the second phase then makes the
-`LDA M2` a `TXA` (`_swap_loads_ok`). A load writes only its register
+`LDA M2` a `TXA` (`swap_loads_ok`). A load writes only its register
 and N and Z, so A holds M2 and X holds M1 after either order, and N
 and Z, which end up set from M1, must be dead after the pair. Neither
 load may be volatile or set up through Y, M2 may not be indexed by
@@ -291,7 +291,7 @@ a move from Y to X, which goes through A or memory, and through the
 stack it takes `PHA; TXA; TAY; PLA; TAX; TYA`, 6 bytes.
 
 The second phase makes `LDX M` or `LDY M` a `TAX` or `TAY` when A
-holds M (`_redirect_index_load_to_transfer`), which sets the register
+holds M (`redirect_index_load_to_transfer`), which sets the register
 and N and Z the same way in one byte. For one of the compiler's own
 zero-page bytes, it does so only when nothing reads M after the load
 (`asm_dead_store.mem_dead_after`), so that the store of M goes too. A

@@ -1,12 +1,12 @@
 # Address-taken locals in zero page
 
 `compute_address_taken_assignments` in
-[passes/address_taken_zp.py](../../passes/address_taken_zp.py) puts
-each local whose address is taken in a byte of its function's
+[cpp/src/passes/address_taken_zp.h](../../cpp/src/passes/address_taken_zp.h)
+puts each local whose address is taken in a byte of its function's
 private zero-page pool, where it would otherwise go in a soft-stack
-frame. It runs once in `compile.optimized_asm`, after the final run
-of the asm optimizer and before `replace_pseudoregisters_bare_exit`,
-under `-O` only.
+frame. It runs once in `optimized_front`
+(cpp/src/passes/optimized_front.cpp), after the final run of the asm
+optimizer and before `replace_program_bare_exit`, under `-O` only.
 
 A local whose address is taken can't take part in SSA renaming or
 register allocation, since a pointer to it has to reach one fixed
@@ -22,7 +22,7 @@ compound literal or an `x` declared again in an inner block, is
 bytes of its own.
 
 The pool has room because `compute_address_taken_bytes` in
-[passes/function_local_sizing.py](../../passes/function_local_sizing.py)
+[cpp/src/passes/function_local_sizing.h](../../cpp/src/passes/function_local_sizing.h)
 adds the size of every address-taken local to the function's demand
 before [Private local pools](zp_local_pools.md) allocates it. After
 the final coloring, the pass takes the pool bytes the coloring left

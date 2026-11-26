@@ -1,7 +1,7 @@
 # TXA past a branch
 
 `apply_transfer_past_branch` in
-[passes/transfer_past_branch.py](../../passes/transfer_past_branch.py)
+[cpp/src/passes/transfer_past_branch.h](../../cpp/src/passes/transfer_past_branch.h)
 moves a `TXA` or `TYA` from just before a conditional branch to just
 after it, when only the fall-through path reads A. It runs in the
 peephole fixed point, in both pipelines. It hasn't fired on the

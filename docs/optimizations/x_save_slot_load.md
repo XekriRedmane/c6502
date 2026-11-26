@@ -1,7 +1,7 @@
 # Reads of X's save slot
 
 `apply_x_save_slot_load` in
-[passes/x_save_slot_load.py](../../passes/x_save_slot_load.py)
+[cpp/src/passes/x_save_slot_load.h](../../cpp/src/passes/x_save_slot_load.h)
 rewrites a load from the memory byte that X is saved to as a read of X
 itself. It runs once under `-O`, after the
 [count-down counter promotion](counter_to_index_reg.md) and before the
@@ -20,8 +20,8 @@ zp`, and `STX D` saves the whole `LDA`.
 
 None of the 657 C files under `tests/chapter_*/valid/` and
 `examples/` makes this pass change anything. The listing below
-is the input of the unit test `test_loop_with_dex_buggy_pattern` in
-`tests/test_x_save_slot_load.py`, with the slot names `M` and
+is the input of the unit test `test_loop_with_dex_buggy_pattern`, now
+in cpp/tests/test_x_save_slot_load_calls.cpp, with the slot names `M` and
 `zpabi_callee_slot` renamed to look like compiler output.
 
 ## Example

@@ -1,15 +1,15 @@
 # Loop constant in A
 
 `apply_loop_constant_a` in
-[passes/loop_constant_a.py](../../passes/loop_constant_a.py) loads a
-constant into A once, in front of a loop, when every write of A in
-the loop is a load of that constant or a `TXA` / `TYA` whose value
-nothing reads. It removes the loads and the transfers from the loop.
-It runs in the peephole fixed point, right before
+[cpp/src/passes/loop_constant_a.h](../../cpp/src/passes/loop_constant_a.h)
+loads a constant into A once, in front of a loop, when every write of
+A in the loop is a load of that constant or a `TXA` / `TYA` whose
+value nothing reads. It removes the loads and the transfers from the
+loop. It runs in the peephole fixed point, right before
 [dead A arithmetic](dead_a_arith.md), in both pipelines.
 
 The loop that clears an automatic aggregate's bytes
-(`c99_to_tac._emit_zero_bytes`) is the case it was written for. It
+(`emit_zero_bytes` in cpp/src/c99_to_tac_lvalues.cpp) is the case it was written for. It
 counts a byte index down in Y, loads 0 into A for the store in each
 pass, and tests Y with `TYA; BNE` at the bottom. `dead_a_arith`
 drops a `TYA` when the flags already reflect Y, which `DEY` set, but
@@ -77,9 +77,9 @@ a byte shorter.
 - A is dead after each `TXA` or `TYA`, and its N and Z are either
   dead or the same as the flags an earlier instruction in the block
   set from the same register, with the loads gone
-  (`dead_a_arith._flags_reflect_src_reg`).
+  (`flags_reflect_src_reg` in cpp/src/passes/dead_a_arith.h).
 - Every other instruction in the loop leaves A alone as `asm_emit`
-  writes it (`_leaves_a`). These are labels, branches, jumps that
+  writes it (`leaves_a`). These are labels, branches, jumps that
   pass no register, `SEC` / `CLC` / `BIT`, compares of A, `PHA`,
   stores of A, X, or Y, loads of X and Y from a constant or a byte,
   and `INC`, `DEC`, and shifts of a register or of a byte that isn't

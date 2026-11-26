@@ -1,7 +1,7 @@
 # Direct member access
 
 `DirectMemberAccess` in
-[passes/optimization/direct_member_access.py](../../passes/optimization/direct_member_access.py)
+[cpp/src/passes/optimization/direct_member_access.h](../../cpp/src/passes/optimization/direct_member_access.h)
 turns a load or store through `&obj + k` into a direct access to
 byte `k` of `obj`. It runs in the TAC fixed-point loop, after the two
 reassociation passes, so that the offset is already one constant. It

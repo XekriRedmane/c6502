@@ -1,7 +1,7 @@
 # A step moved onto its edge
 
 `MoveStepsOntoEdges` in
-[passes/optimization/step_on_edge.py](../../passes/optimization/step_on_edge.py)
+[cpp/src/passes/optimization/step_on_edge.h](../../cpp/src/passes/optimization/step_on_edge.h)
 moves an add or subtract of a constant, whose result reaches its
 variable only through a copy on one edge out of the block, into the
 place of that copy. It runs once after SSA destruction, right after

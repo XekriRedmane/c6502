@@ -2,11 +2,12 @@
 
 `-O` moves the busiest globals into zero page, where nobody
 declared them with `[[c6502::zeropage]]`. The choice is made in
-`plan_zero_page` and `_promotion_order` in
-[passes/zp_globals.py](../../passes/zp_globals.py), on the unoptimized
-TAC, before the TAC optimizer runs, so that every pass after it knows
-where the globals are. From then on a promoted global is a zero-page
-object like a declared one ([attributes.md](../attributes.md)).
+`plan_zero_page` and `promotion_order` in
+[cpp/src/passes/zp_globals.h](../../cpp/src/passes/zp_globals.h), on
+the unoptimized TAC, before the TAC optimizer runs, so that every pass
+after it knows where the globals are. From then on a promoted global
+is a zero-page object like a declared one
+([attributes.md](../attributes.md)).
 
 A zero-page access is a 2-byte, 3-cycle instruction where an absolute
 one is 3 bytes and 4 cycles. A pointer in zero page also serves as an

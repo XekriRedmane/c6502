@@ -1,12 +1,12 @@
 # A parameter's copy in the parameter's slot
 
 `apply_slot_coalescing` in
-[passes/slot_coalescing.py](../../passes/slot_coalescing.py) renames
-a zero-page local that holds a copy of a parameter to the parameter's
-own slot, when the two are never live at once with different values.
-It runs once under `-O`, after the third peephole fixed point
-and `carry_known`, and before [loop-invariant compare key in
-A](loop_invariant_a.md).
+[cpp/src/passes/slot_coalescing.h](../../cpp/src/passes/slot_coalescing.h)
+renames a zero-page local that holds a copy of a parameter to the
+parameter's own slot, when the two are never live at once with
+different values. It runs once under `-O`, after the third peephole
+fixed point and `carry_known`, and before [loop-invariant compare key
+in A](loop_invariant_a.md).
 
 A function that changes a parameter works on a copy of it. The asm
 SSA gives each assignment of the parameter a new version, and the

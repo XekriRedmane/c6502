@@ -1,11 +1,11 @@
 # Jump tables
 
-`apply_jump_tables` in [passes/jump_table.py](../../passes/jump_table.py)
-turns a chain of compares of A with constants, each followed by a
-branch to its case, into a dispatch through a table of the cases'
-addresses. It runs once, at the end of the `-O` asm pipeline,
-after every pass that follows control flow, so none of those passes
-has to know the table.
+`apply_jump_tables` in
+[cpp/src/passes/jump_table.h](../../cpp/src/passes/jump_table.h) turns
+a chain of compares of A with constants, each followed by a branch to
+its case, into a dispatch through a table of the cases' addresses. It
+runs once, at the end of the `-O` asm pipeline, after every pass that
+follows control flow, so none of those passes has to know the table.
 
 A `switch` on a byte becomes a chain of `CMP #k; BEQ case`, 4 bytes a
 case, and 7 when the case is too far for a branch and the `BEQ` grows

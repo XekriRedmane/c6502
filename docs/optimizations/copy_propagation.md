@@ -1,7 +1,7 @@
 # Copy propagation
 
 `copy_propagate` in
-[passes/optimization/copy_propagation.py](../../passes/optimization/copy_propagation.py)
+[cpp/src/passes/optimization/copy_propagation.h](../../cpp/src/passes/optimization/copy_propagation.h)
 replaces each use of a `Copy`'s destination with the `Copy`'s
 source. It runs on SSA-form TAC in the optimizer's fixed point, after
 loop-invariant hoisting and just before dead-store elimination, and

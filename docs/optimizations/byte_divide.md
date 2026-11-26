@@ -1,11 +1,11 @@
 # A byte divided by a constant
 
 `tac_to_asm` lowers an unsigned 1-byte `/` or `%` by a constant from
-1 to 255 as a loop of subtractions (`_inline_byte_divide` in
-[tac_to_asm.py](../../tac_to_asm.py)), where it called `udivmod8`. A
-divide and a remainder of the same operands share one loop, and two of
-any other width share one call of the `divmod` helper
-(`Translator._plan_divmod_pairs`). Both apply in the unoptimized
+1 to 255 as a loop of subtractions (`inline_byte_divide` in
+[cpp/src/tac_to_asm_arith.cpp](../../cpp/src/tac_to_asm_arith.cpp)),
+where it called `udivmod8`. A divide and a remainder of the same
+operands share one loop, and two of any other width share one call of
+the `divmod` helper (`Translator::plan_divmod_pairs`). Both apply in the unoptimized
 pipeline too, where a 1-byte divide comes only from an `unsigned
 _BitInt(8)`, since C promotes a `uint8_t` to `int`. Under `-O`,
 [narrowing arithmetic on values from 0 to 255](narrow_byte_range.md)
@@ -185,4 +185,4 @@ together](divmod_hoist.md) before `tac_to_asm` runs.
   since a divisor of 0 would make the loop run forever.
 - A signed 1-byte divide, which keeps `sdivmod8`.
 - A divide of a 3-, 5-, 6-, or 7-byte value, whose helper call is
-  made by `_odd_width_helper_op`, and a floating-point divide.
+  made by `odd_width_helper_op`, and a floating-point divide.

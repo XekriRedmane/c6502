@@ -1,7 +1,7 @@
 # A copy of a returned pointer kept in its zero-page bytes
 
 `apply_ret_slot_coalescing` in
-[passes/ret_slot_coalescing.py](../../passes/ret_slot_coalescing.py)
+[cpp/src/passes/ret_slot_coalescing.h](../../cpp/src/passes/ret_slot_coalescing.h)
 renames a pair of a function's zero-page locals to `F@ret`, the
 zero-page pointer in which a `static` function `F` returns its result
 ([a pointer returned in zero page](return_in_zero_page.md)), when the

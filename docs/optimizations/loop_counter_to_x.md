@@ -1,7 +1,7 @@
 # Loop counter in X
 
 `apply_loop_counter_to_x` in
-[passes/loop_counter_to_x.py](../../passes/loop_counter_to_x.py)
+[cpp/src/passes/loop_counter_to_x.h](../../cpp/src/passes/loop_counter_to_x.h)
 moves a one-byte loop counter that the body uses as an `abs,X` index
 out of its zero-page byte and into X for the whole loop. It runs once
 under `-O`, after the first peephole fixed point, between the

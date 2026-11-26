@@ -1,10 +1,10 @@
 # Constant AND and ORA fold
 
 `apply_const_arith_fold` in
-[passes/const_arith_fold.py](../../passes/const_arith_fold.py) folds
-an `AND` or `ORA` whose operands are both known into a single load,
-and deletes an `AND #$FF` or `ORA #$00` that leaves A unchanged. It
-runs in the peephole fixed point, in both the optimized and the
+[cpp/src/passes/const_arith_fold.h](../../cpp/src/passes/const_arith_fold.h)
+folds an `AND` or `ORA` whose operands are both known into a single
+load, and deletes an `AND #$FF` or `ORA #$00` that leaves A unchanged.
+It runs in the peephole fixed point, in both the optimized and the
 unoptimized pipelines, right after [memory constant
 propagation](mem_const_prop.md).
 
@@ -95,7 +95,7 @@ The others look at one instruction, two, or three.
   `get_property_ptr` in Zork's `objects.c` computes `(uint8_t)(n <<
   1) + 1`.
 - `ADC #k1; CLC; ADC #k2` becomes `ADC #(k1 + k2)` when C and V are
-  dead after (`_try_fold_add_add`). The first add's carry in comes
+  dead after (`try_fold_add_add`). The first add's carry in comes
   through, so A is `A + k1 + C + k2` either way. An `SBC` in either
   place, after a `SEC` for the second, subtracts its constant, and
   the result is an `SBC` when the first was one: `SBC #k1; CLC; ADC

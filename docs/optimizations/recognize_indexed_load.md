@@ -1,13 +1,13 @@
 # Indexed load from a fixed address
 
 `RecognizeIndexedLoad` in
-[passes/optimization/recognize_indexed_load.py](../../passes/optimization/recognize_indexed_load.py)
+[cpp/src/passes/optimization/recognize_indexed_load.h](../../cpp/src/passes/optimization/recognize_indexed_load.h)
 turns a byte load through `C + i`, where `C` is a constant address
 and `i` a one-byte index, into an `IndexedConstLoad`, which
 `tac_to_asm` lowers to `LDA C,X`. It runs in the TAC fixed-point
 loop, right after the [indexed store](recognize_indexed_store.md)
 recognizer, and shares that pass's walk back from the access in
-[passes/optimization/extend_add_chain.py](../../passes/optimization/extend_add_chain.py).
+[cpp/src/passes/optimization/extend_add_chain.h](../../cpp/src/passes/optimization/extend_add_chain.h).
 It doesn't run in the unoptimized pipeline.
 
 A table at a fixed address, read through a pointer such as

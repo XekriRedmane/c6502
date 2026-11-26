@@ -1,10 +1,11 @@
 # Shorter jumps
 
-`apply_short_jumps` in [passes/short_jumps.py](../../passes/short_jumps.py)
-shortens jumps once the branches have their final reach. It runs
-once, right after long-branch expansion, at the end of the
-`-O` asm pipeline, and makes four changes, each of which
-only removes bytes, so no branch falls out of reach.
+`apply_short_jumps` in
+[cpp/src/passes/short_jumps.h](../../cpp/src/passes/short_jumps.h)
+shortens jumps once the branches have their final reach. It runs once,
+right after long-branch expansion, at the end of the `-O` asm
+pipeline, and makes four changes, each of which only removes bytes, so
+no branch falls out of reach.
 
 - A `JMP .L`, or a [jump table](jump_table.md)'s entry for `.L`, where
   the first instruction at `.L` is a `JMP` to another function, goes
@@ -124,5 +125,6 @@ the rest of Zork's interpreter 9.
 ## Related
 
 [Jump tables](jump_table.md) make the tables whose entries this
-redirects, and [long-branch expansion](../../passes/long_branches.py)
-fixes the branches' reach that this relies on.
+redirects, and [long-branch
+expansion](../../cpp/src/passes/long_branches.h) fixes the branches'
+reach that this relies on.

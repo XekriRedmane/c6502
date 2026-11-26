@@ -1,10 +1,11 @@
 # CMP and SBC fusion
 
 `apply_cmp_sbc_fusion` in
-[passes/cmp_sbc_fusion.py](../../passes/cmp_sbc_fusion.py) rewrites
-`LDA M; CMP N; Bcc L1; SEC; SBC N` as `LDA M; SEC; SBC N; Bcc L1`, so
-the subtraction sets the flags the branch reads and the `CMP` goes
-away. It runs in the peephole fixed point, which both pipelines run.
+[cpp/src/passes/cmp_sbc_fusion.h](../../cpp/src/passes/cmp_sbc_fusion.h)
+rewrites `LDA M; CMP N; Bcc L1; SEC; SBC N` as `LDA M; SEC; SBC N; Bcc
+L1`, so the subtraction sets the flags the branch reads and the `CMP`
+goes away. It runs in the peephole fixed point, which both pipelines
+run.
 
 `CMP N` sets C, Z, and N from `A - N`, and `SEC; SBC N` sets the same
 three flags from the same subtraction. It also sets V, which `CMP`

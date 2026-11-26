@@ -1,7 +1,7 @@
 # Branch on INC or DEC flags
 
 `apply_dec_inc_branch_fold` in
-[passes/dec_inc_branch_fold.py](../../passes/dec_inc_branch_fold.py)
+[cpp/src/passes/dec_inc_branch_fold.h](../../cpp/src/passes/dec_inc_branch_fold.h)
 deletes the `LDA M` in `DEC M; LDA M; Bcc` and `INC M; LDA M; Bcc`
 when the branch reads only N or Z. It runs in the peephole fixed
 point, which both pipelines run, but no program in the test corpus

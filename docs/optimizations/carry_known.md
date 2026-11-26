@@ -1,13 +1,13 @@
 # Carry already known
 
 `apply_carry_known` in
-[passes/carry_known.py](../../passes/carry_known.py) drops a `SEC` or
-`CLC` where the carry already has that value, and moves one in front
-of a loop when every way back into the loop already has it. It also
-drops an `ADC #0` where C is known clear and an `SBC #0` where C is
-known set, which leave A and C as they were. `P = &LOCS[0]`, with
-`LOCS` at a fixed address, had kept `CLC` and `LDA #>LOCS; ADC #0`
-after the low byte's add of 0 was folded away. It runs
+[cpp/src/passes/carry_known.h](../../cpp/src/passes/carry_known.h)
+drops a `SEC` or `CLC` where the carry already has that value, and
+moves one in front of a loop when every way back into the loop already
+has it. It also drops an `ADC #0` where C is known clear and an `SBC
+#0` where C is known set, which leave A and C as they were. `P =
+&LOCS[0]`, with `LOCS` at a fixed address, had kept `CLC` and `LDA
+#>LOCS; ADC #0` after the low byte's add of 0 was folded away. It runs
 once under `-O`, after the peephole fixed point's third run.
 Several peepholes match a `SEC` or `CLC` ([transfer plus or minus
 one](transfer_pm1_store.md) turns `TXA; CLC; ADC #1; STA M` into

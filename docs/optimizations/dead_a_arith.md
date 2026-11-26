@@ -1,12 +1,12 @@
 # Dead A arithmetic
 
 `apply_dead_a_arith_elimination` in
-[passes/dead_a_arith.py](../../passes/dead_a_arith.py) deletes an
-instruction whose only effect is a write to A and the flags, when
-nothing reads that A value or those flags afterward. It runs in the
-peephole fixed point, in both the optimized and the unoptimized
-pipelines. Across the chapter test corpus and `examples/` it has
-fired on one program in the unoptimized pipeline, because that
+[cpp/src/passes/dead_a_arith.h](../../cpp/src/passes/dead_a_arith.h)
+deletes an instruction whose only effect is a write to A and the
+flags, when nothing reads that A value or those flags afterward. It
+runs in the peephole fixed point, in both the optimized and the
+unoptimized pipelines. Across the chapter test corpus and `examples/`
+it has fired on one program in the unoptimized pipeline, because that
 pipeline stores almost every value it computes to the soft stack, and
 the store reads A.
 

@@ -1,7 +1,7 @@
 # Narrowing arithmetic on values from 0 to 255
 
 `NarrowByteRange` in
-[passes/optimization/narrow_byte_range.py](../../passes/optimization/narrow_byte_range.py)
+[cpp/src/passes/optimization/narrow_byte_range.h](../../cpp/src/passes/optimization/narrow_byte_range.h)
 does a promoted byte's `/`, `%`, and `>>` on one byte, zero-extended,
 and makes a 16-bit `*` of two such values read each as a
 zero-extended byte. It runs in the TAC fixed-point loop, after
@@ -18,7 +18,7 @@ divisor from 1 to 255 give the quotient and remainder of an unsigned
 byte divide, whether the `int` divide is signed or not.
 
 The bound comes from `max_value` in
-[passes/optimization/value_range.py](../../passes/optimization/value_range.py),
+[cpp/src/passes/optimization/value_range.h](../../cpp/src/passes/optimization/value_range.h),
 which walks back through the definitions of SSA names. A
 `ZeroExtend` of a byte is at most 255, an `&` is at most its smaller
 bounded operand, a sum or product is bounded when it doesn't wrap, a

@@ -1,10 +1,10 @@
 # Branch inversion
 
 `apply_branch_invert` in
-[passes/branch_invert.py](../../passes/branch_invert.py) replaces a
-conditional branch around a `JMP` with one branch on the opposite
-condition to the `JMP`'s target. It runs in the peephole fixed point,
-in both the optimized and the unoptimized pipelines.
+[cpp/src/passes/branch_invert.h](../../cpp/src/passes/branch_invert.h)
+replaces a conditional branch around a `JMP` with one branch on the
+opposite condition to the `JMP`'s target. It runs in the peephole
+fixed point, in both the optimized and the unoptimized pipelines.
 
 `tac_to_asm` lowers a conditional jump in TAC whose sense is the wrong
 way round for a fall-through as a branch over an unconditional jump,

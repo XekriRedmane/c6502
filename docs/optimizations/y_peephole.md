@@ -1,9 +1,11 @@
 # Redundant LDY setup
 
-`apply_y_peephole` in [passes/y_peephole.py](../../passes/y_peephole.py)
+`apply_y_peephole` in
+[cpp/src/passes/y_peephole.h](../../cpp/src/passes/y_peephole.h)
 removes an `LDY #n` when Y already holds `n`, and replaces it with
 `INY` or `DEY` when Y holds `n - 1` or `n + 1`. It works on the
-emitted assembly text. `asm_emit.emit_program` calls it on the
+emitted assembly text. `emit_program` in cpp/src/asm_emit.cpp calls
+it on the
 finished line list as its last step, so it runs once, after every IR
 pass, in both the optimized and the unoptimized pipelines.
 
@@ -17,9 +19,9 @@ hold. A dropped `LDY #n` saves 2 bytes and 2 cycles, and an `INY` or
 `DEY` in its place saves 1 byte at the same cycle count. Both set N
 and Z from the same value the `LDY` would have.
 
-Since the pass reads text, `optdiff.py` can't capture it. The listings
-below come from a short script that wraps `apply_y_peephole` and
-prints the line list it receives and returns.
+Since the pass reads text, the listings below come from a short
+script that wrapped `apply_y_peephole` and printed the line list it
+received and returned.
 
 ## Example
 

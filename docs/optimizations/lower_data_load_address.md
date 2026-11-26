@@ -1,10 +1,10 @@
 # Address of a zero-page local
 
 `lower_data_load_address` in
-[passes/lower_data_load_address.py](../../passes/lower_data_load_address.py)
+[cpp/src/passes/lower_data_load_address.h](../../cpp/src/passes/lower_data_load_address.h)
 splits a `LoadAddress` whose source is a fixed address into two
 single-byte stores of immediates. It runs once in the `-O`
-pipeline, after `replace_pseudoregisters_bare_exit` and before
+pipeline, after `replace_program_bare_exit` and before
 prologue synthesis and the peephole fixed point. The unoptimized
 pipeline doesn't run it.
 

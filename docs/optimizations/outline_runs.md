@@ -1,10 +1,10 @@
 # Outlined runs
 
 `apply_outline_runs` in
-[passes/outline_runs.py](../../passes/outline_runs.py) moves a run of
-instructions that several places in a unit repeat into a function of
-its own, ending in `RTS`, and puts a `JSR` to it in each place. It runs
-once, last in `compile.optimized_asm`, after
+[cpp/src/passes/outline_runs.h](../../cpp/src/passes/outline_runs.h)
+moves a run of instructions that several places in a unit repeat into
+a function of its own, ending in `RTS`, and puts a `JSR` to it in each
+place. It runs once, last in `optimized_region`, after
 [shared function tails](shared_tails.md), and only under `-O`.
 
 Calls of one routine with the same arguments repeat the code that sets

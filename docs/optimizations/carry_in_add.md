@@ -1,11 +1,12 @@
 # One add with the carry set for `p + b + 1`
 
 `apply_carry_in_add` in
-[passes/carry_in_add.py](../../passes/carry_in_add.py) folds the two
-16-bit adds of `p + b + 1`, where the second operand's high byte is 0
-(a byte or a small constant), into one add that starts with `SEC`. It
-runs in the peephole fixed point, which both pipelines run, before
-[carry INC](carry_inc.md) turns an `ADC #$00` into `BCC; INC`.
+[cpp/src/passes/carry_in_add.h](../../cpp/src/passes/carry_in_add.h)
+folds the two 16-bit adds of `p + b + 1`, where the second operand's
+high byte is 0 (a byte or a small constant), into one add that starts
+with `SEC`. It runs in the peephole fixed point, which both pipelines
+run, before [carry INC](carry_inc.md) turns an `ADC #$00` into `BCC;
+INC`.
 
 The low byte of `L + m + 1` is at most 511, so one carry into the high
 byte covers both adds, and the high byte and A come out the same. The

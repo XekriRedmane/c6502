@@ -1,7 +1,7 @@
 # Byte-by-byte three-way compare
 
 `split_three_way_compares` in
-[passes/optimization/three_way_compare.py](../../passes/optimization/three_way_compare.py)
+[cpp/src/passes/optimization/three_way_compare.h](../../cpp/src/passes/optimization/three_way_compare.h)
 splits a 2-byte unsigned ordering compare and an equality compare of
 the same two values into a compare of the high bytes and then of the
 low bytes. It runs once, after SSA destruction, under `-O`.

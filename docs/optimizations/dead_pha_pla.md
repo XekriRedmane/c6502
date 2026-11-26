@@ -1,11 +1,11 @@
 # PHA and PLA removal
 
 `apply_dead_pha_pla` in
-[passes/dead_pha_pla.py](../../passes/dead_pha_pla.py) drops a `PHA`
-and its matching `PLA` when the instructions between them leave A
-alone. It runs in the peephole fixed point, after [direct load into X
-or Y](direct_index_load.md), in both pipelines. In practice only the
-optimized pipeline produces the shape it matches.
+[cpp/src/passes/dead_pha_pla.h](../../cpp/src/passes/dead_pha_pla.h)
+drops a `PHA` and its matching `PLA` when the instructions between
+them leave A alone. It runs in the peephole fixed point, after [direct
+load into X or Y](direct_index_load.md), in both pipelines. In
+practice only the optimized pipeline produces the shape it matches.
 
 A store through a pointer with an index, `p[i] = c`, is lowered by
 `tac_to_asm` as a load of `c` into A, then a load of `i` into Y, then
@@ -101,7 +101,7 @@ memory.
 - A body with a call, a branch, or a label in it.
 - A pair whose `PLA` sets flags that a branch reads.
 
-The unit tests in `tests/test_dead_pha_pla.py` cover each of these.
+The unit tests in cpp/tests/test_dead_pha_pla.cpp cover each of these.
 The unoptimized pipeline doesn't produce the `PHA` at all, because
 there `p[i] = c` is lowered as pointer arithmetic on the soft stack
 followed by `LDY #$00; STA (DPTR),Y`. The pass made no change on any

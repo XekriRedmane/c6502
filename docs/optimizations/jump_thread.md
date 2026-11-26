@@ -1,7 +1,7 @@
 # Jump threading on a constant
 
 `ThreadConstantJumps` in
-[passes/optimization/jump_thread.py](../../passes/optimization/jump_thread.py)
+[cpp/src/passes/optimization/jump_thread.h](../../cpp/src/passes/optimization/jump_thread.h)
 sends an edge into a join straight to the place the join's test sends
 the constant that the edge brings. It runs in the TAC fixed-point
 loop, right before [unreachable code

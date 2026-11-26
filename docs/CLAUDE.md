@@ -82,10 +82,12 @@ parsed by any tool.
 ## Reference grammars
 
 `docs/*_grammar.txt` are reference documentation for the spec
-grammars that `c99.lark` implements. They aren't parsed by any tool —
-they exist so the implementation choices in `c99.lark` (operator
-precedence, dangling-else resolution, cast-vs-paren disambiguation)
-can be cross-checked against the spec without leaving the repo.
+grammars that the C parser implements. The parser's LALR tables are
+in cpp/generated/c99_lalr.cpp, which is now the grammar's source, and
+its descent is in cpp/src/parser*.cpp. No tool parses the grammar
+files. They exist so the parser's choices (operator precedence,
+dangling-else resolution, cast-vs-paren disambiguation) can be
+cross-checked against the spec without leaving the repo.
 
 - `chars_grammar.txt` — C99 §6.4.4.4 character-constant grammar.
 - `floats_grammar.txt` — C99 §6.4.4.2 floating-constant grammar,

@@ -1,7 +1,7 @@
 # Indexed access to a static array of structs
 
 `static_indexed_access` in
-[passes/optimization/static_indexed_access.py](../../passes/optimization/static_indexed_access.py)
+[cpp/src/passes/optimization/static_indexed_access.h](../../cpp/src/passes/optimization/static_indexed_access.h)
 turns a read or write of `o[i].m`, where `o` is a static array, into
 `IndexedLoad(o, i, offset=m)` or `IndexedSymbolStore(o, i, v,
 offset=m)`, which `tac_to_asm` lowers as `LDX i; LDA o+m,X`. It runs
@@ -14,7 +14,7 @@ put a constant part of it in the offset:
 
 - `c99_to_tac` scales an index into an array object at byte width
   when the array spans at most 255 bytes and has at least two
-  elements (`_translate_subscript_address`). Every index C defines
+  elements (`translate_subscript_address`). Every index C defines
   then lands within those bytes (C99 §6.5.6.8: anything else is
   undefined), so the offset fits a byte: the index is truncated to a
   byte, multiplied there, and zero-extended. `prompts[which]` on a
@@ -28,7 +28,7 @@ put a constant part of it in the offset:
 - `c99_to_tac` writes `arr[x + k]` on a static array of at most 256
   bytes, with `x` an unsigned byte and `k` a constant from 0 to the
   last index, as `IndexedLoad(arr, x, offset=k)` (scaled by the
-  element size), and the same for a store (`_split_index_addend`).
+  element size), and the same for a store (`split_index_addend`).
   The sum can't wrap, since `x` is at most 255 and the add is at
   least 16 bits wide, and an index C defines leaves `x` times the
   element size within a byte. Zork's `instr_call` reads
@@ -40,7 +40,7 @@ put a constant part of it in the offset:
   in both pipelines.
 - A subscript of a cast of an object's address, `((T *)&obj)[i]` or
   `*((T *)&obj + i)`, reads `obj` as an array of `T`
-  (`c99_to_tac._object_view`). C99 §6.5.7 allows the access for any
+  (`object_view` in cpp/src/c99_to_tac_lvalues.cpp). C99 §6.5.7 allows the access for any
   object when `T` is a character type, and it's how Lode Runner reads
   the packed BCD `uint32_t SCORE` a byte at a time. When `obj` has
   static storage and spans at most 256 bytes, and `T` is an integer
@@ -53,7 +53,7 @@ put a constant part of it in the offset:
   declared as a byte array. The access names `obj`, so every pass
   that tracks `obj`'s value treats it as a read or write of `obj`. A
   compound assignment or an increment goes through the address, as
-  one of an array element does, and `_byte_offset_scale` scales its
+  one of an array element does, and `byte_offset_scale` scales its
   index at byte width when `obj` spans at most 255 bytes, so this pass
   makes it indexed. An automatic object is left to the pointer, since
   it has no link-time address.

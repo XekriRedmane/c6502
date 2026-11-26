@@ -1,8 +1,8 @@
 # Multi-byte INC
 
 `apply_inc_peephole` in
-[passes/inc_peephole.py](../../passes/inc_peephole.py) rewrites an
-in-place add of 1 to a value in memory as a chain of `INC`
+[cpp/src/passes/inc_peephole.h](../../cpp/src/passes/inc_peephole.h)
+rewrites an in-place add of 1 to a value in memory as a chain of `INC`
 instructions. It runs in the peephole fixed point, in both the
 optimized and the unoptimized pipelines.
 
@@ -54,7 +54,7 @@ hits`, the pass replaces `LDA hits; CLC; ADC #$01; STA hits` with
 Adding a whole number of pages, `p += 0x100`, gets here too.
 `tac_to_asm` copies the bytes of an add or subtract where the
 constant's byte is zero, since they carry nothing, and starts the
-`CLC; ADC` at the first nonzero byte (`_translate_add_sub`). In place,
+`CLC; ADC` at the first nonzero byte (`translate_add_sub`). In place,
 the low byte's copy is a store of a byte to itself, which goes, so
 `p += 0x100` is `LDA p+1; CLC; ADC #1; STA p+1`, and this pass makes it
 `INC p+1`. `p -= 0x100` becomes `DEC p+1` the same way, through

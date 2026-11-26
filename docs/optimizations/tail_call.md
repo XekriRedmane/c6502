@@ -1,10 +1,11 @@
 # Tail call
 
-`apply_tail_call` in [passes/tail_call.py](../../passes/tail_call.py)
-turns a `JSR f` followed by a bare `RTS` into `JMP f`. It runs in the
-peephole fixed point, which both pipelines run, but it can't fire in
-the unoptimized pipeline. There every function exits through the
-compound `Ret` atom, and the pass matches only the bare `Return`.
+`apply_tail_call` in
+[cpp/src/passes/tail_call.h](../../cpp/src/passes/tail_call.h) turns a
+`JSR f` followed by a bare `RTS` into `JMP f`. It runs in the peephole
+fixed point, which both pipelines run, but it can't fire in the
+unoptimized pipeline. There every function exits through the compound
+`Ret` atom, and the pass matches only the bare `Return`.
 
 When a function's last act is a call, `JSR f; RTS` pushes a return
 address that `f`'s `RTS` pops only to land on another `RTS`. `JMP f`

@@ -1,7 +1,7 @@
 # Indirect-indexed access through a pointer
 
 `RecognizeIndirectIndexed` in
-[passes/optimization/recognize_indirect_indexed.py](../../passes/optimization/recognize_indirect_indexed.py)
+[cpp/src/passes/optimization/recognize_indirect_indexed.h](../../cpp/src/passes/optimization/recognize_indirect_indexed.h)
 turns a byte load or store through `p + i`, where `p` is a pointer
 variable and `i` a one-byte index or a constant from 0 to 255, into
 an `IndirectIndexedLoad` or `IndirectIndexedStore`. `tac_to_asm`
@@ -9,7 +9,7 @@ lowers those with the 6502's `(zp),Y` mode. The pass runs once,
 after the TAC fixed point has converged and before SSA destruction.
 It shares its walk back from the access with the
 [indexed store](recognize_indexed_store.md) recognizer, in
-[passes/optimization/extend_add_chain.py](../../passes/optimization/extend_add_chain.py).
+[cpp/src/passes/optimization/extend_add_chain.h](../../cpp/src/passes/optimization/extend_add_chain.h).
 It doesn't run in the unoptimized pipeline.
 
 For `p[i]`, `c99_to_tac` zero-extends `i`, adds it to `p` with a
@@ -147,7 +147,7 @@ which is the original's `INY`, 14 bytes shorter in `print_zstring`
 `p[i] &= m` reads and writes `p + ZeroExtend(i)`. When every reader of
 the sum is a 1-byte `Load` from it or `Store` to it, each becomes
 `(p),Y` with Y = `i`, and the sum goes once the last one is rewritten
-(`_shared_extend_add_chain`). `i` must be SSA-renamed, and `p` must
+(`shared_extend_add_chain`). `i` must be SSA-renamed, and `p` must
 hold at each access the value the sum read.
 
 A reader may also be `(p + ZeroExtend(i)) + k`, for a constant `k`
@@ -156,7 +156,7 @@ elimination turns `background[x]`, with `background = line + 0x2000`,
 into `(line + x) + 0x2000` so that it shares `line + x` with
 `line[x]`. That access becomes `(t),Y` with Y = `x` and `t = line +
 0x2000`, a pointer plus a constant, made just before the access
-(`_offset_from_extend_chain`). A `k` of 0 to 255 is left as `(q),Y`
+(`offset_from_extend_chain`). A `k` of 0 to 255 is left as `(q),Y`
 with Y = `k`, since several such offsets share `q` where each would
 need a pointer of its own.
 

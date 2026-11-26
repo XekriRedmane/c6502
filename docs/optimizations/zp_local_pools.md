@@ -1,13 +1,14 @@
 # Private local pools
 
 `allocate_function_locals` in
-[passes/zp_local_allocation.py](../../passes/zp_local_allocation.py)
+[cpp/src/passes/zp_local_allocation.h](../../cpp/src/passes/zp_local_allocation.h)
 gives each eligible function a private run of zero-page bytes for
 its body locals, chosen so that no function that can be running at
 the same time uses any of them. The size of each run comes from
 `compute_local_bytes` in
-[passes/function_local_sizing.py](../../passes/function_local_sizing.py).
-Both run once in `compile.optimized_asm`, between two runs of the asm
+[cpp/src/passes/function_local_sizing.h](../../cpp/src/passes/function_local_sizing.h).
+Both run once in `optimized_front`
+(cpp/src/passes/optimized_front.cpp), between two runs of the asm
 optimizer, under `-O` only.
 
 Without a private pool, the byte-granular register allocator splits
@@ -218,10 +219,10 @@ can happen even when the counts match, because a pointer read through
 `(zp),Y` needs two adjacent bytes, and the bytes left free in a pool
 of the counted size may not include two adjacent ones. So when the
 final coloring of a function with a pool spills a byte value that
-the preliminary coloring kept in zero page, `compile.optimized_asm`
+the preliminary coloring kept in zero page, `optimized_front`
 gives the function one more byte for each such value, allocates the
 pools again, and colors again, up to three times
-(`compile._pool_shortfalls`, `_POOL_RETRIES`). Lode Runner's
+(`pool_shortfalls`, `kPoolRetries`). Lode Runner's
 `guard_find_candidate_row_above` used a frame for one byte until
 this was added.
 

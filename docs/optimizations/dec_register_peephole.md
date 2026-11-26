@@ -1,7 +1,7 @@
 # DEX and DEY for a register counter
 
 `apply_dec_register_peephole` in
-[passes/dec_register_peephole.py](../../passes/dec_register_peephole.py)
+[cpp/src/passes/dec_register_peephole.h](../../cpp/src/passes/dec_register_peephole.h)
 turns a decrement of a value held in X or Y, which `tac_to_asm`
 routes through A and a temporary, into `DEX` or `DEY`. It runs in the
 peephole fixed point, in both pipelines, but only fires with
@@ -84,7 +84,7 @@ the whole function is `TAY; .loop@0_continue: DEY; BNE
 - The temporary isn't read by any instruction after the pattern, in
   program order.
 - Or five instructions, the same with `TAX` or `TAY` in place of the
-  store and the load (`_match_transfer_back`). `DEY` leaves A, C, and
+  store and the load (`match_transfer_back`). `DEY` leaves A, C, and
   V alone where the `SBC` wrote them, so this form needs A, C, and V
   dead after the branch by `asm_liveness`, which counts a return of a
   value in A as a read of it.

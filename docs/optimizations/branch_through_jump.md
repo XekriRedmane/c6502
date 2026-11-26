@@ -1,7 +1,7 @@
 # Branch through jump
 
 `apply_branch_through_jump` in
-[passes/branch_through_jump.py](../../passes/branch_through_jump.py)
+[cpp/src/passes/branch_through_jump.h](../../cpp/src/passes/branch_through_jump.h)
 points a branch or a `JMP` whose target label holds only a `JMP`
 straight at that `JMP`'s target, and deletes the label and the `JMP`
 when nothing else reaches them. It runs in the peephole fixed point,

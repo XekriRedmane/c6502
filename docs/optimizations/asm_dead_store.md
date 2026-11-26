@@ -1,9 +1,9 @@
 # Asm dead-store elimination
 
 `apply_asm_dead_store` in
-[passes/asm_dead_store.py](../../passes/asm_dead_store.py) removes a
-store to a byte of memory when no instruction reachable from the
-store reads that byte before it is overwritten or the function
+[cpp/src/passes/asm_dead_store.h](../../cpp/src/passes/asm_dead_store.h)
+removes a store to a byte of memory when no instruction reachable from
+the store reads that byte before it is overwritten or the function
 returns. It runs in the peephole fixed point, in both the optimized
 and the unoptimized pipelines. The unoptimized pipeline passes no
 slot-symbol map, so there the pass can't treat a zero-page slot
@@ -107,7 +107,7 @@ From the store, the pass follows every path forward. A path is done
 when it reaches an instruction that writes exactly the same byte,
 meaning the same name and offset or the same zero-page address. The
 store is live if any path reaches an instruction that may read the
-byte, using the aliasing rules of `passes/asm_aliasing.py`. An
+byte, using the aliasing rules of cpp/src/passes/asm_aliasing.h. An
 operand addressed through a pointer also reads the two bytes of the
 pointer, so a store into `DPTR` is live while a `(DPTR),Y` access
 follows. A `Call`, a `FunctionPrologue`, or an `AllocateStack` makes

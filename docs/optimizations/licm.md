@@ -1,11 +1,11 @@
 # Loop-invariant extends and truncates
 
 `hoist_loop_invariants` (the `HoistLoopInvariants` pass) in
-[passes/optimization/licm.py](../../passes/optimization/licm.py) moves
-a `ZeroExtend`, `SignExtend`, or `Truncate` whose operand doesn't
-change inside a loop out to the loop's preheader, so it runs once
-instead of on every iteration. It runs in the TAC fixed-point loop
-under `-O`, on SSA form, right after
+[cpp/src/passes/optimization/licm.h](../../cpp/src/passes/optimization/licm.h)
+moves a `ZeroExtend`, `SignExtend`, or `Truncate` whose operand
+doesn't change inside a loop out to the loop's preheader, so it runs
+once instead of on every iteration. It runs in the TAC fixed-point
+loop under `-O`, on SSA form, right after
 [common subexpression elimination](cse.md). The unoptimized pipeline
 doesn't run it.
 

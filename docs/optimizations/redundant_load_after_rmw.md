@@ -1,7 +1,7 @@
 # Load after read-modify-write
 
 `apply_redundant_load_after_rmw` in
-[passes/redundant_load_after_rmw.py](../../passes/redundant_load_after_rmw.py)
+[cpp/src/passes/redundant_load_after_rmw.h](../../cpp/src/passes/redundant_load_after_rmw.h)
 deletes a load of a byte that the instruction just before it has
 modified in place, when the loaded value isn't used. It runs in the
 peephole fixed point, in both the optimized and the unoptimized

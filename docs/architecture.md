@@ -7,41 +7,48 @@ conventions the generated code and its runtime follow. Each section
 can be read without the others, so a reader looking for one stage
 can go straight to it.
 
-The details of each module are in the `CLAUDE.md` of its directory,
-and the larger modules' docstrings describe their own lowerings. The
-optimizer has its own index, [optimizations/README.md](optimizations/README.md),
-and the calling conventions have [calling_conventions.md](calling_conventions.md).
+The compiler is written in C++, in cpp/, whose build makes the
+executable `c6502cpp`. Until step 9 of the port
+([cpp_port.md](cpp_port.md)), `compile.py`, `nm.py`, and `objdump.py`
+stay as shims that hand their command lines to it. The "Layout"
+section of [../cpp/README.md](../cpp/README.md) lists the C++ files,
+the `CLAUDE.md` of each directory has the details of its modules, and
+the comments at the top of the larger files describe their own
+lowerings. The optimizer has its own index,
+[optimizations/README.md](optimizations/README.md), and the calling
+conventions have [calling_conventions.md](calling_conventions.md).
 
 ## The pipeline
 
-`compile.py` runs every stage, and `--lex`, `--parse`, `--resolve`,
-`--tac`, `-S`, and `-c` stop it at the stage they name. The labels
-on the arrows mark the steps that only one of the two pipelines runs.
+`c6502cpp` runs every stage for `compile.py`, and `--lex`, `--parse`,
+`--resolve`, `--tac`, `-S`, and `-c` stop it at the stage they name.
+The labels on the arrows mark the steps that only one of the two
+pipelines runs.
 
 ```mermaid
 flowchart TD
     src["C source file"]
-    pp["preprocess, preprocessor.py over the pcpp library: comments removed, macros and includes expanded"]
-    parse["parser.parse, parser.py and c99.lark: c99_ast, with typedef names and enumeration constants already replaced"]
-    unroll["unroll_program, passes/optimization_ast: loops marked unroll copied out"]
+    pp["preprocess, cpp/src/preprocessor.cpp over the port of pcpp in pcpp_*.cpp: comments removed, macros and includes expanded"]
+    parse["parser::parse, cpp/src/parser*.cpp with the LALR tables of cpp/generated/c99_lalr.cpp: c99_ast, with typedef names and enumeration constants already replaced"]
+    unroll["unroll_program, cpp/src/passes/optimization_ast: loops marked unroll copied out"]
     resolve["identifier resolution, string lifting, label resolution, loop labeling: c99_ast with unique names"]
-    check["type_checking.check_program: c99_ast with a type on every expression, the symbol table, and the struct and union layouts"]
-    tac["c99_to_tac.translate_program: tac_ast"]
+    check["type_checking::check_program: c99_ast with a type on every expression, the symbol table, and the struct and union layouts"]
+    tac["c99_to_tac::translate_program: tac_ast"]
     ret["return_pointers_in_zero_page"]
-    plan["plan_zero_page, passes/zp_globals.py: the runtime block's layout and the zero-page globals"]
-    t2a["tac_to_asm.translate_program: asm_ast with Pseudo operands"]
+    plan["plan_zero_page, cpp/src/passes/zp_globals.cpp: the runtime block's layout and the zero-page globals"]
+    t2a["tac_to_asm::translate_program: asm_ast with Pseudo operands"]
     rp["replace_pseudoregisters: each Pseudo becomes a Frame or Data operand, frames laid out"]
-    peep["the peephole fixed point, compile._peephole_fixedpoint"]
+    peep["the peephole fixed point, cpp/src/passes/peephole_fixedpoint.cpp"]
     lb["expand_long_branches, then place_zp_globals"]
-    opt["compile.optimized_asm: the TAC optimizer, ABI selection, the asm optimizer, and the asm passes, ending with place_zp_globals"]
+    opt["optimized_tac, optimized_front, and optimized_region: the TAC optimizer, ABI selection, the asm optimizer, and the asm passes, ending with place_zp_globals"]
     prune["prune_unused_locals: EQU lines for slots nothing names are dropped"]
     a2["asm_to_asm2: compound instructions expanded, asm2_ast"]
-    emit["asm_emit.emit_program: dasm text with EQU lines and the link metadata comment"]
+    emit["asm_emit::emit_program: dasm text with EQU lines and the link metadata comment"]
     s["-S: the .s file"]
     asmfile[".asm or .s input"]
-    obj["binutils/assembler.py: an ELF object"]
+    obj["cpp/src/binutils/assembler.cpp: an ELF object"]
     ofile[".o input"]
-    link["passes/linker.py: an ELF executable"]
+    link["cpp/src/passes/linker.cpp: an ELF executable"]
 
     src --> pp --> parse
     parse -->|"-O"| unroll --> resolve
@@ -61,34 +68,35 @@ flowchart TD
 
 `--tac` prints the TAC straight after `c99_to_tac`, or after the TAC
 optimizer with `-O`, and doesn't run `plan_zero_page`. The emitted
-text goes through one more rewrite, `passes/y_peephole.py`, which
+text goes through one more rewrite, cpp/src/passes/y_peephole.cpp, which
 merges neighboring `LDY #n` setups. It works on lines of text, which
 is why it isn't a box of its own.
 
 | Stage | Module | Detail |
 |---|---|---|
-| Preprocessing | `preprocessor.py` | pcpp's Python API. `include/` is on the search path. Flags `compile.py` doesn't know are passed to it. In `#if`, `true` is 1 and `false` is 0, as in C23, and each `_Bool` gets a warning (`diagnostics.py`). |
-| Parsing | `parser.py`, `c99.lark`, `lexer.py` | LALR, with the AST built as each rule reduces, so that `typedef` names are known while parsing. See "Parser" in [../CLAUDE.md](../CLAUDE.md). |
-| Name resolution | `passes/identifier_resolution.py`, `string_lifting.py`, `label_resolution.py`, `loop_labeling.py` | [../passes/CLAUDE.md](../passes/CLAUDE.md), passes 2 to 5. string_lifting first rewrites designated initializers into positional lists (`passes/designators.py`). |
-| Type checking | `passes/type_checking.py` | Promotions, conversions, and the symbol table. [../passes/CLAUDE.md](../passes/CLAUDE.md), pass 6 |
-| Translation to TAC | `c99_to_tac.py` | The module docstring maps each C construct to TAC. |
-| Translation to asm | `tac_to_asm.py` | The module docstring gives each lowering and each helper's layout. |
-| Pseudoregister replacement | `passes/replace_pseudoregisters.py` | [../passes/CLAUDE.md](../passes/CLAUDE.md), pass 9 |
-| The optimizer | `compile.optimized_asm` and `passes/` | [optimizations/README.md](optimizations/README.md) |
-| Lowering to asm2 | `passes/asm_to_asm2.py` | [../passes/CLAUDE.md](../passes/CLAUDE.md), pass 10 |
-| Emit | `asm_emit.py` | The module docstring gives the text for each instruction. |
-| Assembling | `binutils/assembler.py`, `binutils/elf.py` | [../binutils/CLAUDE.md](../binutils/CLAUDE.md) |
-| Linking | `passes/linker.py`, `passes/link_layout.py`, `binutils/ld.py` | [linker_scripts.md](linker_scripts.md) and "Linking" below |
+| Preprocessing | `cpp/src/preprocessor.cpp`, `pcpp_*.cpp` | A port of pcpp. `include/` is on the search path. Flags `compile.py` doesn't know are passed to it. In `#if`, `true` is 1 and `false` is 0, as in C23, and each `_Bool` gets a warning (`cpp/src/diagnostics.h`). |
+| Parsing | `cpp/src/parser*.cpp`, `cpp/generated/c99_lalr.cpp`, `cpp/src/lexer.cpp` | LALR, with the AST built as each rule reduces, so that `typedef` names are known while parsing. See "Parser" in [../CLAUDE.md](../CLAUDE.md). |
+| Name resolution | `cpp/src/passes/identifier_resolution.cpp`, `string_lifting.cpp`, `label_resolution.cpp`, `loop_labeling.cpp` | [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), passes 2 to 5. string_lifting first rewrites designated initializers into positional lists (`cpp/src/passes/designators.cpp`). |
+| Type checking | `cpp/src/passes/type_checker*.cpp` | Promotions, conversions, and the symbol table. [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), pass 6 |
+| Translation to TAC | `cpp/src/c99_to_tac*.cpp` | The comment at the top of `c99_to_tac.cpp` maps each C construct to TAC. |
+| Translation to asm | `cpp/src/tac_to_asm*.cpp` | The comment at the top of `tac_to_asm.cpp` gives each lowering and each helper's layout. |
+| Pseudoregister replacement | `cpp/src/passes/replace_pseudoregisters.cpp` | [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), pass 9 |
+| The optimizer | `cpp/src/passes/translate_for_codegen.cpp`, `optimized_front.cpp`, `optimized_asm.cpp`, and the rest of `cpp/src/passes/` | [optimizations/README.md](optimizations/README.md) |
+| Lowering to asm2 | `cpp/src/passes/asm_to_asm2.cpp` | [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), pass 10 |
+| Emit | `cpp/src/asm_emit.cpp` | The comment at the top of the file gives the text for each instruction. |
+| Assembling | `cpp/src/binutils/assembler.cpp`, `cpp/src/binutils/elf.cpp` | [../binutils/CLAUDE.md](../binutils/CLAUDE.md) |
+| Linking | `cpp/src/passes/linker.cpp`, `cpp/src/passes/link_layout.cpp`, `cpp/src/binutils/ld.cpp` | [linker_scripts.md](linker_scripts.md) and "Linking" below |
 
-The simulator's harness, `sim/harness.py`, calls the same functions
-(`translate_for_codegen`, `optimized_asm`, and
-`_peephole_fixedpoint`), so that the tests run the code the command
-line writes.
+The simulator's harness, `sim/harness.py`, has c6502cpp compile the
+source with the same stages (`codegen` in
+cpp/src/passes/codegen_stage.cpp), stopping before `asm_to_asm2`, so
+that the tests run the code the command line writes.
 
 ## The four IRs
 
 Each IR is declared in an ASDL file, and `asdl.py` generates a module
-of dataclasses from it. A sum type's base class is `Type_<name>`, and
+of Python dataclasses from it and, with `--cpp`, the C++ classes in
+cpp/generated/. A sum type's base class is `Type_<name>`, and
 each constructor keeps its ASDL name.
 
 | IR | Declared in | Made by | What it holds |
@@ -121,7 +129,7 @@ for some subscripts and from the optimizer's recognizers for the
 rest. The optimizer adds `Phi` while a function is in SSA form.
 
 An integer in the TAC is 1 to 8 bytes. C23's bit-precise types
-(`_BitInt(N)`, bit_precise.py) take ceil(N/8) bytes, and `c99_to_tac`
+(`_BitInt(N)`, cpp/src/bit_precise.h) take ceil(N/8) bytes, and `c99_to_tac`
 restores their padding bits after each operation and then replaces
 each one with the type of its storage: a standard integer type for 1,
 2, 4, and 8 bytes, and `BitInt(24)`, `BitInt(40)`, `BitInt(48)`, or
@@ -181,9 +189,9 @@ have, usually `@`, so they never collide with the program's names.
 | `.loop@N`, `.switch@N`, `.case@N`, `.default@N` | `.loop@0_start` | loop labeling, with `_start`, `_continue`, and `_break` added by `c99_to_tac` |
 | `name.k` | `@0.total.2` | the TAC optimizer's SSA versions, some of which are left after SSA destruction |
 | `name.bB.vN` | `@0.total.2.b0.v1` | the asm optimizer's SSA version `N` of byte `B` |
-| `__zpabi_fn__param` | `__zpabi_lt__b_0` | `passes/abi_selection.py`, a zp_abi parameter's slot, with `_k` for byte `k` of a wider one |
-| `__local_fn__var` | `__local_sum__total` | `passes/zp_slot_naming.py`, a byte of a function's private pool, `__local_fn__N` for a temporary. `passes/address_taken_zp.py` adds `@2`, `@3`, and so on to an address-taken local whose name an earlier one has, such as a second compound literal. |
-| `fn@ret`, `fn@tailN`, `fn@runN` | `sum@run0` | `return_in_zero_page.py`, `shared_tails.py`, and `outline_runs.py` |
+| `__zpabi_fn__param` | `__zpabi_lt__b_0` | `cpp/src/passes/abi_selection.cpp`, a zp_abi parameter's slot, with `_k` for byte `k` of a wider one |
+| `__local_fn__var` | `__local_sum__total` | `cpp/src/passes/zp_slot_naming.cpp`, a byte of a function's private pool, `__local_fn__N` for a temporary. `cpp/src/passes/address_taken_zp.cpp` adds `@2`, `@3`, and so on to an address-taken local whose name an earlier one has, such as a second compound literal. |
+| `fn@ret`, `fn@tailN`, `fn@runN` | `sum@run0` | `return_in_zero_page.cpp`, `shared_tails.cpp`, and `outline_runs.cpp` in `cpp/src/passes/` |
 
 Labels that start with `.` are local to the function's `SUBROUTINE`
 in dasm, so two functions can use the same one.
@@ -191,7 +199,8 @@ in dasm, so two functions can use the same one.
 ## Lowering notes
 
 These are the lowerings that a reader of the output most often has
-to recognize. `tac_to_asm.py`'s docstring has the rest.
+to recognize. The comment at the top of cpp/src/tac_to_asm.cpp has
+the rest.
 
 | C | 6502 code |
 |---|---|
@@ -202,7 +211,7 @@ to recognize. `tac_to_asm.py`'s docstring has the rest.
 | `*p`, `p->m` | the pointer copied to `DPTR`, then `LDY #k; LDA (DPTR),Y`. With `-O`, a pointer kept in zero page is used in place, as `(ptr),Y`. |
 | `a[i]` on a static array with a byte index | `LDA a,X` (with `-O`) |
 | `*`, `/`, and `%` other than the byte forms below, and a shift by a variable of 4 or 8 bytes | the operands stored in `HARGS`, `JSR` to a helper, the result loaded from `HARGS` (see "The helpers' exchange block"). A `/` and a `%` of the same operands in one straight run share one call, and read the quotient and the remainder from it. |
-| a shift by a constant | inline `ASL` and `ROL` (or `LSR`, `ROR`) chains when that's at most 8 shift instructions, by `passes/shift_cost.py`'s rule, otherwise the loop below for 1 or 2 bytes and a helper for 4 or 8 |
+| a shift by a constant | inline `ASL` and `ROL` (or `LSR`, `ROR`) chains when that's at most 8 shift instructions, by the rule of `cpp/src/passes/shift_cost.h`, otherwise the loop below for 1 or 2 bytes and a helper for 4 or 8 |
 | a shift of 1 or 2 bytes by a variable | the value copied into the result, then `LDX n; CPX #0; BEQ .shift_done@N`, and `.shift_loop@N:` with an `ASL` / `ROL`, `LSR` / `ROR`, or `LDA hi; ASL A; ROR` of the result's bytes, `DEX; BNE .shift_loop@N` (docs/optimizations/shift_loop.md). The `CPX` goes after an `LDX`. |
 | `/` or `%` of an unsigned byte by a constant | `LDA x; LDX #$FF; SEC; .div_loop@N: INX; SBC #c; BCS .div_loop@N`, with the quotient in X and, after `ADC #c`, the remainder in A. A `/` and a `%` of the same byte share the loop (docs/optimizations/byte_divide.md). With `-O`, a promoted byte divided by a constant from 1 to 255 is done this way (docs/optimizations/narrow_byte_range.md). |
 | a 16-bit `*` of two values from 0 to 255 | `LDA b; STA HARGS; LDA #0; LDX #8; LSR HARGS`, then `.mul_loop@N: BCC .mul_skip@N; CLC; ADC a; .mul_skip@N: ROR A; ROR HARGS; DEX; BNE .mul_loop@N`, with the high byte in A and the low byte in `HARGS` (docs/optimizations/byte_product.md) |
@@ -227,7 +236,7 @@ to recognize. `tac_to_asm.py`'s docstring has the rest.
 | `$80`-`$BF` | the register allocator's caller-saved half, and the window zp_abi parameter slots come from |
 | `$C0`-`$FF` | the register allocator's callee-saved half |
 
-That's the classic layout, in `passes/runtime_layout.py`. When a
+That's the classic layout, in cpp/src/passes/runtime_layout.cpp. When a
 fixed zero-page object (`[[c6502::address(addr)]]` or
 `zeropage(addr)` below `$100`) is in `$00`-`$25`, `choose_layout`
 sizes `HARGS` to the bytes the program uses and moves the four
@@ -250,7 +259,7 @@ example.
 through each convention, with the frame's layout, the prologue, and
 the epilogue. The selection rules and the allocation of zp_abi slots
 and private pools are under "Call-graph-disjoint ZP allocation" in
-[../passes/CLAUDE.md](../passes/CLAUDE.md). The original design is
+[../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md). The original design is
 [leaf_zp_abi.md](leaf_zp_abi.md).
 
 A zp_abi function other than `main` takes its leading integer and
@@ -284,7 +293,7 @@ call, so a helper may overwrite all of them, and a result in `HARGS`
 is read right after the call. `w` is the operand's width in bytes, 1, 2, 4, or 8, and the
 helper's suffix is `8w` bits, as in `mul16`. An operand of 3, 5, 6,
 or 7 bytes goes to the helper of the next of 4 and 8 bytes, extended
-to that width (`tac_to_asm._odd_width_helper_op`).
+to that width (`odd_width_helper_op` in cpp/src/tac_to_asm_arith.cpp).
 
 | Helpers | Inputs | Output |
 |---|---|---|
@@ -305,8 +314,10 @@ to that width (`tac_to_asm._odd_width_helper_op`).
 The layouts above are the ones `sim/runtime.py`'s Python hooks read,
 and the 6502 helpers of `rtlib/helpers.py`, which the linker
 adds to a program from the runtime library, follow them too.
-`passes/runtime_layout.py` records how many bytes of `HARGS` each of
-the 6502 helpers touches, and a helper written outside the repository
+`helper_footprints` in cpp/src/passes/zp_globals.h gives how many
+bytes of `HARGS` each of the 6502 helpers touches, measured from the
+copy of rtlib/helpers.py compiled into c6502cpp
+(cpp/generated/rtlib_helpers.cpp), and a helper written outside the repository
 and given with `--defsym` has to stay within those footprints,
 because `choose_layout` sizes a moved `HARGS` by them.
 
@@ -332,15 +343,15 @@ them again for the whole program, in this order.
 ```mermaid
 flowchart TD
     objs["the units' ELF objects"]
-    lib["the runtime helpers the units call and nothing defines assembled into one more unit, runtime.o, passes/runtime_library.py"]
+    lib["the runtime helpers the units call and nothing defines assembled into one more unit, runtime.o, cpp/src/passes/runtime_library.cpp"]
     names["internal names that two units share renamed, every unit's link metadata merged, zp_abi and pool eligibility checked for the whole program"]
     zp["the runtime block's layout chosen, then the zero-page objects placed"]
     slots["zp_abi slots and private pools allocated over the whole call graph, from $80-$FF and then the free bytes below $80"]
     asm["units that reached a name in zero page that the program puts above $FF assembled again from their text"]
-    relax["absolute operands the program puts in zero page shortened, ld.relax, and duplicate tables kept once"]
+    relax["absolute operands the program puts in zero page shortened, ld::relax, and duplicate tables kept once"]
     own["the linker's own unit assembled: __zp_init, with the startup copies and clears of a script, and __spill"]
-    lay["sections laid out by the script, or by default_script from $0800, link_layout.lay_out"]
-    exe["relocations applied and the ELF executable written, with main as its entry, binutils/ld.py"]
+    lay["sections laid out by the script, or by default_script from $0800, link_layout::lay_out"]
+    exe["relocations applied and the ELF executable written, with main as its entry, cpp/src/binutils/ld.cpp"]
     objs --> lib --> names --> zp --> slots --> asm --> relax --> own --> lay --> exe
 ```
 

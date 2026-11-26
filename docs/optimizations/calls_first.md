@@ -1,9 +1,9 @@
 # A compound assignment's call first
 
-`c99_to_tac._translate_compound_assign` evaluates the right operand of
-`lval OP= rval` before the left one's address and value when `rval`
-calls a function and `lval` neither calls nor writes anything and
-isn't volatile (`_calls_first`). The left operand is then read after
+`translate_compound_assign` in cpp/src/c99_to_tac_exp.cpp evaluates
+the right operand of `lval OP= rval` before the left one's address
+and value when `rval` calls a function and `lval` neither calls nor
+writes anything and isn't volatile (`calls_first`). The left operand is then read after
 the call, so neither its address nor its value has to be kept across
 the call. This is part of the translation to TAC and happens in both
 pipelines.

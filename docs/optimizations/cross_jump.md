@@ -1,9 +1,10 @@
 # Cross jumping
 
-`apply_cross_jump` in [passes/cross_jump.py](../../passes/cross_jump.py)
-shares the instructions two blocks end with when both then jump to
-the same place: the later block jumps into the earlier one's copy. It
-runs in the peephole fixed point, which both pipelines run.
+`apply_cross_jump` in
+[cpp/src/passes/cross_jump.h](../../cpp/src/passes/cross_jump.h)
+shares the instructions two blocks end with when both then jump to the
+same place: the later block jumps into the earlier one's copy. It runs
+in the peephole fixed point, which both pipelines run.
 
 The block that jumps runs the same instructions as before and the
 same final jump, so what it computes doesn't change. It takes one

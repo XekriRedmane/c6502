@@ -1,7 +1,7 @@
 # Asm copy propagation
 
 `copy_propagate` in
-[passes/optimization_asm/copy_propagation.py](../../passes/optimization_asm/copy_propagation.py)
+[cpp/src/passes/optimization_asm/copy_propagation.h](../../cpp/src/passes/optimization_asm/copy_propagation.h)
 replaces each read of a byte that a direct `Mov` copied with the
 `Mov`'s source. It runs in the asm SSA fixed point inside
 `optimize_program`, which repeats `copy_propagate`,

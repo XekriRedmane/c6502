@@ -1,7 +1,7 @@
 # Truncate of an extend
 
 `FoldTruncateExtend` in
-[passes/optimization/truncate_extend_fold.py](../../passes/optimization/truncate_extend_fold.py)
+[cpp/src/passes/optimization/truncate_extend_fold.h](../../cpp/src/passes/optimization/truncate_extend_fold.h)
 rewrites `Truncate(%t, u)`, where `%t` is a `ZeroExtend` or
 `SignExtend` of `x`, to read `x` directly. The result is
 `Copy(x, u)` when `u` and `x` have the same width, or a narrower

@@ -1,10 +1,11 @@
 # Compare and subtract of the same operands
 
 `hoist_subtract_to_compare` in
-[passes/optimization/compare_subtract.py](../../passes/optimization/compare_subtract.py)
+[cpp/src/passes/optimization/compare_subtract.h](../../cpp/src/passes/optimization/compare_subtract.h)
 moves a `t = a - b` up to the `a < b` (or `>=`, `>`, `<=`) whose
-branch decides whether it runs, and `Translator._fused_subtract` in
-[tac_to_asm.py](../../tac_to_asm.py) then lowers the pair as one
+branch decides whether it runs, and `fused_subtract` in
+[cpp/src/tac_to_asm_compare.cpp](../../cpp/src/tac_to_asm_compare.cpp)
+then lowers the pair as one
 subtraction followed by a branch on its flags. It runs once, after the
 TAC fixed point, under `-O`.
 

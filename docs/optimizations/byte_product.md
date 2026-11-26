@@ -2,10 +2,11 @@
 
 `tac_to_asm` lowers a 16-bit `*` whose operands each have one
 significant byte as an 8-by-8 shift-and-add loop
-(`_inline_byte_product` in [tac_to_asm.py](../../tac_to_asm.py)),
+(`inline_byte_product` in
+[cpp/src/tac_to_asm_arith.cpp](../../cpp/src/tac_to_asm_arith.cpp)),
 where it called `mul16`. An operand qualifies when it's a constant from
 0 to 255 or a local whose other byte is zero
-(`passes/significant_bytes.py`), such as a `ZeroExtend` of a byte, so
+(cpp/src/passes/significant_bytes.h), such as a `ZeroExtend` of a byte, so
 `a * b` on two `uint8_t`s takes the loop in both pipelines. Under
 `-O`, [narrowing arithmetic on values from 0 to
 255](narrow_byte_range.md) also makes an operand bounded by 255, such

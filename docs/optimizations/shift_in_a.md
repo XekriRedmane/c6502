@@ -1,9 +1,9 @@
 # Shift in A
 
-`apply_shift_in_a` in [passes/shift_in_a.py](../../passes/shift_in_a.py)
-moves a run of shifts and rotates of a byte that was just stored from
-A onto A itself. It runs in the peephole fixed point, in both
-pipelines.
+`apply_shift_in_a` in
+[cpp/src/passes/shift_in_a.h](../../cpp/src/passes/shift_in_a.h) moves
+a run of shifts and rotates of a byte that was just stored from A onto
+A itself. It runs in the peephole fixed point, in both pipelines.
 
 A shift or rotate of a zero-page byte takes 2 bytes and 5 cycles. The
 same operation on A takes 1 byte and 2 cycles. When A already holds
@@ -180,7 +180,7 @@ abs,Y mode.
 [Shifts by a loop](shift_loop.md) shifts a byte by a variable count in
 memory. When the byte was just stored from A and is loaded again right
 after the loop, the loop shifts A and the load becomes the store
-(`_shift_loop_in_a`). This listing compares two complete compiles of
+(`shift_loop_in_a`). This listing compares two complete compiles of
 `uint8_t f(uint8_t x, uint8_t n) { return x >> n; }`, whose `x`
 arrives in A and `n` in X.
 

@@ -1,7 +1,7 @@
 # Narrowing a bitwise operation on a byte
 
 `NarrowByteBitwise` in
-[passes/optimization/narrow_byte_bitwise.py](../../passes/optimization/narrow_byte_bitwise.py)
+[cpp/src/passes/optimization/narrow_byte_bitwise.h](../../cpp/src/passes/optimization/narrow_byte_bitwise.h)
 rewrites an `&`, `|`, or `^` whose operands were promoted from bytes
 as the operation on one byte, zero-extended, when the result's high
 bytes are zero. It runs last in the TAC fixed-point loop, after

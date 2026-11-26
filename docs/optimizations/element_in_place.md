@@ -1,7 +1,7 @@
 # Element stepped in place
 
 `apply_element_in_place` in
-[passes/element_in_place.py](../../passes/element_in_place.py)
+[cpp/src/passes/element_in_place.h](../../cpp/src/passes/element_in_place.h)
 rewrites a step of a slot that holds a copy of an array element, `DEC
 t; LDA t; STA tab,X`, as a step of the element, `DEC tab,X; LDA
 tab,X`, and makes each read of the slot that the new value reaches

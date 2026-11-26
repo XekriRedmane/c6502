@@ -1,7 +1,7 @@
 # Transfer plus or minus one
 
 `apply_transfer_pm1_store` in
-[passes/transfer_pm1_store.py](../../passes/transfer_pm1_store.py)
+[cpp/src/passes/transfer_pm1_store.h](../../cpp/src/passes/transfer_pm1_store.h)
 turns `TXA; SEC; SBC #1; STA M` into `DEX; STX M`, and `TXA; CLC;
 ADC #1; STA M` into `INX; STX M`, with the same rewrites for Y. It
 runs last in the peephole fixed point, which both pipelines run, but
@@ -18,7 +18,7 @@ arithmetic, that save and its reload become dead, and later sweeps
 remove them.
 
 The pass runs after every other pass in the sweep, for a reason
-given in a comment in `compile._peephole_fixedpoint`. Register
+given in a comment in cpp/src/passes/peephole_fixedpoint.cpp. Register
 allocation can route the result through a temporary, as in `TXA;
 SEC; SBC #1; STA __local; LDA __local; STA M`. By the end of the
 sweep, `round_trip_load_drop` and `asm_dead_store` have collapsed
@@ -157,7 +157,7 @@ register, the step can be made in the register:
 ```
 
 for a step of 1 or 2, `CLC; ADC #k` with `INX`, and the Y forms, when
-A, C, and V are dead after (`_rewrite_step_then_reload`). X and the
+A, C, and V are dead after (`rewrite_step_then_reload`). X and the
 byte end up with the same value as before, and N and Z come out the
 same, from the last step. That's `x -= 2` in Zork's `return_value`
 (examples/zork/decode.c), and it saves 3 bytes there, 4

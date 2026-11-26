@@ -1,7 +1,7 @@
 # Members of a static object computed in place
 
 `plan_in_place_updates` in
-[passes/in_place_member_update.py](../../passes/in_place_member_update.py)
+[cpp/src/passes/in_place_member_update.h](../../cpp/src/passes/in_place_member_update.h)
 finds the values that can be computed straight into a member of a
 static struct, or into an element of a static array at a constant
 index, and `tac_to_asm` writes them there instead of into a temporary

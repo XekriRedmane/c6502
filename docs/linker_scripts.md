@@ -171,7 +171,7 @@ an origin (`-Ttext=ADDR`) outside $0000-$FFFF is an error too.
 A multiplication, a division or remainder, and a shift by a variable
 count compile to calls of the runtime's helpers, such as `mul16`,
 `sdivmod16`, and `asl8`. The linker adds the helpers a program calls
-from the runtime library (passes/runtime_library.py), as a GCC
+from the runtime library (cpp/src/passes/runtime_library.cpp), as a GCC
 toolchain adds routines from libgcc. Only those go in the program,
 together with the helpers they call (`sdivmod16` calls `udivmod16`).
 The library is one more input file to the link, named `runtime.o`,
@@ -244,7 +244,7 @@ Before laying the program out, the linker gives each instruction the
 addressing mode the program's addresses call for. An absolute operand
 the program puts in zero page, such as a global that another unit
 moved into zero page, gets its zero-page form, one byte shorter
-(`binutils.ld.relax`), and a unit that reached a name in zero page
+(`ld::relax` in cpp/src/binutils/ld.h), and a unit that reached a name in zero page
 that the program puts above $FF is assembled again from the text the
 object keeps. Then it applies each relocation. A segment of the
 executable runs at its section's run address and is loaded at its
@@ -322,9 +322,10 @@ program keeps the 51 bytes of `level.c`'s.
 
 ## Related
 
-[passes/link_script.py](../passes/link_script.py) parses scripts,
-[passes/sections.py](../passes/sections.py) picks each item's
-section, and [passes/link_layout.py](../passes/link_layout.py) writes
+[cpp/src/passes/link_script.h](../cpp/src/passes/link_script.h) parses
+scripts, [cpp/src/passes/sections.h](../cpp/src/passes/sections.h)
+picks each item's section, and
+[cpp/src/passes/link_layout.h](../cpp/src/passes/link_layout.h) writes
 the layout. [calling_conventions.md](calling_conventions.md) covers
-what else the linker does: the zero-page parameter and local bytes
-of every function.
+what else the linker does: the zero-page parameter and local bytes of
+every function.

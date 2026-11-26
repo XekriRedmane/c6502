@@ -1,7 +1,7 @@
 # CPX and CPY
 
 `apply_cpx_cpy_peephole` in
-[passes/cpx_cpy_peephole.py](../../passes/cpx_cpy_peephole.py)
+[cpp/src/passes/cpx_cpy_peephole.h](../../cpp/src/passes/cpx_cpy_peephole.h)
 rewrites `TXA; CMP R` as `CPX R`, and `TYA; CMP R` as `CPY R`, when
 nothing reads A afterwards. It runs in the peephole fixed point, in
 both pipelines, but in practice only the optimized pipeline produces
@@ -88,7 +88,7 @@ volatile window width) became `CPX WNDWDTH`.
   or Y, so the pass made no change on any `examples/` program or any
   program under `tests/chapter_*/valid/` under `--unopt`.
 
-The unit tests in `tests/test_cpx_cpy_peephole.py` cover the soft
+The unit tests in cpp/tests/test_cpx_cpy_peephole.cpp cover the soft
 stack and pointer operands and each case where A is read afterwards.
 
 ## Related

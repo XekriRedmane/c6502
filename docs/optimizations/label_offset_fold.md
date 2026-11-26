@@ -1,10 +1,10 @@
 # Link-time address arithmetic
 
 `apply_label_offset_fold` in
-[passes/label_offset_fold.py](../../passes/label_offset_fold.py) turns
-a 2-byte add of a label's address and a constant into one immediate
-address, `#<(name+k)` and `#>(name+k)`. It runs in the peephole fixed
-point, which both pipelines run.
+[cpp/src/passes/label_offset_fold.h](../../cpp/src/passes/label_offset_fold.h)
+turns a 2-byte add of a label's address and a constant into one
+immediate address, `#<(name+k)` and `#>(name+k)`. It runs in the
+peephole fixed point, which both pipelines run.
 
 `&r[2].a` on a static array, or the `&prompts + 15` that [indexed
 access to a static array of structs](static_indexed_access.md) leaves

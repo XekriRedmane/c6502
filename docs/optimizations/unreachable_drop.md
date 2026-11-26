@@ -1,7 +1,7 @@
 # Unreachable code drop
 
 `apply_unreachable_drop` in
-[passes/unreachable_drop.py](../../passes/unreachable_drop.py)
+[cpp/src/passes/unreachable_drop.h](../../cpp/src/passes/unreachable_drop.h)
 deletes the instructions after a `JMP` or a return that no path can
 reach. It runs in the peephole fixed point, in both the optimized and
 the unoptimized pipelines, right after

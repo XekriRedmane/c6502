@@ -1,7 +1,7 @@
 # Unreachable code elimination
 
 `eliminate_unreachable_code` (the `EliminateUnreachableCode` pass) in
-[passes/optimization/unreachable_code_elimination.py](../../passes/optimization/unreachable_code_elimination.py)
+[cpp/src/passes/optimization/unreachable_code_elimination.h](../../cpp/src/passes/optimization/unreachable_code_elimination.h)
 removes TAC blocks that no path from the function's entry reaches, and
 then tidies the Phis, jumps, and labels that the removal leaves
 behind. It runs in the TAC fixed-point loop under `-O`, on SSA

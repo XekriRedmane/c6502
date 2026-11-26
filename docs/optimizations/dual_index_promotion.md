@@ -1,7 +1,7 @@
 # Second index in Y
 
 `apply_dual_index_promotion` in
-[passes/dual_index_promotion.py](../../passes/dual_index_promotion.py)
+[cpp/src/passes/dual_index_promotion.h](../../cpp/src/passes/dual_index_promotion.h)
 loads a byte that a function reloads into X several times into Y once
 at entry, and switches the `abs,X` accesses that use it to `abs,Y`.
 It runs once under `-O`, after the second peephole fixed point

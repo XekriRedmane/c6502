@@ -1,18 +1,19 @@
 # Default zp_abi calling convention
 
-`select_abi` in [passes/abi_selection.py](../../passes/abi_selection.py)
-gives every function that qualifies the zp_abi calling convention,
-and `allocate_zp_slots` in
-[passes/zp_slot_allocation.py](../../passes/zp_slot_allocation.py)
+`select_abi` in
+[cpp/src/passes/abi_selection.h](../../cpp/src/passes/abi_selection.h)
+gives every function that qualifies the zp_abi calling convention, and
+`allocate_zp_slots` in
+[cpp/src/passes/zp_slot_allocation.h](../../cpp/src/passes/zp_slot_allocation.h)
 then picks the zero-page bytes that hold each such function's
-parameters. Both run once, under `-O` only, after the TAC
-optimizer and before `tac_to_asm`. Without `-O` every
-argument goes on the soft stack, except for a call to a zp_abi
-routine at a fixed address. The convention itself is described for
-users in [calling_conventions.md](../calling_conventions.md), and
-its design is in [leaf_zp_abi.md](../leaf_zp_abi.md). This page
-covers which functions get it, what it saves, and when a function
-falls back to the soft stack.
+parameters. Both run once, under `-O` only, after the TAC optimizer
+and before `tac_to_asm`. Without `-O` every argument goes on the soft
+stack, except for a call to a zp_abi routine at a fixed address. The
+convention itself is described for users in
+[calling_conventions.md](../calling_conventions.md), and its design is
+in [leaf_zp_abi.md](../leaf_zp_abi.md). This page covers which
+functions get it, what it saves, and when a function falls back to the
+soft stack.
 
 A soft-stack call costs the caller a 16-bit subtract from `SSP` and
 an `LDY` and a `STA (SSP),Y` per argument byte. In the example
@@ -44,15 +45,16 @@ Not every parameter gets a slot:
 - When nothing in the declaration names a register or an address for
   a parameter, the leading integer and pointer parameters arrive in A
   and then X, as many whole ones as fit, and are handled as `register`
-  parameters are (`abi_selection._default_param_registers`). `main`
+  parameters are (`default_param_registers` in cpp/src/passes/abi_selection.cpp). `main`
   keeps its slots, since the startup code sets no register.
 - A `register` parameter arrives in A, X, or Y, and the callee's
   first instructions copy it into a local of its own
-  (`tac_to_asm._register_param_locals`), which the register allocator
-  keeps in the register when it can and in the function's pool
-  otherwise. The copies from A come first, and no byte of the local
+  (`register_param_locals` in cpp/src/tac_to_asm.cpp), which the
+  register allocator keeps in the register when it can and in the
+  function's pool otherwise. The copies from A come first, and no byte of the local
   is put in a register another byte arrives in, so no copy overwrites
-  a register another copy still reads (`optimizer._entry_register_limits`).
+  a register another copy still reads (`entry_register_limits` in
+  cpp/src/passes/optimization_asm/optimizer.h).
   A byte may stay in the register it arrives in, so the high byte of
   an `unsigned int` arriving in A and X stays in X:
   `unsigned int widen(unsigned int y) { return y - k; }` is `SEC; SBC
@@ -66,7 +68,7 @@ Not every parameter gets a slot:
   function with a `zeropage(addr)` parameter on the same bytes, or one
   defined in another unit that isn't a routine with a fixed address
   (`slot_sharing.pinned_param_copies`,
-  `tac_to_asm._pinned_param_locals`).
+  `pinned_param_locals` in cpp/src/tac_to_asm.cpp).
 - Parameters that [hold one value for several
   functions](slot_sharing.md) share one address.
 
@@ -216,7 +218,7 @@ these are true.
   whose address is taken or a recursive one whose recursive calls
   are marked `[[c6502::save_hardware_stack]]`, writes only its pool,
   which is kept
-  apart from the caller's bytes. `_demote_soft_stack_callers`
+  apart from the caller's bytes. `demote_soft_stack_callers`
   applies this last and repeats until no function changes, since
   demoting one function can disqualify its callers. The parameter
   slots of two zp_abi functions are kept apart when one can reach
@@ -235,8 +237,8 @@ when it doesn't qualify.
 
 The asm regalloc keeps each function's body values off its own
 parameter bytes and off the parameter bytes of every zp_abi function
-it calls (`_blocked_addrs_for` in
-[passes/optimization_asm/optimizer.py](../../passes/optimization_asm/optimizer.py)),
+it calls (`blocked_addrs_for` in
+[cpp/src/passes/optimization_asm/optimizer.h](../../cpp/src/passes/optimization_asm/optimizer.h)),
 so an argument store before a call can't overwrite a value that's
 still live.
 

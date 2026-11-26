@@ -1,7 +1,7 @@
 # Copy folding
 
 `FoldCopiesInFixedpoint` and `FoldCopiesPostDestruction` in
-[passes/optimization/copy_folding.py](../../passes/optimization/copy_folding.py)
+[cpp/src/passes/optimization/copy_folding.h](../../cpp/src/passes/optimization/copy_folding.h)
 fuse an instruction that writes a temporary with the `Copy` that
 moves the temporary somewhere else. The first runs in the TAC
 fixed-point loop, right after dead-store elimination. The second

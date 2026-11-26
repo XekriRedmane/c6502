@@ -1,14 +1,13 @@
 # Prologue synthesis
 
 `synthesize_program` in
-[passes/prologue_synthesis.py](../../passes/prologue_synthesis.py),
-which `compile.py` imports as `synthesize_prologue`, adds a soft-stack
-prologue and epilogue to a function only when the function ends up
-needing a frame. It runs once, after `replace_pseudoregisters_bare_exit`
-and the [LoadAddress split](lower_data_load_address.md), and before
+[cpp/src/passes/prologue_synthesis.h](../../cpp/src/passes/prologue_synthesis.h)
+adds a soft-stack prologue and epilogue to a function only when the
+function ends up needing a frame. It runs once, after
+`replace_program_bare_exit` and the [LoadAddress split](lower_data_load_address.md), and before
 [asm LICM](asm_licm.md) and the peephole fixed point. It runs only
 under `-O`. The unoptimized pipeline gets its prologue from
-`replace_pseudoregisters.replace_program`, which gives every function
+`replace_program` in cpp/src/passes/replace_pseudoregisters.h, which gives every function
 one, and `asm_to_asm2` drops it for a function with no argument or
 local bytes.
 
@@ -16,7 +15,7 @@ Under `-O`, `tac_to_asm` runs in bare-exit mode. It emits no
 `FunctionPrologue`, and it ends each return path with a bare
 `Return`, which lowers to `RTS`. Which functions get a frame isn't
 known until register allocation has run and
-`replace_pseudoregisters_bare_exit` has resolved every pseudoregister.
+`replace_program_bare_exit` has resolved every pseudoregister.
 That pass returns the frame's dimensions for each function, which are
 the soft-stack argument bytes, the frame-resident local bytes, and
 the callee-saved zero-page bytes to preserve. When all three are
@@ -176,8 +175,9 @@ entry after that, because a parameter kept in A had its store
 dropped, the pass wraps the prologue in `PHA` and `PLA`. No C program
 tried for this page produced a zp_abi function with a `register`
 parameter and a frame, since such a function's locals go in its
-private pool. `test_y_stub_goes_before_the_prologue` in
-[tests/test_param_registers.py](../../tests/test_param_registers.py)
+private pool. The case
+`param_registers: TestPrologue::test_y_stub_goes_before_the_prologue`
+in [cpp/tests/test_unit_helpers.cpp](../../cpp/tests/test_unit_helpers.cpp)
 covers the move.
 
 ## What it leaves alone

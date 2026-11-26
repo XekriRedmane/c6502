@@ -1,7 +1,7 @@
 # Carry-flag return without the annotation
 
 `choose_carry_returns` in
-[passes/carry_return_choice.py](../../passes/carry_return_choice.py)
+[cpp/src/passes/carry_return_choice.h](../../cpp/src/passes/carry_return_choice.h)
 gives a function the convention of
 `[[c6502::return_bool_in_carry]]` without the annotation: it returns
 its `bool` in C, and a caller branches on it with `BCC` or `BCS`.
@@ -132,7 +132,7 @@ big:                                big:
 Each unit records the choice in its link metadata, as `carry=true` on
 the function's `def` or `ext` line, for an annotated function too.
 The linker rejects units that disagree
-(`linker._carry_conflict`). That happens when one unit takes the
+(`carry_conflict` in cpp/src/passes/linker_metadata.cpp). That happens when one unit takes the
 function's address, or when the unit that defines it can't make it
 zp_abi. A function that returns `unsigned char` returns it in A in
 every unit.

@@ -1,7 +1,7 @@
 # A pointer returned in zero page
 
 `return_pointers_in_zero_page` in
-[passes/return_in_zero_page.py](../../passes/return_in_zero_page.py)
+[cpp/src/passes/return_in_zero_page.h](../../cpp/src/passes/return_in_zero_page.h)
 makes a `static` function that returns a pointer leave it in a
 zero-page pointer of its own, `F@ret`, where its callers read through
 it. It runs once on the unoptimized TAC, right after translation to
@@ -101,7 +101,7 @@ In Zork's interpreter (examples/zork) it applies to
 - The function is defined in the unit and has internal linkage, so
   every call to it is in the unit and goes through the rewrite.
 - It returns a pointer.
-- Its address isn't taken (`abi_selection._address_taken`), since a
+- Its address isn't taken (`address_taken` in cpp/src/passes/abi_selection.h), since a
   call through a pointer expects the result in A and X.
 
 ## What it leaves alone

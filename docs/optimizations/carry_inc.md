@@ -1,11 +1,11 @@
 # Carry INC
 
 `apply_carry_inc_peephole` in
-[passes/carry_inc.py](../../passes/carry_inc.py) rewrites the bytes
-of an add that only take in the carry, `LDA M; ADC #0; STA M`, as a
-`BCC` around an `INC M`. It does the same for the top byte of a
-subtract, which becomes a `BCS` around a `DEC M`. It runs in the
-peephole fixed point, in both pipelines, but in practice only the
+[cpp/src/passes/carry_inc.h](../../cpp/src/passes/carry_inc.h)
+rewrites the bytes of an add that only take in the carry, `LDA M; ADC
+#0; STA M`, as a `BCC` around an `INC M`. It does the same for the top
+byte of a subtract, which becomes a `BCS` around a `DEC M`. It runs in
+the peephole fixed point, in both pipelines, but in practice only the
 optimized pipeline produces the shape it matches.
 
 When a value of one byte is added to a wider one, as in

@@ -1,7 +1,7 @@
 # Loop unrolling
 
 `unroll_program` in
-[passes/optimization_ast/unroll.py](../../passes/optimization_ast/unroll.py)
+[cpp/src/passes/optimization_ast/unroll.h](../../cpp/src/passes/optimization_ast/unroll.h)
 replaces each `for` loop marked with the statement attribute
 `[[c6502::unroll]]` by one copy of its body per iteration. It runs
 once, on the C AST, after parsing and before identifier resolution.

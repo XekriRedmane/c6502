@@ -1,7 +1,7 @@
 # Logical-not jump fold
 
 `LNOT_RULE` in
-[passes/optimization/lnot_jump_fold.py](../../passes/optimization/lnot_jump_fold.py)
+[cpp/src/passes/optimization/lnot_jump_fold.h](../../cpp/src/passes/optimization/lnot_jump_fold.h)
 removes a `!` whose only use is a conditional jump, and flips the
 sense of the jump. It runs in the TAC fixed-point loop as part of the
 `fold_producer_jumps` `RuleSet`, together with the
@@ -96,7 +96,8 @@ less. That's the listing of two compiles, before and after the rule
 was added.
 
 An operand is 0 or 1 when it's an object whose type was `bool` (the
-symbol's `was_bool`, which `c99_to_tac._erase_bool` sets when it makes
+symbol's `was_bool`, which `erase_bool` in cpp/src/c99_to_tac.cpp sets
+when it makes
 the type `unsigned char`), or an SSA name defined by a comparison, a
 `!`, or an extend or copy of such a value. The `^` is done at the
 operand's width, a byte for a `bool`, and a `ZeroExtend` (or

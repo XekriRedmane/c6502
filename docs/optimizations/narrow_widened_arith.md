@@ -1,7 +1,7 @@
 # Narrowing widened arithmetic
 
 `NarrowWidenedArith` in
-[passes/optimization/narrow_widened_arith.py](../../passes/optimization/narrow_widened_arith.py)
+[cpp/src/passes/optimization/narrow_widened_arith.h](../../cpp/src/passes/optimization/narrow_widened_arith.h)
 rewrites `Truncate(Extend(a) op Extend(b))` as `a op b` at the
 truncated width, when the low bytes of the result depend only on the
 low bytes of the operands. It's the last pass in the TAC fixed-point
@@ -71,7 +71,7 @@ Zork's `branch` starts `bool on_true = (b & 0x80) != 0;`, which C
 computes as an `int` and converts to `bool` with a `Truncate`. With
 the comparison's result in one byte, `tac_to_asm` lowers the test
 against 0 as `AND #$80; BEQ end; LDA #1; end:`
-(`_translate_zero_test`), where the `int` result took `BNE true; LDA
+(`translate_zero_test`), where the `int` result took `BNE true; LDA
 #0; JMP end; true: LDA #1; end:`. This needs the truncate to be the
 comparison's only reader, and each variable operand to hold at the
 truncate the value the comparison read, as below.

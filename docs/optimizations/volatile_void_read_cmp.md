@@ -1,7 +1,7 @@
 # CMP for a discarded volatile read
 
 `apply_volatile_void_read_cmp` in
-[passes/volatile_void_read_cmp.py](../../passes/volatile_void_read_cmp.py)
+[cpp/src/passes/volatile_void_read_cmp.h](../../cpp/src/passes/volatile_void_read_cmp.h)
 turns a volatile load through a pointer whose value is thrown away
 into a `CMP` of the same byte. It runs in the peephole fixed point, in
 both pipelines, but only fires with `-O`. The unoptimized

@@ -1,7 +1,7 @@
 # AND jump fold
 
 `AND_ZERO_RULE` in
-[passes/optimization/and_zero_jump_fold.py](../../passes/optimization/and_zero_jump_fold.py)
+[cpp/src/passes/optimization/and_zero_jump_fold.h](../../cpp/src/passes/optimization/and_zero_jump_fold.h)
 turns a bit test of a byte, `if (flags & mask)`, into a
 `JumpIfMasked` that tests the byte directly. It runs in the TAC
 fixed-point loop as part of the `fold_producer_jumps` `RuleSet`,
@@ -81,7 +81,8 @@ stays.
   earlier in the same straight-line run, with no label, jump, store,
   call, or write to the source in between. The extend's result must
   be SSA-renamed too. The check is `extend_source_unchanged` in
-  `cmp_zero_jump_fold.py`, which the comparison fold shares.
+  cpp/src/passes/optimization/cmp_zero_jump_fold.h, which the
+  comparison fold shares.
 - A symbol table is present, since the pass reads the source's type
   from it. The optimizer always passes one.
 

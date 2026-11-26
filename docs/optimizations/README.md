@@ -64,14 +64,14 @@ run of the allocator.
 flowchart TD
     tacin["TAC from c99_to_tac, inline_functions, and return_pointers_in_zero_page"]
     rows["apply_row_address_tables, over the program"]
-    tacopt["the TAC optimizer, optimize_tac, once per function"]
+    tacopt["the TAC optimizer, optimize_program, once per function"]
     tables["dispatch_const_pointer_arrays, then apply_split_tables, over the program"]
     abi["select_abi, the carry-return choice, find_shares, allocate_zp_slots, and the others"]
     t2a["tac_to_asm with bare exits: asm with Pseudo operands and no prologues"]
     pre["asm optimizer, preliminary run, from the default caller- and callee-saved halves of $80-$FF"]
     pools["allocate_function_locals: a private pool for each eligible function"]
     fin["asm optimizer, final run, from the private pools"]
-    rp["replace_pseudoregisters_bare_exit: the Pseudos left become Frame, Data, or ZP operands"]
+    rp["replace_program_bare_exit: the Pseudos left become Frame, Data, or ZP operands"]
     late["lower_data_load_address, prologue synthesis, asm loop-invariant stores"]
     peep["five peephole fixed points, with the register promotions, slot coalescing, and loop rotation between them"]
     final["jump tables, copies through X or Y, long branches, shorter jumps, shared tails, outlined runs, zero-page globals placed"]
@@ -182,11 +182,11 @@ flowchart TD
         pq{"program changed?"}
         ps --> pq
         pq -->|"yes, and fewer than 16 sweeps so far"| ps
-        pq -->|"yes, after 16 sweeps"| err["AssertionError"]
+        pq -->|"yes, after 16 sweeps"| err["InternalError"]
     end
     tq -->|"no, or 256 sweeps"| tout["the passes after the fixed point"]
     aq -->|"no"| aout["liveness, coalescing, coloring"]
-    pq -->|"no"| pout["the next pass in optimized_asm"]
+    pq -->|"no"| pout["the next pass in optimized_region"]
 ```
 
 The two limits guard against passes that undo each other's changes.
@@ -345,11 +345,12 @@ without a link, so that each optimization's neighbors can be seen. A
 group marked *fixed point* runs every member in order, then repeats
 the whole group until a sweep leaves the code unchanged.
 
-This list is copied from `compile.optimized_asm`,
-`compile._peephole_fixedpoint`, `_DRIVER` in
-`passes/optimization/optimizer.py`, and `_optimize_function` in
-`passes/optimization_asm/optimizer.py`. It has to be checked against
-them whenever a pass is added or moved.
+This list is copied from cpp/src/passes/translate_for_codegen.cpp,
+cpp/src/passes/optimized_front.cpp, cpp/src/passes/optimized_asm.cpp,
+cpp/src/passes/peephole_fixedpoint.cpp, `make_driver` in
+cpp/src/passes/optimization/optimizer.cpp, and `optimize_function` in
+cpp/src/passes/optimization_asm/optimizer.cpp. It has to be checked
+against them whenever a pass is added or moved.
 
 1. Parse. Then, on the AST:
    1. [Loop unrolling](unroll.md)
@@ -489,12 +490,10 @@ them whenever a pass is added or moved.
 37. Emit, followed by [redundant LDY setup](y_peephole.md) on the
     emitted text.
 
-The peephole fixed point (`compile._peephole_fixedpoint`) runs these,
-in order, as one *fixed point*. Its loop is capped at 16 sweeps, and
-reaching the cap raises an error. A pass isn't run again on a function
-it left unchanged when nothing it reads has changed since
-(`passes/peephole_memo.py`), which leaves the output as it was and
-saves about a third of the fixed point's time.
+The peephole fixed point (cpp/src/passes/peephole_fixedpoint.cpp) runs
+these, in order, as one *fixed point*. Its loop is capped at 16
+sweeps, and reaching the cap raises an error. Each sweep runs every
+pass on the whole program.
 
 1. [Memory-to-memory move splitting](split_mem_to_mem.md)
 2. [A halved sum's ninth bit from the carry](carry_halve.md)

@@ -1,10 +1,10 @@
 # Carry set again by a shift
 
 `apply_carry_recompute_drop` in
-[passes/carry_recompute.py](../../passes/carry_recompute.py) deletes a
-load and shift whose only effect is to set the carry to the value it
-already holds. It runs in the peephole fixed point, which both
-pipelines run.
+[cpp/src/passes/carry_recompute.h](../../cpp/src/passes/carry_recompute.h)
+deletes a load and shift whose only effect is to set the carry to the
+value it already holds. It runs in the peephole fixed point, which
+both pipelines run.
 
 `tac_to_asm` lowers `x >> 7` on a 16-bit `x` as the high byte of `x <<
 1`, and `x >> 15` as the bit shifted out of the top. Statements that

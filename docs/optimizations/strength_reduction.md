@@ -1,7 +1,7 @@
 # Strength reduction
 
 The three rules in
-[passes/optimization/strength_reduction.py](../../passes/optimization/strength_reduction.py)
+[cpp/src/passes/optimization/strength_reduction.h](../../cpp/src/passes/optimization/strength_reduction.h)
 rewrite a multiply, divide, or modulo by a constant as shifts, masks,
 adds, or copies. The pipeline runs them as one `RuleSet` named
 `reduce_strength` in the TAC fixed-point loop, right after constant
@@ -84,7 +84,7 @@ treat them like any other SSA temporary.
   as unsigned, along with the unsigned constant variants.
 - A signed dividend qualifies too when it can't be negative, by
   `max_value` in
-  [passes/optimization/value_range.py](../../passes/optimization/value_range.py)
+  [cpp/src/passes/optimization/value_range.h](../../cpp/src/passes/optimization/value_range.h)
   (see [narrowing arithmetic on values from 0 to
   255](narrow_byte_range.md)). Rounding toward zero and rounding down
   agree on a nonnegative quotient, and the remainder of a nonnegative
@@ -97,9 +97,9 @@ treat them like any other SSA temporary.
   two-term form when the constant equals `2^a + 2^b` or `2^a - 2^b`
   with `a > b >= 0`, the other operand is a variable, the result has
   an integer type, and `inline_shift_ok` in
-  [passes/shift_cost.py](../../passes/shift_cost.py) accepts every
-  shift in the rewrite at the result's width. A value that fits both
-  forms (only 3) takes the sum.
+  [cpp/src/passes/shift_cost.h](../../cpp/src/passes/shift_cost.h)
+  accepts every shift in the rewrite at the result's width. A value
+  that fits both forms (only 3) takes the sum.
 - A multiply of a byte by a constant whose non-adjacent form has three
   nonzero digits below bit 8, with the top one +1, takes the
   three-term form: three shifts and two adds or subtracts. Ali Baba's
@@ -145,7 +145,7 @@ That still replaces the `mul16` call with a shorter and faster
 loop.
 
 When only the low byte of `x` can be nonzero, as for a widened byte
-or a value masked to one (`passes/significant_bytes.py`), `tac_to_asm`
+or a value masked to one (cpp/src/passes/significant_bytes.h), `tac_to_asm`
 inlines the shift whatever the count, as two shifts of that byte in
 A: one for each byte of the result. In Zork's
 `please_insert_save_diskette`, `SCRATCH1 = (64 * (answer & 0x07)) -

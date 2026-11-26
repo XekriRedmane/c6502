@@ -1,7 +1,7 @@
 # Combining added constants
 
 `ReassocConstants` in
-[passes/optimization/reassoc_const.py](../../passes/optimization/reassoc_const.py)
+[cpp/src/passes/optimization/reassoc_const.h](../../cpp/src/passes/optimization/reassoc_const.h)
 rewrites `(v + C2) + C1` as `v + (C1 + C2)`, with the two constants
 added at compile time. It runs in the TAC fixed-point loop, after
 copy folding and before [offset reassociation](reassoc_offset.md).

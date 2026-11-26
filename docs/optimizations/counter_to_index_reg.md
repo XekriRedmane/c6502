@@ -1,7 +1,7 @@
 # Count-down counter in X or Y
 
 `apply_counter_to_index_reg` in
-[passes/counter_to_index_reg.py](../../passes/counter_to_index_reg.py)
+[cpp/src/passes/counter_to_index_reg.h](../../cpp/src/passes/counter_to_index_reg.h)
 moves a loop counter that is read only by its own `DEC` from memory
 into X, or into Y when the loop uses X. It runs once under
 `-O`, after the first peephole fixed point and the

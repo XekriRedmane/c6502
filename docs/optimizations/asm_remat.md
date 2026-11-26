@@ -1,11 +1,12 @@
 # Rematerialization of staged values
 
-`apply_remat` in [passes/asm_remat.py](../../passes/asm_remat.py)
-replaces a read of a zero-page staging slot with a fresh load from
-the place the value came from, which leaves the store into the slot
-with no reader. It runs in the peephole fixed point. The fixed point
-runs in both pipelines, but the pass can fire only in the optimized
-one, because the staging slots it rewrites are the `__local_<fn>__*`
+`apply_remat` in
+[cpp/src/passes/asm_remat.h](../../cpp/src/passes/asm_remat.h)
+replaces a read of a zero-page staging slot with a fresh load from the
+place the value came from, which leaves the store into the slot with
+no reader. It runs in the peephole fixed point. The fixed point runs
+in both pipelines, but the pass can fire only in the optimized one,
+because the staging slots it rewrites are the `__local_<fn>__*`
 body-local slots that the asm register allocator hands out. The
 unoptimized pipeline keeps locals on the soft stack, and it passes no
 slot-symbol map, which the pass's second step requires.
@@ -159,7 +160,7 @@ and take an earlier load for A's value, which rematerialized
   rewrite pays for itself only through the store into the slot, 2
   bytes, which goes once nothing reads the slot. The pass makes it only
   when every read of the slot in the function is rewritten and there
-  are at most two of them (`_costs_more`, `_store_dies`). A source in
+  are at most two of them (`costs_more`, `store_dies`). A source in
   zero page, or an immediate, costs what the slot costs, and the pass
   rewrites a read from one whatever else reads the slot.
 

@@ -1,11 +1,11 @@
 # DEC
 
 `apply_dec_peephole` in
-[passes/dec_peephole.py](../../passes/dec_peephole.py) rewrites an
-in-place subtract of 1 from a 1-byte value as a single `DEC`, or as
-`DEX` or `DEY` when the value is in X or Y. It runs in the peephole
-fixed point, in both pipelines, but in practice only the optimized
-pipeline produces the shape it matches.
+[cpp/src/passes/dec_peephole.h](../../cpp/src/passes/dec_peephole.h)
+rewrites an in-place subtract of 1 from a 1-byte value as a single
+`DEC`, or as `DEX` or `DEY` when the value is in X or Y. It runs in
+the peephole fixed point, in both pipelines, but in practice only the
+optimized pipeline produces the shape it matches.
 
 `tac_to_asm` lowers `x -= 1` on a 1-byte `x` as `LDA x; SEC; SBC #1;
 STA x`. The 6502's `DEC` subtracts 1 from a byte in memory without

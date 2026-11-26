@@ -1,7 +1,7 @@
 # A choice of offsets from one pointer
 
 `PhiOffset` in
-[passes/optimization/phi_offset.py](../../passes/optimization/phi_offset.py)
+[cpp/src/passes/optimization/phi_offset.h](../../cpp/src/passes/optimization/phi_offset.h)
 rewrites a join that chooses between `p + k1` and `p + k2`, for one
 pointer `p` and constants from 0 to 255, as a choice between `k1` and
 `k2` that the join adds to `p`. It runs once after the TAC fixed

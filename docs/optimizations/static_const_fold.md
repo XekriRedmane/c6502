@@ -1,7 +1,7 @@
 # Static const reads
 
 `FoldStaticConstReads` (`fold_static_const_reads`) in
-[passes/optimization/static_const_fold.py](../../passes/optimization/static_const_fold.py)
+[cpp/src/passes/optimization/static_const_fold.h](../../cpp/src/passes/optimization/static_const_fold.h)
 replaces each read of a `static const` scalar with its initial value.
 It runs once per function under `-O`, after SSA construction
 and before the TAC fixed-point loop.

@@ -1,10 +1,10 @@
 # Shared function tails
 
 `apply_shared_tails` in
-[passes/shared_tails.py](../../passes/shared_tails.py) moves the
-instructions that several functions of a unit end with alike into a
-function of their own, and makes each of them jump there. It runs
-once, last in `compile.optimized_asm`, after
+[cpp/src/passes/shared_tails.h](../../cpp/src/passes/shared_tails.h)
+moves the instructions that several functions of a unit end with alike
+into a function of their own, and makes each of them jump there. It
+runs once, last in `optimized_region`, after
 [shorter jumps](short_jumps.md), and only under `-O`.
 
 Functions that hand their result to the same callee end the same way.
@@ -12,7 +12,8 @@ A Z-machine instruction stores a byte it found with `store_result`,
 which takes a word, so the byte's high byte is stored as 0 and the
 callee is tail-called. [Cross jumping](cross_jump.md) shares such
 code inside one function, but a `JMP` can't go to a label in another
-function: dasm and `binutils.assembler` scope a `.` label to its
+function: dasm and c6502's assembler (cpp/src/binutils/assembler.cpp)
+scope a `.` label to its
 function, and a label of any other kind starts an item, which the
 linker may place anywhere. So the shared code becomes an item, the
 function `F@tail<n>`.

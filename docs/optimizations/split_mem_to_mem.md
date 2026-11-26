@@ -1,7 +1,7 @@
 # Memory-to-memory move splitting
 
 `apply_split_mem_to_mem` in
-[passes/split_mem_to_mem.py](../../passes/split_mem_to_mem.py)
+[cpp/src/passes/split_mem_to_mem.h](../../cpp/src/passes/split_mem_to_mem.h)
 rewrites a `Mov` whose source and destination are both memory as a
 load into A followed by a store from A. It runs first in each
 iteration of the peephole fixed point, in both the optimized and the

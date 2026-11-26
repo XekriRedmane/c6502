@@ -1,7 +1,7 @@
 # Loop-carried value in A
 
 `apply_promote_loop_carried_to_a` in
-[passes/promote_loop_carried_to_a.py](../../passes/promote_loop_carried_to_a.py)
+[cpp/src/passes/promote_loop_carried_to_a.h](../../cpp/src/passes/promote_loop_carried_to_a.h)
 moves a `register` parameter that a loop reads and increments out of
 its zero-page save byte and into A. It runs once under `-O`,
 after the first peephole fixed point and just before the

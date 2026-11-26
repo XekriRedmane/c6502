@@ -8,8 +8,8 @@ operations, each in the form for one type, such as
 macros.
 
 The compiler implements each function itself, as a builtin
-(builtin_functions.py). A call with a constant argument is folded to
-its result, and any other call becomes a short loop written in place,
+(cpp/src/builtin_functions.h). A call with a constant argument is
+folded to its result, and any other call becomes a short loop written in place,
 so no library is needed and none is linked.
 
 ```c
@@ -92,9 +92,10 @@ So `stdc_first_leading_one(x)` is `stdc_leading_zeros(x) + 1` for any
 | `stdc_bit_ceil((uint8_t)200)` | 0 |
 | `stdc_bit_ceil((uint16_t)200)` | 256 |
 
-`builtin_functions.stdbit` computes the same results, for constant
-folding, and `tests/test_stdbit.py` checks it against a second model
-written from §7.18's wording one bit index at a time.
+`stdbit` in cpp/src/builtin_functions.h computes the same results,
+for constant folding. `tests/test_stdbit.py` checks its Python copy,
+`builtin_functions.stdbit`, against a second model written from
+§7.18's wording one bit index at a time.
 
 ## Constants
 
@@ -194,7 +195,7 @@ call the function with its macro suppressed, as in
 header declares each form with a suffix as a function, and when a unit
 refers to one of them other than through its macro, the compiler
 defines the function in that unit, as a function whose body is the
-builtin (`passes/stdbit_functions.py`).
+builtin (cpp/src/passes/stdbit_functions.cpp).
 
 ```c
 #include <stdbit.h>

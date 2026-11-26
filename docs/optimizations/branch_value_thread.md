@@ -1,7 +1,7 @@
 # Branch threading on known values
 
 `apply_branch_value_thread` in
-[passes/branch_value_thread.py](../../passes/branch_value_thread.py)
+[cpp/src/passes/branch_value_thread.h](../../cpp/src/passes/branch_value_thread.h)
 points a branch or a `JMP` past code at its target whose tests the
 path into it has already decided. It runs in the peephole fixed
 point, which both pipelines run.

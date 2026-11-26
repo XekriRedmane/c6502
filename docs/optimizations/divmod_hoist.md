@@ -1,7 +1,7 @@
 # A divide and a remainder computed together
 
 `HoistDivmodPairs` in
-[passes/optimization/divmod_hoist.py](../../passes/optimization/divmod_hoist.py)
+[cpp/src/passes/optimization/divmod_hoist.h](../../cpp/src/passes/optimization/divmod_hoist.h)
 puts a `/` and a `%` of the same operands next to each other, so that
 `tac_to_asm` gives both from one loop of subtractions or one call of
 a `divmod` helper ([a byte divided by a constant](byte_divide.md)).

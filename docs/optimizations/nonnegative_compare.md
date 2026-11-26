@@ -1,7 +1,7 @@
 # A signed compare of values that can't be negative
 
 `NONNEGATIVE_COMPARE_RULE` in
-[passes/optimization/nonnegative_compare.py](../../passes/optimization/nonnegative_compare.py)
+[cpp/src/passes/optimization/nonnegative_compare.h](../../cpp/src/passes/optimization/nonnegative_compare.h)
 makes a signed ordering compare unsigned when neither operand can be
 negative. It runs in the TAC fixed-point loop, last in the
 `fold_producer_jumps` `RuleSet` with the

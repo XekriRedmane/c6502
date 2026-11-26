@@ -1,7 +1,7 @@
 # Move coalescing
 
 `coalesce_moves` in
-[passes/optimization_asm/coalescing.py](../../passes/optimization_asm/coalescing.py)
+[cpp/src/passes/optimization_asm/coalescing.h](../../cpp/src/passes/optimization_asm/coalescing.h)
 merges two values joined by a copy into one node of the interference
 graph, so that the register allocator gives both the same byte. It
 runs once per function in each of the two runs of the asm-level SSA

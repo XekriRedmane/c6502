@@ -231,10 +231,6 @@ std::vector<ir::Copy> order_parallel_copies(const std::vector<ir::Copy>& copies,
       pending.erase(pending.begin() + static_cast<std::ptrdiff_t>(*ready));
       continue;
     }
-    if (symbols == nullptr) {
-      out.insert(out.end(), pending.begin(), pending.end());
-      break;
-    }
     const ir::Copy chosen = pending.front();
     const auto* chosen_dst = asdl::as<ir::Var>(chosen.dst);
     if (chosen_dst == nullptr) {
@@ -244,7 +240,7 @@ std::vector<ir::Copy> order_parallel_copies(const std::vector<ir::Copy>& copies,
     const std::string d = chosen_dst->name;
     ++cycle_counter;
     const std::string tmp_name = "." + fn_name + "@cycle_tmp@" + std::to_string(cycle_counter);
-    if (const Symbol* sym = symbols->find(d)) {
+    if (const Symbol* sym = symbols != nullptr ? symbols->find(d) : nullptr) {
       Symbol copy{.type = sym->type, .attrs = LocalAttr{}};
       symbols->insert_or_assign(tmp_name, std::move(copy));
     }

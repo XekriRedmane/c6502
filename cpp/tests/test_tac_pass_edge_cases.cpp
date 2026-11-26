@@ -91,3 +91,34 @@ TEST_CASE("tac_rotate_signed_countdown_loops leaves a 24-bit counter alone") {
       "false, \"was_bool\": false}}}}]]}}}, \"ssa_dsts\": null}}",
       loop, loop, "");
 }
+
+TEST_CASE("tac_from_ssa breaks a cycle of copies without a symbol table") {
+  c6502::testing::check_stage_case(
+      "tac_from_ssa", "{\"args\": [], \"kwargs\": {\"symbols\": null, \"ssa_dsts\": null}}",
+      "Function(\"main\" true [] [\n"
+      "  Label(\".pre\")\n"
+      "  Copy(Constant(ConstInt(7)) Var(\"a\"))\n"
+      "  Copy(Constant(ConstInt(11)) Var(\"b\"))\n"
+      "  Jump(\".loop_continue\")\n"
+      "  Label(\".loop_continue\")\n"
+      "  Label(\".join\")\n"
+      "  Phi(Var(\"a\") [PhiArg(\".pre\" Constant(ConstInt(0))) PhiArg(\".loop_continue\" Var(\"b\"))])\n"
+      "  Phi(Var(\"b\") [PhiArg(\".pre\" Constant(ConstInt(0))) PhiArg(\".loop_continue\" Var(\"a\"))])\n"
+      "  Ret(Var(\"a\"))\n"
+      "])\n",
+      "Function(\"main\" true [] [\n"
+      "  Label(\".pre\")\n"
+      "  Copy(Constant(ConstInt(7)) Var(\"a\"))\n"
+      "  Copy(Constant(ConstInt(11)) Var(\"b\"))\n"
+      "  Copy(Constant(ConstInt(0)) Var(\"a\"))\n"
+      "  Copy(Constant(ConstInt(0)) Var(\"b\"))\n"
+      "  Jump(\".loop_continue\")\n"
+      "  Label(\".loop_continue\")\n"
+      "  Copy(Var(\"a\") Var(\".main@cycle_tmp@1\"))\n"
+      "  Copy(Var(\"b\") Var(\"a\"))\n"
+      "  Copy(Var(\".main@cycle_tmp@1\") Var(\"b\"))\n"
+      "  Label(\".join\")\n"
+      "  Ret(Var(\"a\"))\n"
+      "])\n",
+      "");
+}

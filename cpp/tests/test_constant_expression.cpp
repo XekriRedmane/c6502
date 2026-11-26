@@ -107,6 +107,15 @@ TEST_CASE("a right shift of a negative value is arithmetic") {
   }
 }
 
+TEST_CASE("a packed BCD call of one argument is an internal error") {
+  using namespace c6502;
+  const auto exp = asdl::load<c99_ast::Type_exp>(
+      R"(FunctionCall("__c6502_bcd_add" [Constant(ConstUInt(1) UInt)] UInt false))");
+  CHECK_THROWS_WITH_AS(ce::evaluate_integer_constant_expression(exp),
+                       "a packed BCD builtin call has fewer than two arguments",
+                       InternalError);
+}
+
 TEST_CASE("an error names a named constant as the program spells it") {
   using namespace c6502;
   const ce::NamedConstants scope(

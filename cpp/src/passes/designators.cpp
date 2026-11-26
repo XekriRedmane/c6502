@@ -377,7 +377,7 @@ class Normalizer {
     const Members members = this->members(partial);
     if (asdl::isa<ir::Union>(t)) {
       if (partial.slots.size() != 1) {
-        throw InternalError("ValueError: a union's initializer has no member or several");
+        throw InternalError("a union's initializer has no member or several");
       }
       Slot& slot = partial.slots.front();
       const auto& [name, m_type] = members.at(static_cast<std::size_t>(slot.key));

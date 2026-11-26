@@ -72,7 +72,7 @@ int width_bits(const Type& t) {
   }
   const int w = int_width(s);
   if (w == 0) {
-    throw InternalError("KeyError: " + asdl::py_repr(s));
+    throw InternalError("width_bits of a type that isn't an integer type: " + asdl::py_repr(s));
   }
   return 8 * w;
 }
@@ -501,7 +501,7 @@ std::pair<Int, Type> evaluate_integer_constant_expression(const Exp& exp) {
       if (call.name == bf::kBcdAdd || call.name == bf::kBcdSub) {
         const Type t = result_type(type_checking::data_type_of(exp));
         if (call.args.size() < 2) {
-          throw InternalError("IndexError: list index out of range");
+          throw InternalError("a packed BCD builtin call has fewer than two arguments");
         }
         const Int a = evaluate_integer_constant_expression(call.args[0]).first;
         const Int b = evaluate_integer_constant_expression(call.args[1]).first;

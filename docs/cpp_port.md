@@ -1466,42 +1466,51 @@ fuzz/tac_passes.py by name (`_PIPELINE`).
 
 #### What step 9's Python keeps
 
-The simulator, the suite, `tac_sim`, and the fuzzers read these modules
-as data models and readers, so step 8 can't remove them. Together they
-are about 5,500 lines.
+The simulator, the suite, and the fuzzers read these modules as data
+models and readers, so step 8 couldn't remove them. The list gives
+what group R left when it removed the Python compiler, about 7,200
+lines with the shims. The survey of 23 Nov 2026 listed tac_sim.py,
+fp_arith.py, and the table classes of passes/type_checking.py too,
+which went once G4 ported the TAC interpreter to C++.
 
 - `asm_ast` and `ir_dump`. sim/assembler.py assembles an `asm_ast`
-  program, and the harness already gets the finished program from
-  `c6502cpp backend` as a dump. `asm2_ast` stays only while `ir_check`
-  is in Python.
+  program, and the harness gets the finished program from `c6502cpp
+  backend` as a dump. `asm2_ast` was to stay only while `ir_check` was
+  in Python. G3 ported `ir_check`, and asm2_ast.py stays because
+  `ir_dump` reads and writes the dumps of all four IRs and
+  tests/test_asdl_cpp.py compares the generated modules with the
+  `.asdl` files.
 - `rtlib/helpers.py`, the helpers' `asm_ast` functions, which
   sim/runtime.py assembles at $E000, and passes/runtime_layout.py
-  (`CLASSIC`, `RuntimeLayout`), which sim/runtime.py, linked.py, and
-  ali_baba.py read, with what it imports, passes/dataclass_fields.py and
-  passes/type_check_error.py. tools/rtlib_table.py keeps the C++ copy
-  of the helpers equal to these.
+  (`CLASSIC`, `RuntimeLayout`), which sim/runtime.py, linked.py,
+  harness.py, and ali_baba.py read, with what it imports,
+  passes/dataclass_fields.py and passes/type_check_error.py.
+  tools/rtlib_table.py keeps the C++ copy of the helpers equal to
+  these.
 - `binutils/elf.py`, which sim/linked.py, lode_runner.py, and
   ali_baba.py read executables with, and `binutils/opcodes.py`, whose
   `DECODE` the last two decode with.
 - `builtin_functions`, whose `bin_to_bcd` sim/runtime.py calls and
-  whose BCD model `tac_sim` and seven tests use, and `bit_precise`,
-  `fp_arith` (the one user of numpy), `c99_ast`, and `tac_ast`, which
-  `tac_sim` reads.
-- From passes/type_checking.py, the classes of the tables: `Symbol`,
-  `SymbolTable`, `LocalAttr`, `StaticAttr`, `FunAttr`, the initial
-  values, `TypeTable`, `StructLayout`, and `MemberInfo`, which are its
-  first 500 lines of 6,205. `tac_sim` reads each symbol's type and
-  attributes and each structure's layout.
+  whose models of the builtins four test modules check results with,
+  and `bit_precise`, `c99_ast`, and `tac_ast`, which the tests read
+  (`bit_precise` reads the other two).
 - `diagnostics`, through which cpp_backend.py issues the warnings, and
-  the exception classes of `cpp_backend._ERROR_MODULES`, with Lark's
-  hierarchy (`UnexpectedToken` and `UnexpectedCharacters` under
-  `UnexpectedInput` under `LarkError`). About 65 test modules import
-  one of those classes, and 24 import `lark.exceptions`.
+  errors.py, which holds the exception classes of
+  `cpp_backend._ERROR_MODULES` with Lark's hierarchy
+  (`UnexpectedToken` and `UnexpectedCharacters` under
+  `UnexpectedInput` under `LarkError`). 20 test modules import
+  errors.py, and none imports `lark`.
 - asdl.py, which writes the Python IR modules above and the C++ ones,
   and cpp_backend.py, compile.py, nm.py, and objdump.py as shims.
 
-Step 8 has to give each of these what it now takes from the Python
-compiler.
+The survey planned what step 8 had to give each of these in place of
+what it took from the Python compiler, as follows. G4 ported the TAC
+interpreter to C++ in place of the first item's Python reader of the
+tables, and its backend modes `tac-run`, `tac-observe`, and
+`tac-falls-off` (`cpp_backend.tac_main`, `tac_results`,
+`tac_first_changing_pass`, and `tac_falls_off_end`) serve the callers
+of the first three items. `linked_text` runs `c6502cpp objdump`, and
+since group R cpp_backend.py finds c6502cpp itself.
 
 - The TAC interpreter (`tac_sim.Simulator`) takes a TAC program, its
   symbol table, and its type table, and today gets them from the Python
@@ -1510,7 +1519,7 @@ compiler.
   fuzz/reduce.py and fuzz/tac_passes.py through the harness's
   `_PIPELINE`. The C++ side has to return the TAC's dump and the tables
   in the tagged JSON that src/tagged_json.h writes for the captures,
-  and Python has to read that JSON into the classes above with the
+  and Python has to read that JSON into the table classes with the
   inverse of `tools/capture_passes.encode`, which isn't written yet.
 - fuzz/tac_passes.py runs `tac_sim` on each function after each TAC
   pass, through `PhaseDriver.observer`, and fuzz/reduce.py's

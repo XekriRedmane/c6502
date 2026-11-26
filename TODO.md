@@ -304,7 +304,6 @@ Step 8 finished on 25 Nov 2026, and step 9 has no survey or plan of
 groups yet, so the first piece of work is the survey and the plan, as
 step 8 had. The root CLAUDE.md lists the Python that is left, and
 "What step 9's Python keeps", under step 8, says what reads each
-module, though tac_sim.py and fp_arith.py, which it lists, went in
-group R, since the TAC interpreter is in C++. Once the suite is in
+module. Once the suite is in
 C++, compile.py, nm.py, and objdump.py stop being shims, and the
 messages that still say `compile.py:` can change.

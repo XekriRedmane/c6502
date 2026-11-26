@@ -30,7 +30,34 @@ std::string error_of(const std::string& src) {
   return "no error";
 }
 
+// Returns the dump of the program the front end makes of `src`.
+std::string checked(const std::string& src) {
+  c6502::passes::FrontEndOptions options;
+  options.preprocess = false;
+  std::string err;
+  return c6502::asdl::dump(c6502::passes::front_end(src, options, err).prog);
+}
+
 }  // namespace
+
+TEST_CASE("type checker: a call through * and & of a function's name names it") {
+  const std::string by_name = "IndirectCall(Var(\"f\" ";
+  CHECK(checked("int f(void); int g(void) { return (*f)(); }").find(by_name) !=
+        std::string::npos);
+  CHECK(checked("int f(void); int g(void) { return (&f)(); }").find(by_name) !=
+        std::string::npos);
+  CHECK(checked("int f(void); int g(void) { return (*&*&f)(); }").find(by_name) !=
+        std::string::npos);
+  CHECK(checked("int f(void); int g(void) { return (**f)(); }").find(by_name) !=
+        std::string::npos);
+  const std::string fp_by_name = "IndirectCall(Var(\"fp\" ";
+  CHECK(checked("int (*fp)(void); int g(void) { return (*fp)(); }").find(fp_by_name) !=
+        std::string::npos);
+  CHECK(checked("int (*fp)(void); int g(void) { return (&*fp)(); }").find(fp_by_name) !=
+        std::string::npos);
+  CHECK(error_of("int (*fp)(void); int g(void) { return (&fp)(); }").find(
+            "called object is not a function or function pointer") != std::string::npos);
+}
 
 TEST_CASE("type checker: &* of an expression is the operand's decayed pointer") {
   SUBCASE("an element of a two-dimensional array") {

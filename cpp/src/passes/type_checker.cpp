@@ -662,14 +662,15 @@ bool is_pointer_to_function(const Type& t) {
 }
 
 std::optional<std::string> callee_name(const Exp& exp, const SymbolTable& symbols) {
-  std::vector<bool> derefs;
+  enum class Step { kDereference, kAddressOf };
+  std::vector<Step> steps;
   const Exp* e = &exp;
   while (true) {
     if (const auto* d = std::get_if<ir::Dereference>(e)) {
-      derefs.push_back(true);
+      steps.push_back(Step::kDereference);
       e = &*d->exp;
     } else if (const auto* a = std::get_if<ir::AddressOf>(e)) {
-      derefs.push_back(false);
+      steps.push_back(Step::kAddressOf);
       e = &*a->exp;
     } else {
       break;
@@ -684,16 +685,12 @@ std::optional<std::string> callee_name(const Exp& exp, const SymbolTable& symbol
     return std::nullopt;
   }
   const Type& t = strip_quals(sym->type);
-  bool is_function = false;
-  if (asdl::isa<ir::FunType>(t)) {
-    is_function = true;
-  } else if (is_pointer_to_function(t)) {
-    is_function = false;
-  } else {
+  bool is_function = asdl::isa<ir::FunType>(t);
+  if (!is_function && !is_pointer_to_function(t)) {
     return std::nullopt;
   }
-  for (auto it = derefs.rbegin(); it != derefs.rend(); ++it) {
-    if (*it) {
+  for (auto it = steps.rbegin(); it != steps.rend(); ++it) {
+    if (*it == Step::kDereference) {
       is_function = true;
     } else if (is_function) {
       is_function = false;

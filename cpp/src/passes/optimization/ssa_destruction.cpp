@@ -231,13 +231,7 @@ std::vector<ir::Copy> order_parallel_copies(const std::vector<ir::Copy>& copies,
       pending.erase(pending.begin() + static_cast<std::ptrdiff_t>(*ready));
       continue;
     }
-    const ir::Copy chosen = pending.front();
-    const auto* chosen_dst = asdl::as<ir::Var>(chosen.dst);
-    if (chosen_dst == nullptr) {
-      out.insert(out.end(), pending.begin(), pending.end());
-      break;
-    }
-    const std::string d = chosen_dst->name;
+    const std::string d = var_name(pending.front().dst);
     ++cycle_counter;
     const std::string tmp_name = "." + fn_name + "@cycle_tmp@" + std::to_string(cycle_counter);
     if (const Symbol* sym = symbols != nullptr ? symbols->find(d) : nullptr) {

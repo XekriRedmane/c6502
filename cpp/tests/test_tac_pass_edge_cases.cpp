@@ -321,3 +321,36 @@ TEST_CASE("sink_and_past_branch renames the sunk value in a JumpIfCmp and a Ret"
   REQUIRE(rets.size() == 3);
   CHECK(rets[1].val == std::optional<ir::Type_val>{ir::Var{.name = "%t.snk_else@0"}});
 }
+
+TEST_CASE("sink_and_past_branch keeps a value an earlier sink made other blocks read") {
+  auto symbols = locals({"t2", "y", "u1"}, {"e1", "a1", "e2", "a2"});
+  const c6502::passes::framework::PassContext ctx{.symbols = &symbols};
+  // The trio of .b1 goes first and puts reads of t2 into .f1 and .t1,
+  // so t2's Truncate in .b2 can't sink into .b1 and .f2 alone.
+  const ir::Function out = c6502::passes::sink_and_past_branch(
+      fn_of("  Jump(\".b2\")\n"
+            "  Label(\".b1\")\n"
+            "  ZeroExtend(Var(\"t2\") Var(\"e1\"))\n"
+            "  Binary(BitwiseAnd Var(\"e1\") Constant(ConstInt(1)) Var(\"a1\"))\n"
+            "  Truncate(Var(\"a1\") Var(\"u1\"))\n"
+            "  JumpIfMasked(Var(\"t2\") 2 false \".t1\")\n"
+            "  Label(\".f1\")\n"
+            "  Ret(Var(\"u1\"))\n"
+            "  Label(\".t1\")\n"
+            "  Ret(Var(\"u1\"))\n"
+            "  Label(\".b2\")\n"
+            "  ZeroExtend(Var(\"y\") Var(\"e2\"))\n"
+            "  Binary(BitwiseAnd Var(\"e2\") Constant(ConstInt(4)) Var(\"a2\"))\n"
+            "  Truncate(Var(\"a2\") Var(\"t2\"))\n"
+            "  JumpIfMasked(Var(\"y\") 8 false \".b1\")\n"
+            "  Label(\".f2\")\n"
+            "  Ret(Var(\"t2\"))\n"),
+      ctx);
+  const auto truncates = instrs_of<ir::Truncate>(out);
+  bool defines_t2 = false;
+  for (const auto& t : truncates) {
+    defines_t2 = defines_t2 || t.dst == ir::Type_val{ir::Var{.name = "t2"}};
+  }
+  CHECK(defines_t2);
+  CHECK(truncates.size() == 3);
+}

@@ -208,7 +208,7 @@ ir::Function sink_and_past_branch(ir::Function fn, const PassContext& ctx) {
   SymbolTable& symbols = *ctx.symbols;
   const UseCounts use_counts = count_uses(fn.instructions);
   Cfg cfg = tac_cfg::build_cfg(fn);
-  const auto use_blocks = index_use_blocks(cfg);
+  auto use_blocks = index_use_blocks(cfg);
   int counter = 0;
   bool changed = false;
   const std::vector<int> order = cfg.block_order;
@@ -293,6 +293,7 @@ ir::Function sink_and_past_branch(ir::Function fn, const PassContext& ctx) {
     if (users_of_t.contains(*target_bid)) {
       rewrite_var_uses(target, trio->t, else_t, starts_with_label(target) ? 4 : 3);
     }
+    use_blocks = index_use_blocks(cfg);
     changed = true;
   }
   if (!changed) {

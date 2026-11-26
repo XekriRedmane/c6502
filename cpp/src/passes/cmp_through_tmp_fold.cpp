@@ -26,15 +26,7 @@ bool is_reg_a(const ir::Type_operand& op) {
 bool is_stable_mem(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
 
 bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
-  if (const auto* da = as<ir::Data>(a)) {
-    const auto* db = as<ir::Data>(b);
-    return db != nullptr && da->name == db->name && da->offset == db->offset;
-  }
-  if (const auto* za = as<ir::ZP>(a)) {
-    const auto* zb = as<ir::ZP>(b);
-    return zb != nullptr && za->address == zb->address && za->offset == zb->offset;
-  }
-  return false;
+  return isa<ir::Data, ir::ZP>(a) && a == b;
 }
 
 bool src_eligible(const ir::Type_operand& src) {

@@ -76,19 +76,7 @@ const ir::Branch* as_eligible_branch(const ir::Type_instruction& instr) {
 }
 
 bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
-  if (const auto* da = as<ir::Data>(a)) {
-    const auto* db = as<ir::Data>(b);
-    return db != nullptr && da->name == db->name && da->offset == db->offset;
-  }
-  if (const auto* za = as<ir::ZP>(a)) {
-    const auto* zb = as<ir::ZP>(b);
-    return zb != nullptr && za->address == zb->address && za->offset == zb->offset;
-  }
-  if (const auto* ia = as<ir::Imm>(a)) {
-    const auto* ib = as<ir::Imm>(b);
-    return ib != nullptr && ia->value == ib->value;
-  }
-  return false;
+  return isa<ir::Data, ir::ZP, ir::Imm>(a) && a == b;
 }
 
 void rewrite_function(ir::Function& fn) {

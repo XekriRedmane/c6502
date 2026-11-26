@@ -32,15 +32,7 @@ bool is_call_scratch(const ir::Type_operand& target) {
 }
 
 bool operands_equal_exact(const ir::Type_operand& a, const ir::Type_operand& b) {
-  if (const auto* za = as<ir::ZP>(a)) {
-    const auto* zb = as<ir::ZP>(b);
-    return zb != nullptr && za->address == zb->address && za->offset == zb->offset;
-  }
-  if (const auto* da = as<ir::Data>(a)) {
-    const auto* db = as<ir::Data>(b);
-    return db != nullptr && da->name == db->name && da->offset == db->offset;
-  }
-  return false;
+  return isa<ir::ZP, ir::Data>(a) && a == b;
 }
 
 }  // namespace

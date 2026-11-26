@@ -59,28 +59,7 @@ bool is_clc_or_sec(const ir::Type_instruction& instr) {
 // Returns whether `a` and `b` are the same operand, field for field,
 // for the kinds this peephole matches, and false when the kinds differ.
 bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
-  if (const auto* da = as<ir::Data>(a)) {
-    const auto* db = as<ir::Data>(b);
-    return db != nullptr && da->name == db->name && da->offset == db->offset;
-  }
-  if (const auto* za = as<ir::ZP>(a)) {
-    const auto* zb = as<ir::ZP>(b);
-    return zb != nullptr && za->address == zb->address && za->offset == zb->offset;
-  }
-  if (const auto* xa = as<ir::IndexedData>(a)) {
-    const auto* xb = as<ir::IndexedData>(b);
-    return xb != nullptr && xa->name == xb->name && xa->offset == xb->offset &&
-           xa->index.index() == xb->index.index();
-  }
-  if (const auto* pa = as<ir::IndirectZp>(a)) {
-    const auto* pb = as<ir::IndirectZp>(b);
-    return pb != nullptr && pa->address == pb->address && pa->offset == pb->offset;
-  }
-  if (const auto* pa = as<ir::IndirectZpY>(a)) {
-    const auto* pb = as<ir::IndirectZpY>(b);
-    return pb != nullptr && pa->address == pb->address;
-  }
-  return false;
+  return isa<ir::Data, ir::ZP, ir::IndexedData, ir::IndirectZp, ir::IndirectZpY>(a) && a == b;
 }
 
 // Returns the source of `instr` when it is an `Add`, `And`, or `Or`

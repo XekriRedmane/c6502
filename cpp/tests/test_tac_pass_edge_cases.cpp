@@ -2,6 +2,7 @@
 // reach, written by hand, each with the result the pass must give.
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "asdl/runtime.h"
 #include "doctest.h"
@@ -179,4 +180,29 @@ TEST_CASE("to_ssa renames the operands of a JumpIfCmp and an IndirectIndexedLoad
   CHECK(jump->src1 == ir::Type_val{ir::Var{.name = "x.1"}});
   CHECK(jump->src2 == ir::Type_val{ir::Var{.name = "y.1"}});
   CHECK(load->dst == ir::Type_val{ir::Var{.name = "y.1"}});
+}
+
+TEST_CASE("to_ssa places a Phi at the frontier of a Phi it placed") {
+  c6502::passes::SymbolTable symbols;
+  symbols.insert_or_assign("x", c6502::passes::Symbol{.type = c6502::c99_ast::Int{},
+                                                      .attrs = c6502::passes::LocalAttr{}});
+  const ir::Function fn = fn_of(
+      "  Copy(Constant(ConstInt(0)) Var(\"x\"))\n"
+      "  Label(\".loop\")\n"
+      "  JumpIfTrue(Var(\"c\") \".join\")\n"
+      "  Copy(Constant(ConstInt(1)) Var(\"x\"))\n"
+      "  Label(\".join\")\n"
+      "  JumpIfTrue(Var(\"d\") \".loop\")\n"
+      "  Ret(Var(\"x\"))\n");
+  const auto [out, ssa] = c6502::passes::to_ssa(fn, symbols);
+  std::vector<std::string> phi_blocks;
+  std::string label;
+  for (const auto& instr : out.instructions) {
+    if (const auto* l = std::get_if<ir::Label>(&instr)) {
+      label = l->name;
+    } else if (std::holds_alternative<ir::Phi>(instr)) {
+      phi_blocks.push_back(label);
+    }
+  }
+  CHECK(phi_blocks == std::vector<std::string>{".loop", ".join"});
 }

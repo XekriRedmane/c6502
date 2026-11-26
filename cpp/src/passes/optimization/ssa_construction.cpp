@@ -212,12 +212,12 @@ std::size_t insert_phi(BasicBlock& blk, ir::Phi phi) {
 
 PhisAt place_phis(Cfg& cfg, const Names& promotable,
                   const OrderedMap<int, PyIntSet>& df, const std::map<int, Names>& live_in) {
-  OrderedMap<std::string, PyIntSet> defs;
+  OrderedMap<std::string, std::set<std::int64_t>> defs;
   for (const auto& [bid, blk] : cfg.blocks) {
     for (const auto& instr : blk.instructions) {
       for (const auto d : defs_in(instr)) {
         if (promotable.contains(d)) {
-          defs[std::string(d)].add(bid);
+          defs[std::string(d)].insert(bid);
         }
       }
     }
@@ -225,9 +225,9 @@ PhisAt place_phis(Cfg& cfg, const Names& promotable,
 
   PhisAt phis_at;
   for (const auto& [v, def_blocks] : defs) {
-    std::vector<std::int64_t> worklist = def_blocks.items();
+    std::vector<std::int64_t> worklist(def_blocks.begin(), def_blocks.end());
     std::set<std::int64_t> already_placed;
-    std::set<std::int64_t> already_visited(def_blocks.sorted());
+    std::set<std::int64_t> already_visited(def_blocks);
     while (!worklist.empty()) {
       const std::int64_t x = worklist.back();
       worklist.pop_back();
@@ -235,7 +235,7 @@ PhisAt place_phis(Cfg& cfg, const Names& promotable,
       if (frontier == nullptr) {
         continue;
       }
-      for (const std::int64_t y : frontier->items()) {
+      for (const std::int64_t y : frontier->sorted()) {
         if (already_placed.contains(y)) {
           continue;
         }

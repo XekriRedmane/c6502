@@ -1,47 +1,3 @@
-/* A TAC rule that folds `Unary(LogicalNot, src, %t);
-JumpIfTrue/False(%t, target)`, with a single-use `%t` right before the
-jump, into a direct jump on `src` with the sense flipped.
-
-The motivating idiom. C99 `if (!cond) ...`, where `cond` is any scalar,
-lowers through c99_to_tac as this TAC.
-
-    Unary(LogicalNot, cond_val, %not)
-    JumpIfFalse(%not, .if_end)
-
-Without the rule, `tac_to_asm` lowers the LogicalNot as a sequence that
-materializes 0 or 1 (a BEQ over `LDA #0`, with `LDA #1` on the true
-side), and then the JumpIfFalse tests that value again with `ORA #$00;
-BEQ`. For a 1-byte source returned in A from a JSR, the `BEQ
-.lnot_true` after the call already uses the Z flag the call left, but
-the select of 0 or 1 and the second test after it do nothing useful,
-since A still holds the value the LogicalNot was about to invert.
-
-What the rule does. When `Unary(LogicalNot, src, %t)` is right before
-`JumpIf{True,False}(%t, target)` and `%t` is used exactly once in the
-function, the pair becomes `JumpIf{False,True}(src, target)`. The
-inverted sense undoes the LogicalNot's inversion, so the meaning is the
-same.
-
-`JumpIfTrue(src, t)` lowers to `Mov(src.b0, A); [ORA src.bk]; Branch(NE,
-t)`, which for a 1-byte src is `LDA src; BNE t`. Once the asm
-redundant-load elimination drops the LDA when A already holds src (a
-value returned in A by a JSR), the whole sequence is one `BNE t` after
-the JSR.
-
-The rule works at any width. For a src of several bytes, the jump's own
-lowering ORs every byte together and branches on the result, which is
-still cheaper than materializing 0 or 1 and then ORing and branching.
-
-The single-use gate. `%t` must be used exactly once in the function, by
-the jump's condition. Another use would mean the 0 or 1 goes somewhere
-else, such as into a variable, and dropping the LogicalNot would change
-what those reads see. Dead-store elimination drops the dead Unary on the
-next sweep.
-
-Only a LogicalNot immediately followed by the jump is taken. The shape
-c99_to_tac writes for `if (!x) ...` is adjacent, and other cases wait
-for copy propagation and dead-store elimination to close the gap in
-later rounds of the fixed point. */
 #include "passes/optimization/lnot_jump_fold.h"
 
 #include <string>
@@ -61,7 +17,6 @@ using framework::PassContext;
 using framework::RuleEnv;
 using BK = ir::Kind_binary_operator;
 
-// Returns whether `op` is one of the six comparisons (`_COMPARE_OPS`).
 bool is_compare_op(const ir::Type_binary_operator& op) {
   switch (ir::kind(op)) {
     case BK::Equal:
@@ -76,10 +31,6 @@ bool is_compare_op(const ir::Type_binary_operator& op) {
   }
 }
 
-// Returns whether the Var `v` can hold only 0 or 1 (Python's
-// `_zero_or_one`): an object that was a `bool` (`LocalAttr.was_bool` or
-// `StaticAttr.was_bool`), or an SSA name defined by a comparison, a `!`,
-// or an extend or copy of such a value, at most five definitions back.
 bool zero_or_one(const ir::Type_val& val, const RuleEnv& env, const PassContext& ctx,
                  int depth = 0) {
   const auto* v = std::get_if<ir::Var>(&val);
@@ -118,8 +69,6 @@ bool zero_or_one(const ir::Type_val& val, const RuleEnv& env, const PassContext&
   return false;
 }
 
-// Returns `t` without its `const` and `volatile` qualifiers (Python's
-// `_byte_type`).
 const c99::Type_data_type& byte_type(const c99::Type_data_type& t) {
   const c99::Type_data_type* p = &t;
   for (;;) {
@@ -133,8 +82,6 @@ const c99::Type_data_type& byte_type(const c99::Type_data_type& t) {
   }
 }
 
-// Returns the constant 1 of the TAC class for the c99 type `t` as
-// written, for the types `!` of a 0-or-1 value takes, or none.
 std::optional<ir::Type_val> one_for(const c99::Type_data_type& t) {
   switch (c99::kind(t)) {
     case c99::Kind_data_type::UChar:
@@ -153,9 +100,6 @@ std::optional<ir::Type_val> one_for(const c99::Type_data_type& t) {
 
 }  // namespace
 
-// Python's `_build_lnot_jump`: `LogicalNot(src, %t); JumpIf{True,False}(%t,
-// T)` becomes `JumpIf{False,True}(src, T)`, since a jump on `!x` is a
-// jump on `x` with the opposite sense.
 std::optional<Instrs> fold_lnot_jump_at(const Instrs& instrs, std::size_t i, RuleEnv& env,
                                         const PassContext& ctx) {
   const auto* unary = std::get_if<ir::Unary>(&instrs[i]);
@@ -179,14 +123,6 @@ std::optional<Instrs> fold_lnot_jump_at(const Instrs& instrs, std::size_t i, Rul
   return std::nullopt;
 }
 
-// Python's `_build_lnot_of_zero_or_one`. `!x` of a value that is 0 or 1
-// (`zero_or_one`) is `x ^ 1`, which `tac_to_asm` lowers as `EOR #1`
-// where `!` takes a branch to load 0 or 1. The `^` is done at x's width,
-// a byte for a `bool`, into a new temporary that the result's
-// `ZeroExtend` (or `Truncate`) reads, or into the result itself at the
-// same width. A `!` whose result a jump tests is left to `LNOT_RULE`,
-// which drops the `!` and flips the jump, and that test is the result's
-// one use.
 std::optional<Instrs> lnot_of_zero_or_one_at(const Instrs& instrs, std::size_t i, RuleEnv& env,
                                              const PassContext& ctx) {
   const auto* unary = std::get_if<ir::Unary>(&instrs[i]);

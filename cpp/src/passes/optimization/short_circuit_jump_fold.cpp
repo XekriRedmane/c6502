@@ -1,144 +1,3 @@
-/* Folds the 0-or-1 tail of a short-circuit `&&` or `||`, and the
-JumpIf that tests it right after, into direct conditional jumps.
-
-# The idiom
-
-C99 `if (a && b) ...` lowers through `c99_to_tac.translate_short_circuit`
-(and survives SSA destruction) as
-
-    JumpIfFalse(a, .and_false@N)
-    JumpIfFalse(b, .and_false@N)
-    Copy(1, %t)
-    Jump(.and_end@N)
-    Label(.and_false@N)
-    Copy(0, %t)
-    Label(.and_end@N)
-    JumpIfFalse(%t, .if_end@M)
-
-The five instructions of the tail (the two Copies, the Jump between
-them, and the two Labels) put a 0 or a 1 in `%t`, and the consumer
-right after them tests that value again. No C code reads the value,
-since every short-circuit jump of the chain already decides where
-control goes, as the consumer's branch would. The asm lowering would
-otherwise branch twice for one decision:
-
-    BCC .and_false@N        ; chain jump 1
-    BCS .and_false@N        ; chain jump 2
-    LDA #$01                ; Copy(1, %t)
-    STA __local_t
-    JMP .and_end@N
-    .and_false@N:
-    LDA #$00                ; Copy(0, %t)
-    STA __local_t
-    .and_end@N:
-    LDA __local_t           ; consumer LDA
-    BEQ .if_end@M           ; consumer branch
-
-`||` with `JumpIfFalse`, `&&` with `JumpIfTrue`, and `||` with
-`JumpIfTrue` have the same shape with other constants and another
-consumer, and the pass folds all four into one round of branches to the
-consumer's destinations.
-
-# The rewrite
-
-When the instructions at `i` are the tail
-
-    Copy(C_ft, %t)
-    Jump(end_label)
-    Label(branch_label)
-    Copy(C_sc, %t)
-    Label(end_label)
-
-with `(C_ft, C_sc)` either `(ConstInt 1, ConstInt 0)` or `(ConstInt 0,
-ConstInt 1)`, followed by a consumer `JumpIf{True,False}(%t, T)`, the
-pass finds where control goes when the chain fired (`%t == C_sc`
-reaches the consumer) and where it goes when no chain jump fired (`%t
-== C_ft`). Each is `T` or the instruction after the consumer.
-
-  - In the natural case the chain goes to `T` and the fall-through to
-    the next instruction. Every jump to `branch_label` goes to `T`, and
-    the tail and the consumer go.
-  - In the flipped case the chain goes to the next instruction and the
-    fall-through to `T`. A new label `.<fn>@scfold@<N>` takes the
-    chain, and the tail and the consumer become `Jump(T);
-    Label(.<fn>@scfold@<N>)`, where the Jump sends the fall-through to
-    T.
-
-The chain's jumps test the original operands at their own widths, and
-the lowerings of `JumpIf{True,False}` and `JumpIfCmp` read every byte
-and branch once, so the rewrite depends on nothing about `%t`'s width.
-
-# Conditions
-
-  - The two Copies write the same `%t`.
-  - The tail's `Jump` goes to the second `Label`.
-  - `(C_ft, C_sc)` are `ConstInt 0` and `ConstInt 1` in either order,
-    the shape of the short-circuit lowering.
-  - `%t` is read once in the function, by the consumer. Another reader
-    would see the value the rewrite drops.
-  - Only the tail's Jump goes to `end_label`. Any other jump to it would
-    lose its target.
-  - The consumer is `JumpIfTrue(%t, T)` or `JumpIfFalse(%t, T)` on `%t`
-    itself, after `end_label` and any `Copy`s that neither read nor
-    write `%t` (see "Copies before the consumer").
-
-# Copies before the consumer
-
-SSA destruction puts a Phi's copies at the end of its predecessor
-block, which is where the consumer is when the consumer's branch skips
-an assignment. `if (c >= 0x60 && c < 0x80) c -= 0x20;` leaves
-
-    Label(.and_end@3)
-    Copy(@0.c, @0.c.2)          ; the phi's copy for the skipped arm
-    JumpIfFalse(%4.3, .if_end@4)
-
-The short-circuit arm may have copies of its own too, between
-`branch_label` and `Copy(C_sc, %t)`, as SSA destruction leaves for a
-Phi of a name the chain changes, such as the `--left` in Zork's `je`
-(examples/zork/decode.c), `!equal && --left != 0`:
-
-    Label(.and_false@23)
-    Copy(@77.left.3, @77.left.4)  ; only on the chain's path
-    Copy(0, %417.3)
-    Label(.and_end@24)
-
-Those run only on the chain's path, so they go first in its stub, or
-right after the flipped case's new label.
-
-The copies before the consumer run on every path through it, so the
-rewrite keeps them on both: in place for the path that falls through,
-and for the chain's path in a stub `Label(L); <copies>; Jump(D_sc)`
-after the function's last instruction, which has to be a `Ret` or a
-`Jump` so that nothing falls into the stub. In the flipped case the
-copies go before the new `Jump(T)` and again after the new label. Once
-the asm optimizer coalesces a Phi's names such a copy is nothing, the
-stub is a bare `JMP`, and branch threading sends the chain straight to
-`D_sc`.
-
-Any number of jumps may go to `branch_label`, since those are the chain
-being folded. Each of them runs `Copy(C_sc, %t)`, falls through, and
-goes where the consumer sends `C_sc`, which is where the rewrite sends
-it directly, without the dead write of `%t`.
-
-# Nested shapes
-
-`(a && b) || c` and the like give two foldable tails whose temporaries
-don't overlap, and one sweep folds every tail that doesn't overlap
-another. The inner fold retargets its `branch_label` to the outer's
-`branch_label`, which the outer fold retargets too, so the map of
-targets is followed to a label it doesn't map (the transitive
-closure). A tail that becomes foldable only after another is folded
-waits for the next sweep of the driver's fixed point.
-
-The pass runs after SSA destruction, where copy folding has collapsed
-each arm's copies into the tail above. Before destruction the tail is
-two SSA definitions of `%t` joined by a Phi.
-
-# Merging equality jumps
-
-After each sweep, `merge_equality_jumps` makes two adjacent jumps to one
-target, on `x == a` and `x == b` with `a` and `b` one bit `p` apart, one
-jump on `(x & ~p) == min(a, b)`. See its comment below. */
 #include "passes/optimization/short_circuit_jump_fold.h"
 
 #include <map>
@@ -184,9 +43,6 @@ const std::string* jump_target(const ir::Type_instruction& instr) {
   return jump_target(const_cast<ir::Type_instruction&>(instr));
 }
 
-// Returns the value of `val` when it is a `Constant` holding a
-// `ConstInt`, or none. Only `ConstInt` counts, since the short-circuit
-// lowering makes its 0 and 1 with `_tac_const_val(c99_ast.Int(), 0|1)`.
 std::optional<Int> const_int_value(const ir::Type_val& val) {
   const auto* c = std::get_if<ir::Constant>(&val);
   if (c == nullptr) {
@@ -204,9 +60,6 @@ bool is_var_named(const ir::Type_val& v, const std::string& name) {
   return var != nullptr && var->name == name;
 }
 
-// A tail that `try_fold` matched: whether it is the natural case, the
-// chain's label, the consumer's target, the copies before the consumer,
-// and the copies of the short-circuit arm.
 struct Fold {
   bool natural = false;
   std::string branch_label;
@@ -215,11 +68,6 @@ struct Fold {
   Instrs sc_copies;
 };
 
-// Returns the fold of the tail at `instrs[i]` when the instructions
-// from there are `Copy / Jump / Label / Copy / Label / JumpIf{True,False}`
-// in the short-circuit shape, with `Copy`s that don't touch `%t` allowed
-// before the consumer and before the short-circuit arm's `Copy`, or
-// none.
 std::optional<Fold> try_fold(const Instrs& instrs, std::size_t i,
                              const OrderedMap<std::string, std::size_t>& use_count,
                              const std::map<std::string, std::size_t, std::less<>>& jump_targets) {
@@ -227,7 +75,6 @@ std::optional<Fold> try_fold(const Instrs& instrs, std::size_t i,
   if (i + 5 >= n) {
     return std::nullopt;
   }
-  // The short-circuit arm's own copies, then its `Copy(C_sc, %t)`.
   std::size_t k = i + 3;
   while (k < n && std::holds_alternative<ir::Copy>(instrs[k])) {
     ++k;
@@ -305,7 +152,6 @@ std::optional<Fold> try_fold(const Instrs& instrs, std::size_t i,
   return fold;
 }
 
-// Counts how many jumps of every kind go to each label.
 std::map<std::string, std::size_t, std::less<>> count_jump_targets(const Instrs& instrs) {
   std::map<std::string, std::size_t, std::less<>> out;
   for (const auto& instr : instrs) {
@@ -316,10 +162,6 @@ std::map<std::string, std::size_t, std::less<>> count_jump_targets(const Instrs&
   return out;
 }
 
-// --- merge_equality_jumps ---
-
-// Returns the bit width of an integer constant class, or none for the
-// floating classes and the odd widths of the bit-precise types.
 std::optional<int> const_bits(CK k) {
   switch (k) {
     case CK::ConstChar:
@@ -343,18 +185,12 @@ bool signed_class(CK k) {
   return k == CK::ConstChar || k == CK::ConstInt || k == CK::ConstLong || k == CK::ConstLongLong;
 }
 
-// A jump to `target` taken when the Var `name` equals an integer
-// constant, which is none for the 0 of `JumpIfFalse(x, T)`.
 struct EqualJump {
   std::string name;
   std::optional<ir::Type_const> constant;
   std::string target;
 };
 
-// Returns the jump `instr` makes when the Var `name` equals an integer
-// constant: `JumpIfFalse(x, T)`, whose constant is none for 0 of x's
-// width, or `JumpIfCmp(Equal, x, k, T)` with the constant on either
-// side.
 std::optional<EqualJump> jump_if_equal(const ir::Type_instruction& instr) {
   if (const auto* jf = std::get_if<ir::JumpIfFalse>(&instr)) {
     if (const auto* v = std::get_if<ir::Var>(&jf->condition)) {
@@ -378,8 +214,6 @@ std::optional<EqualJump> jump_if_equal(const ir::Type_instruction& instr) {
   return std::nullopt;
 }
 
-// The merged jump: its Var, the mask, the constant it compares with,
-// and the target.
 struct Merged {
   std::string name;
   ir::Type_const mask;
@@ -387,8 +221,6 @@ struct Merged {
   std::string target;
 };
 
-// Returns the merged test of two equality jumps on one Var whose
-// constants differ in one bit, or none. See `merge_equality_jumps`.
 std::optional<Merged> merged_test(const EqualJump& first, const EqualJump& second,
                                   const SymbolTable& symbols) {
   const Symbol* sym = symbols.find(first.name);
@@ -465,14 +297,10 @@ ir::Function fold_short_circuit_jump(ir::Function fn) {
       }
     }
   };
-  // A stub can go after the last instruction only if nothing falls off
-  // the end into it.
   const bool ends_in_terminator =
       !instrs.empty() &&
       (std::holds_alternative<ir::Ret>(instrs.back()) ||
        std::holds_alternative<ir::Jump>(instrs.back()));
-  // The map of retargets in the order the folds make them, as Python's
-  // dict holds it.
   OrderedMap<std::string, std::string> retarget_map;
   Instrs new_instrs;
   Instrs stubs;
@@ -509,19 +337,12 @@ ir::Function fold_short_circuit_jump(ir::Function fn) {
       new_instrs.insert(new_instrs.end(), fold->sc_copies.begin(), fold->sc_copies.end());
       new_instrs.insert(new_instrs.end(), fold->copies.begin(), fold->copies.end());
     }
-    // The tail (5), both arms' copies, and the consumer (1).
     i += 6 + fold->copies.size() + fold->sc_copies.size();
   }
   new_instrs.insert(new_instrs.end(), stubs.begin(), stubs.end());
   if (retarget_map.empty()) {
     return fn;
   }
-  // The transitive closure. Nested short-circuits chain through a shared
-  // label: the inner fold retargets its branch_label to the outer's
-  // branch_label, which the outer fold also retargets onward. One
-  // substitution would leave the inner chain at a label that is about to
-  // go, so each target is followed until it lands on a label the map
-  // doesn't hold.
   std::map<std::string, std::string, std::less<>> resolved;
   for (const auto& [key, first] : retarget_map) {
     std::string target = first;
@@ -546,19 +367,6 @@ ir::Function fold_short_circuit_jump(ir::Function fn) {
   return framework::with_instructions(fn, std::move(new_instrs));
 }
 
-/* `e == 0 || e == 1`, once the short-circuit fold has sent both tests
-to the `if`'s target, is `JumpIfFalse(e, T); JumpIfCmp(==, e, 1, T)`,
-which becomes `JumpIfFalse(e & ~1, T)`: on a `uint16_t`, `AND #$FE; ORA
-hi; BEQ` where the two tests read each byte and compared the low one
-with 1.
-
-Clearing bit `p` maps `a` and `b` to `a` (the one without the bit) and
-every other value to something else, so the one jump is taken for the
-same values of x. The second jump directly follows the first, with no
-label before it, so it is reached only when the first isn't taken, and
-nothing writes x between them. `x` must be a non-volatile integer Var,
-since the merged test reads it once, and the `&` goes into a new
-temporary of x's type. */
 ir::Function merge_equality_jumps(ir::Function fn, SymbolTable* symbols) {
   if (symbols == nullptr) {
     return fn;

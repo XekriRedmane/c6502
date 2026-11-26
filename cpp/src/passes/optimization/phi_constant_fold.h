@@ -1,6 +1,3 @@
-// The port of passes/optimization/phi_constant_fold.py, which computes
-// the one operation that reads a Phi of constants in the Phi's
-// arguments.
 #pragma once
 
 #include "passes/optimization/framework.h"
@@ -9,10 +6,9 @@
 namespace c6502::passes {
 
 // Returns `fn` with the first operation of a Phi of constants that
-// folds moved into the Phi's arguments (Python's
-// `fold_into_constant_phis`, the pass `fold_into_constant_phi`), or `fn`
-// itself when none does. It adds a temporary `<dst>.p<k>` to the symbols
-// and the SSA names when the operation's destination isn't an SSA name.
+// folds moved into the Phi's arguments, or `fn` itself when none does.
+// It adds a temporary `<dst>.p<k>` to the symbols and the SSA names
+// when the operation's destination isn't an SSA name.
 // Without a symbol table or outside SSA form it leaves `fn` alone.
 tac_ast::Function fold_into_constant_phis(tac_ast::Function fn, const framework::PassContext& ctx);
 

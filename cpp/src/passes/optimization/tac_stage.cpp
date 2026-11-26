@@ -69,8 +69,6 @@ using TacFunctionC = Asdl<ir::Type_top_level, kTacAst>;
 template <class C>
 constexpr RoundTrip rt = &round_trip<C>;
 
-// A pass of the TAC optimizer's driver, as the C++ port runs it: the
-// function and the context, which it may add to.
 using TacPass = ir::Function (*)(ir::Function fn, const PassContext& ctx);
 
 const json::Value& kwarg(const json::Value& kwargs, std::string_view name) {
@@ -81,12 +79,6 @@ const json::Value& kwarg(const json::Value& kwargs, std::string_view name) {
   return *v;
 }
 
-// Runs the ported pass `Pass` on a recorded call of the TAC optimizer's
-// driver, whose keyword arguments are the symbols the call read and the
-// SSA names (tools/capture_passes.py, `_tac_record`), and gives the
-// result's dump and the `mutated` line for the symbols the pass added
-// and the SSA names it changed, in that order, as the harness writes
-// it.
 template <TacPass Pass>
 StageOutput run_tac_pass(const capture::Call& call, const AsmContext&, const json::Value&,
                          const json::Value& kwargs) {
@@ -119,10 +111,6 @@ StageOutput run_tac_pass(const capture::Call& call, const AsmContext&, const jso
   return result;
 }
 
-// Runs SSA construction on a recorded call, which the driver makes with
-// the symbol table, and gives the function and its SSA names as the
-// tagged JSON of Python's tuple, and the `mutated` line for the symbols
-// it added.
 StageOutput run_to_ssa(const capture::Call& call, const AsmContext&, const json::Value&,
                        const json::Value& kwargs) {
   auto fn = std::get<ir::Function>(asdl::load<ir::Type_top_level>(call.input));
@@ -142,15 +130,10 @@ StageOutput run_to_ssa(const capture::Call& call, const AsmContext&, const json:
   return result;
 }
 
-// SSA destruction as a pass of the driver, which calls it with the
-// symbol table.
 ir::Function from_ssa_pass(ir::Function fn, const PassContext& ctx) {
   return from_ssa(std::move(fn), ctx.symbols);
 }
 
-// Runs the whole driver on a recorded call of `optimize_function`, whose
-// keyword argument `symbols` is the compile's table, and gives the
-// result's dump and the `mutated` line for the table.
 StageOutput run_optimize_function(const capture::Call& call, const AsmContext&,
                                   const json::Value&, const json::Value& kwargs) {
   auto fn = std::get<ir::Function>(asdl::load<ir::Type_top_level>(call.input));
@@ -165,11 +148,6 @@ StageOutput run_optimize_function(const capture::Call& call, const AsmContext&,
   return result;
 }
 
-// Runs the driver on each function of a recorded call of
-// `optimize_program`, whose argument after the program is the
-// compile's symbol table. A record of a unit test's call made without
-// the symbol table, which Python's `optimize_program` and
-// `dispatch_const_pointer_arrays` take as None, runs the pass with none.
 StageOutput run_optimize_program(const capture::Call& call, const AsmContext&,
                                  const json::Value& args, const json::Value&) {
   auto prog = asdl::load<ir::Program>(call.input);
@@ -188,9 +166,6 @@ StageOutput run_optimize_program(const capture::Call& call, const AsmContext&,
   return result;
 }
 
-// Gives the dump of the program `out` that a program-level pass
-// returned, with the `mutated` line for the symbol table, its first
-// positional argument, when the pass changed it.
 StageOutput program_output(const ir::Program& out, const std::string& symbols_before,
                            const SymbolTable& symbols) {
   StageOutput result{asdl::dump(out), ""};
@@ -201,8 +176,6 @@ StageOutput program_output(const ir::Program& out, const std::string& symbols_be
   return result;
 }
 
-// Runs the inliner on a recorded call, whose arguments after the
-// program are the symbol table and the c99 program.
 StageOutput run_inline_functions(const capture::Call& call, const AsmContext&,
                                  const json::Value& args, const json::Value&) {
   auto prog = asdl::load<ir::Program>(call.input);
@@ -220,13 +193,6 @@ StageOutput run_return_in_zero_page(const capture::Call& call, const AsmContext&
   return program_output(return_pointers_in_zero_page(std::move(prog), symbols), before, symbols);
 }
 
-// Runs the tables of row addresses on a recorded call, whose arguments
-// after the program are the symbol table and the type table. compile.py
-// passes both, and a unit test may leave the type table out, which is
-// None in Python.
-// A record's keyword `saving`, which only tools/record_test_calls.py
-// writes, is the bytes each lookup saves in place of the estimate, for
-// a test that replaced Python's `_saving` to force or forbid a table.
 StageOutput run_row_address_tables(const capture::Call& call, const AsmContext&,
                                    const json::Value& args, const json::Value& kwargs) {
   auto prog = asdl::load<ir::Program>(call.input);
@@ -265,14 +231,10 @@ StageOutput run_split_tables(const capture::Call& call, const AsmContext&,
   return program_output(apply_split_tables(std::move(prog), &symbols), before, symbols);
 }
 
-// Returns `run` when every pass of the driver's table is ported, and
-// null otherwise, for the calls that run the whole driver.
 StageRun when_driver_complete(StageRun run) {
   return tac_driver().complete() ? run : nullptr;
 }
 
-// The signature of one of the TAC optimizer's calls on a function.
-// `run` is null until the pass is ported.
 StageSignature tac_pass(std::string_view name, StageRun run = nullptr) {
   return {.name = name,
           .input = "tac_ast",
@@ -285,15 +247,12 @@ StageSignature tac_pass(std::string_view name, StageRun run = nullptr) {
 
 std::vector<StageSignature> signatures() {
   return {
-      // SSA construction, which returns the function and its SSA names
-      // as a tuple, and destruction, where the driver calls them.
       {.name = "tac_to_ssa",
        .input = "tac_ast",
        .kwargs = {{"symbols", rt<Optional<Sym>>}, {"ssa_dsts", rt<Optional<NameSetC>>}},
        .output = rt<Pair<TacFunctionC, NameSetC>>,
        .run = &run_to_ssa},
       tac_pass("tac_from_ssa", &run_tac_pass<&from_ssa_pass>),
-      // The passes of the driver's six lists, in its order.
       tac_pass("tac_rotate_signed_countdown_loops",
                &run_tac_pass<&rotate_signed_countdown_loops>),
       tac_pass("tac_noreturn_calls", &run_tac_pass<&noreturn_calls>),
@@ -336,9 +295,6 @@ std::vector<StageSignature> signatures() {
       tac_pass("tac_split_three_way_compares", &run_tac_pass<&split_three_way_compares>),
       tac_pass("tac_fold_short_circuit_jump", &run_tac_pass<&fold_short_circuit_jumps>),
       tac_pass("tac_thread_known_compares", &run_tac_pass<&thread_known_compares>),
-      // The program-level calls. `c99_to_tac` changes the c99 program
-      // it is given, which its `mutated` line holds under `input`. The
-      // unit tests pass no type table.
       {.name = "c99_to_tac",
        .input = "c99_ast",
        .args = {rt<Sym>, rt<Optional<Types>>},

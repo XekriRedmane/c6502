@@ -1,59 +1,3 @@
-/* TAC pass: an `&`, `|`, or `^` whose result has zero high bytes is done
-on one byte and zero-extended.
-
-The motivating shape. C99 §6.3.1.1 promotes a byte to `int` before `&`,
-so
-
-    uint8_t x;
-    if ((x & 0x3F) < 3) ...
-
-compares two `int`s.
-
-    ZeroExtend(x -> %e:int)
-    Binary(BitwiseAnd, %e, ConstInt(63) -> %m:int)
-    JumpIfCmp(GreaterOrEqual, %m, ConstInt(3), ...)
-
-`cmp_zero_jump_fold` narrows a comparison to one byte when each operand
-is a ZeroExtend of a byte or a constant from 0 to 255, and `%m` is
-neither, so the comparison was a signed 16-bit subtraction with an
-overflow test. This pass rewrites the `&` as
-
-    Binary(BitwiseAnd, x, ConstUChar(63) -> %n:uchar)
-    ZeroExtend(%n -> %m:int)
-
-after which the comparison narrows to `CMP #3; BCS`. Ali Baba's units
-compared a masked byte this way in a dozen places.
-
-The rule. Each operand of the wide op is classified by its high bytes.
-
-  - A ZeroExtend of a 1-byte Var has zero high bytes, and its low byte
-    is the Var.
-  - A SignExtend of a 1-byte Var has high bytes of unknown value, and
-    its low byte is the Var.
-  - A Constant from 0 to 255 has zero high bytes.
-  - Any other Constant has high bytes of known value, and its low byte
-    is the value mod 256.
-  - Any other Var of the op's width has high bytes of unknown value,
-    and its low byte is a Truncate of it.
-
-A bitwise op works on each byte separately, so the low byte of the
-result is the op of the low bytes. The high bytes of `a & b` are zero
-when either operand's are, and those of `a | b` and `a ^ b` are zero
-when both operands' are. Only then is the op rewritten. When neither
-operand is a Var with zero high bytes nothing is gained (`w & 0x3F` on
-an `int` w already writes its high byte as a constant 0), so at least
-one operand must be a ZeroExtend or SignExtend.
-
-Soundness. The extend's source is read at the op in place of at the
-extend, so it must hold the same value at both
-(`extend_source_unchanged`), which is the case for an SSA-renamed name,
-or for a static read earlier in the same straight run with nothing
-between that might write it. A Truncate of a Var other than an extend
-reads it at the op, where the op read it already.
-
-Python finds the op's position by identity in the instructions as
-rewritten so far, and the C++ pass takes the index at which the walk
-calls the rewrite. */
 #include "passes/optimization/narrow_byte_bitwise.h"
 
 #include <cstddef>
@@ -78,9 +22,6 @@ using BK = ir::Kind_binary_operator;
 using CK = ir::Kind_const;
 using DK = c99::Kind_data_type;
 
-// Returns the byte width of the integer or pointer type `t` without its
-// qualifiers, or none for any other type (Python's `_width`, which
-// gives none for a floating type).
 std::optional<int> width_of(const c99::Type_data_type& t) {
   const c99::Type_data_type* p = &t;
   for (;;) {
@@ -112,7 +53,6 @@ std::optional<int> width_of(const c99::Type_data_type& t) {
   }
 }
 
-// Returns whether `t`, without its `const` qualifiers, is `volatile`.
 bool is_volatile(const c99::Type_data_type& t) {
   const c99::Type_data_type* p = &t;
   while (const auto* c = std::get_if<c99::Const>(p)) {
@@ -121,8 +61,6 @@ bool is_volatile(const c99::Type_data_type& t) {
   return std::holds_alternative<c99::Volatile>(*p);
 }
 
-// Returns the value of an integer constant of the classes of
-// `_INT_CONSTS` (the eight standard integer classes), or none.
 std::optional<asdl::Int> int_const_value(const ir::Type_const& c) {
   switch (ir::kind(c)) {
     case CK::ConstChar:
@@ -146,17 +84,12 @@ std::optional<asdl::Int> int_const_value(const ir::Type_const& c) {
   }
 }
 
-// An operand's class: its low byte as a 1-byte value, or none when it
-// takes a Truncate, whether its high bytes are zero, and whether it is
-// an extend of a byte.
 struct Operand {
   std::optional<ir::Type_val> low;
   bool zero_high = false;
   bool extended = false;
 };
 
-// Returns the class of the operand `v` of an op of `width` bytes, or
-// none when it can't be narrowed (Python's `_classify`).
 std::optional<Operand> classify(const ir::Type_val& v, int width, const DefUseEnv& env,
                                 const PassContext& ctx, std::ptrdiff_t use_idx) {
   if (const auto* c = std::get_if<ir::Constant>(&v)) {
@@ -203,8 +136,6 @@ std::optional<Operand> classify(const ir::Type_val& v, int width, const DefUseEn
   return Operand{std::nullopt, false, false};
 }
 
-// Returns a new SSA `unsigned char` named after `like` (Python's
-// `_temp`).
 ir::Var temp(const PassContext& ctx, const std::string& like, const std::string& tag) {
   int k = 0;
   while (ctx.symbols->contains(like + "." + tag + std::to_string(k))) {
@@ -216,9 +147,6 @@ ir::Var temp(const PassContext& ctx, const std::string& like, const std::string&
   return ir::Var{.name = name};
 }
 
-// Python's `NarrowByteBitwise.rewrite`: a wide `Binary(&, |, ^)` becomes
-// the op on the operands' low bytes into a new `unsigned char`,
-// zero-extended into the old dst, when the result's high bytes are zero.
 std::optional<DefUseRewrite> rewrite(const ir::Type_instruction& instr, const DefUseEnv& env,
                                      const PassContext& ctx, std::size_t at) {
   const auto* binary = std::get_if<ir::Binary>(&instr);
@@ -286,8 +214,6 @@ std::optional<DefUseRewrite> rewrite(const ir::Type_instruction& instr, const De
 }  // namespace
 
 ir::Function narrow_byte_bitwise(ir::Function fn, const PassContext& ctx) {
-  // The walk calls the rewrite once for each instruction in order, so
-  // the count of calls is the instruction's index.
   std::size_t next = 0;
   return framework::run_def_use(std::move(fn), ctx,
                                 [&](const ir::Type_instruction& instr, const DefUseEnv& env) {

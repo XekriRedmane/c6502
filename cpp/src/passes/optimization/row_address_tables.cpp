@@ -1,68 +1,3 @@
-/* Looks up the address of a row of a 2-D array in a table of row
-addresses.
-
-`A[i][j]` on an array of N rows of R bytes, more than 255 bytes in all,
-computes `&A + i * R` with 16-bit arithmetic. When R isn't a power of
-two, that's two 16-bit shifts and an add or subtract (or a call of
-`mul16`), and then a 16-bit add of the array's address, about 40 bytes
-for each access. 6502 programmers look the row up in a table instead,
-with its addresses' low bytes in one half and their high bytes in the
-other:
-
-    LDX i; LDA rows,X; STA p; LDA rows+N+1,X; STA p+1
-
-and then read `(p),Y`. This pass does the same. For each `&A + i * R`,
-with `i` an unsigned byte, plus or minus a constant `k`, it makes the
-pointer `IndexedLoad(A@rows, i, p, offset=k, plane=N+1)`, which reads
-byte j of the row's address at `A@rows + k + i + j * (N + 1)`.
-
-The table holds N+1 addresses, `A`, `A+R`, ..., `A+N*R`, so a pointer
-one past the last row works too. C99 §6.5.6.8 makes any other index
-undefined, so the table needs no more. For an array with a fixed
-address (`[[c6502::address(addr)]]`) the bytes are numbers. For any
-other array they're link-time address bytes, `DC.B <(A+R*r)` and `DC.B
->(A+R*r)`.
-
-The pass runs once, over the whole program, on the TAC from
-`c99_to_tac`, before the TAC optimizer, whose strength reduction would
-otherwise turn the multiply into shifts. It doesn't run in the
-unoptimized pipeline.
-
-The shape it looks for, with every temporary defined once and read once
-in the function:
-
-    GetAddress(A, a)
-    ZeroExtend(i, z)
-    Binary(+ or -, z, k, x)        ; any number of these, or none
-    Binary(*, x, R, m)
-    Binary(+, a, m, p)
-
-`A` is a static-storage array that isn't in zero page, `R` is the size
-of its elements and not a power of two, `i` is an unsigned byte that
-isn't volatile, and the constants add up to a `k` from -255 to N.
-`c99_to_tac` writes this for `A[i]` when A spans more than 255 bytes,
-whatever A's element type is, so `A[i][j]`, `&A[i]`, `&A[i][j]`, `A[i]`
-as a row pointer, and an array of structs all qualify. The pointer is
-computed where the `ZeroExtend` read `i`.
-
-A table costs 2(N+1) bytes in each unit that makes it, and each access
-saves what the multiply and the add would have cost (`saving`). The
-pass builds a table for an array only when the unit's accesses to it
-save more than the table costs.
-
-The table's two halves, the low bytes and the high bytes, are objects
-of their own, `A@lo` and `A@hi`, and `A@rows` exists only in the TAC,
-where it holds both halves one after the other so that constant folding
-and `tac_sim` read it as any table split into byte planes. Its symbol
-names the two objects (`StaticAttr.planes`), and `tac_to_asm` emits
-them in its place and reads byte j of a lookup from the j-th of them,
-at `A@lo+k,X` and `A@hi+k,X`. Arrays with the same number of rows share
-a half when its bytes are the same, as the low halves of two arrays 256
-bytes apart are, so such a half is one object, named after the first
-array that has it. Each half is marked `mergeable`, since nothing but
-these lookups reads it and nothing takes its address, so the linker
-keeps one copy of the halves that several units make with the same
-bytes (passes/linker.py). */
 #include "passes/optimization/row_address_tables.h"
 
 #include <algorithm>
@@ -90,15 +25,10 @@ namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 using Instrs = std::vector<ir::Type_instruction>;
 
-// The bytes a lookup saves (`saving`), and the most arrays of a group
-// whose every set `best_set` tries.
 constexpr int kTwoTermSaving = 40;
 constexpr int kHelperSaving = 10;
 constexpr std::size_t kExhaustive = 10;
 
-// One row address to rewrite in `function`: the instruction at `at` (the
-// `ZeroExtend`) becomes the lookup of row `index + k` of `array` into
-// `dst`, and the instructions at `drop` go.
 struct Access {
   std::string function;
   std::string array;
@@ -111,8 +41,6 @@ struct Access {
 
 using Cells = std::vector<ValueTree>;
 
-// Returns the symbol of a table of `const` bytes holding `values`, with
-// `attrs` for its other attributes.
 Symbol byte_table(Cells values, StaticAttr attrs) {
   const auto size = static_cast<asdl::Int>(values.size());
   ValueTree tuple;
@@ -125,8 +53,6 @@ Symbol byte_table(Cells values, StaticAttr attrs) {
                 .attrs = std::move(attrs)};
 }
 
-// The number of rows and the size of a row of the static array `name`
-// when a table of its row addresses can be made.
 struct Shape {
   asdl::Int rows = 0;
   asdl::Int row = 0;
@@ -160,8 +86,6 @@ std::optional<Shape> array_shape(const std::string& name, const SymbolTable& sym
   try {
     row = c99_to_tac::sizeof_c99(*arr->element_type, types);
   } catch (const std::exception&) {
-    // Python's `_sizeof` raises for a type without a size, which the
-    // pass takes as an array it can't make a table for.
     return std::nullopt;
   }
   if (row < 3 || (row & (row - 1)) == 0) {
@@ -202,7 +126,6 @@ std::optional<asdl::Int> const_of(const ir::Type_val& v) {
   return c == nullptr ? std::nullopt : bit_precise::raw_value(c->const_);
 }
 
-// The definitions and uses of one function's names, for `only_def`.
 struct Facts {
   const Instrs& instrs;
   std::map<std::string, std::vector<std::size_t>, std::less<>> defs;
@@ -221,8 +144,6 @@ struct Facts {
     return it == defs.end() ? 0 : it->second.size();
   }
 
-  // Returns the instruction defining the temporary `v`, when it has one
-  // definition and one reader.
   std::optional<std::size_t> only_def(const ir::Type_val& v) const {
     const auto* var = std::get_if<ir::Var>(&v);
     if (var == nullptr) {
@@ -349,16 +270,6 @@ std::vector<Access> find_accesses(const ir::Function& fn, const SymbolTable& sym
   return out;
 }
 
-// Returns the bytes one lookup saves over `i * row` plus the array's
-// address. These were measured on `M[r][c]`, `M[r][c] = v`, and `M[r]`
-// for a 16-row `M` with row sizes from 20 to 104. When `row` is a sum or
-// difference of two powers of two whose shifts are written inline,
-// strength reduction makes the multiply two 16-bit shifts and an add or
-// subtract, and the lookup saved 37 to 46 bytes. Otherwise the multiply
-// calls `mul16`, and the code that sets up the call is one that
-// `outline_runs` shares between the accesses, so a lookup saved from 1
-// byte (with the code shared by three accesses) to about 20 (with one
-// access).
 int saving(asdl::Int row) {
   if (const auto terms = strength_reduction::two_power_terms(row)) {
     std::vector<int> shifts;
@@ -374,17 +285,12 @@ int saving(asdl::Int row) {
   return kHelperSaving;
 }
 
-// A table of `planes` (the low and then the high bytes of an array's row
-// addresses), and the objects that hold its planes.
 struct Table {
   std::string name;
   std::vector<Cells> planes;
   std::vector<std::string> objects;
 };
 
-// The tables to make, one for each array, the objects that hold their
-// halves (`halves`, by name), and for each array its table and the
-// number of row addresses in it.
 struct Layout {
   std::vector<Table> tables;
   OrderedMap<std::string, Cells> halves;
@@ -405,7 +311,6 @@ ValueTree address_byte_cell(const std::string& name, asdl::Int offset, bool high
   return t;
 }
 
-// Returns the low and high bytes of the N+1 row addresses of `name`.
 std::pair<Cells, Cells> row_bytes(const std::string& name, asdl::Int rows, asdl::Int row,
                                   const SymbolTable& symbols) {
   const auto& address = std::get<StaticAttr>(symbols.at(name).attrs).address;
@@ -427,7 +332,6 @@ std::pair<Cells, Cells> row_bytes(const std::string& name, asdl::Int rows, asdl:
 using Halves = std::map<std::string, std::pair<Cells, Cells>, std::less<>>;
 using Gains = std::map<std::string, asdl::Int, std::less<>>;
 
-// Returns the bytes the lookups of `names` save, less their table.
 asdl::Int net(const std::vector<std::string>& names, const Halves& halves, const Gains& gain,
               asdl::Int length) {
   std::vector<const Cells*> distinct;
@@ -446,8 +350,6 @@ asdl::Int net(const std::vector<std::string>& names, const Halves& halves, const
   return total - length * static_cast<asdl::Int>(distinct.size());
 }
 
-// Returns the arrays of one group to make lookups for, in a fixed order,
-// or an empty list when no set saves bytes.
 std::vector<std::string> best_set(const std::vector<std::string>& names, const Halves& halves,
                                   const Gains& gain, asdl::Int length) {
   if (names.size() <= kExhaustive) {
@@ -486,14 +388,6 @@ std::vector<std::string> best_set(const std::vector<std::string>& names, const H
   return chosen;
 }
 
-// Picks the arrays whose lookups save more than the bytes their tables
-// add, and lays out the tables. Each chosen array gets a table `A@rows`
-// of its low and high halves, and each distinct half is one object,
-// `A@lo` or `A@hi` after the first array that has it. Arrays with the
-// same number of rows can share halves, so the arrays of such a group
-// are chosen together, trying every set of them when there are at most
-// `kExhaustive` and adding them one at a time, the most accessed first,
-// otherwise.
 Layout choose(const std::map<std::string, std::vector<Access>, std::less<>>& accesses,
               const SymbolTable& symbols, const TypeTable* types,
               std::optional<asdl::Int> fixed_saving) {
@@ -501,8 +395,6 @@ Layout choose(const std::map<std::string, std::vector<Access>, std::less<>>& acc
   std::map<asdl::Int, std::vector<std::string>> groups;
   Halves halves;
   Gains gain;
-  // `accesses` iterates in the order of its names, as Python's
-  // `sorted(accesses)` does.
   for (const auto& [name, list] : accesses) {
     const Shape shape = *array_shape(name, symbols, types);
     halves[name] = row_bytes(name, shape.rows, shape.row, symbols);
@@ -512,8 +404,6 @@ Layout choose(const std::map<std::string, std::vector<Access>, std::less<>>& acc
   }
   for (const auto& [length, names] : groups) {
     std::vector<std::pair<const Cells*, std::string>> made;
-    // Returns the object holding `half`, made as `name` if no array of
-    // the group has it yet.
     const auto half_object = [&](const Cells& half, const std::string& name) -> std::string {
       for (const auto& [bytes, existing] : made) {
         if (*bytes == half) {

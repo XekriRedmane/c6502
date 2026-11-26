@@ -1,47 +1,3 @@
-/* TAC strength reduction.
-
-The pass rewrites a multiply, divide, or remainder by a power of two,
-and a multiply by a few powers of two, into shifts and simpler
-operations.
-
-  * `Multiply(x, 2^k)` and `Multiply(2^k, x)` become `LeftShift(x, k)`,
-    whatever the signedness, since a left shift by k multiplies by 2^k
-    with the same wrap-around for signed and unsigned values.
-  * `Multiply(x, 1)` and `Multiply(1, x)` become `Copy(x, dst)`.
-  * `Multiply(x, 2^a ± 2^b)` becomes two shifts and an Add or a
-    Subtract, when `shift_cost` says both shifts are inlined
-    (`two_term_multiply`).
-  * A one-byte `Multiply(x, C)` whose constant is three signed powers of
-    two, such as 69 = 64 + 4 + 1, becomes three shifts of A and two Adds
-    or Subtracts (`three_term_byte_multiply`).
-  * `Multiply(x, 0)` isn't handled here. Constant folding takes the case
-    of two constants, and `var * 0` is left, since copy propagation and
-    constant folding usually take it later.
-  * An unsigned `Divide(x, 2^k)` becomes `RightShift(x, k)`. A signed one
-    is rewritten only when `x` can't be negative (`nonnegative`), since
-    C99 §6.5.5.6 truncates toward zero and an arithmetic right shift
-    rounds toward negative infinity, which give different quotients
-    for a negative dividend: `-3 / 2 == -1` and `-3 >> 1 == -2`.
-  * `Divide(x, 1)` becomes `Copy(x, dst)` for either signedness.
-  * An unsigned `Modulo(x, 2^k)` becomes `BitwiseAnd(x, 2^k - 1)`. A
-    signed one is rewritten only for an `x` that can't be negative, for
-    the same reason, since the sign of the result is the dividend's and
-    an AND can't be negative.
-  * `Modulo(x, 1)` becomes a `Copy` of the zero of x's class, which for
-    a Var comes from the symbol table.
-
-This matters on the 6502 because `Multiply` lowers to a call of a
-runtime helper (`mul8`, `mul16`, `mul32`), and every value live across
-the call takes a callee-saved zero-page color, which the prologue and
-epilogue save and restore. With the asm-level inline shift by one in
-`tac_to_asm`, a multiply by a power of two calls nothing, so lifetimes
-across calls shrink and the prologue can collapse further.
-
-The rewrite is structural, with no evaluation beyond the test of the
-constant, so it is safe before or after constant folding. The
-three rules of Python's `RuleSet`, for `Multiply`, `Divide`, and
-`Modulo`, match disjoint operators, so the port tries the one that
-matches. */
 #include "passes/optimization/strength_reduction.h"
 
 #include <string>
@@ -64,9 +20,6 @@ using BK = ir::Kind_binary_operator;
 using CK = ir::Kind_const;
 using TK = c99::Kind_data_type;
 
-// Returns the constant of `v` when it is a Constant of one of the eight
-// integer classes of 1, 2, 4, and 8 bytes (Python's `_INT_CONST_TYPES`),
-// or null.
 const ir::Type_const* int_const(const ir::Type_val& v) {
   const auto* c = std::get_if<ir::Constant>(&v);
   if (c == nullptr) {
@@ -97,11 +50,6 @@ int bit_length(asdl::Int v) {
   return n;
 }
 
-// Returns `(log2(value), value)` when `val` is a positive integer
-// Constant whose value is a power of two (1, 2, 4, 8, ...), or none
-// (Python's `_power_of_two_const`). 1 is included, so that a multiply
-// or a divide by 1 becomes a Copy. A signed class may hold a negative
-// value, and a multiplier of -2^k isn't taken.
 std::optional<std::pair<int, asdl::Int>> power_of_two_const(const ir::Type_val& val) {
   const ir::Type_const* c = int_const(val);
   if (c == nullptr) {
@@ -114,14 +62,8 @@ std::optional<std::pair<int, asdl::Int>> power_of_two_const(const ir::Type_val& 
   return std::make_pair(bit_length(v) - 1, v);
 }
 
-// Returns the count of a `LeftShift` or `RightShift` the rules write.
-// The count's type is its own promoted type (C99 §6.5.7.3), whatever the
-// value's, and tac_to_asm reads only its low byte, so it is a `ConstInt`.
 ir::Type_val shift_count(int k) { return ir::Constant{.const_ = ir::ConstInt{k}}; }
 
-// Returns `<base>.sr<k>` for the first k no symbol has (Python's
-// `_fresh_name`). A global keeps its name in SSA form, so two multiplies
-// into it would otherwise make the same temporary.
 std::string fresh_name(const PassContext& ctx, const std::string& base) {
   int k = 0;
   while (ctx.symbols->contains(base + ".sr" + std::to_string(k))) {
@@ -130,8 +72,6 @@ std::string fresh_name(const PassContext& ctx, const std::string& base) {
   return base + ".sr" + std::to_string(k);
 }
 
-// Registers `name` as a local with `like`'s type, unless it has a
-// symbol, and as an SSA name in SSA form.
 void register_temp(const PassContext& ctx, const std::string& like, const std::string& name) {
   if (!ctx.symbols->contains(name)) {
     ctx.symbols->insert_or_assign(name,
@@ -142,7 +82,6 @@ void register_temp(const PassContext& ctx, const std::string& like, const std::s
   }
 }
 
-// Returns a new temporary named after `dst`, registered.
 ir::Var temp(const PassContext& ctx, const std::string& dst) {
   ir::Var t{.name = fresh_name(ctx, dst)};
   register_temp(ctx, dst, t.name);
@@ -159,9 +98,6 @@ ir::Type_binary_operator add_or_subtract(bool subtract) {
   return subtract ? ir::Type_binary_operator{ir::Subtract{}} : ir::Type_binary_operator{ir::Add{}};
 }
 
-// Returns the nonzero digits `(position, ±1)` of `value`'s non-adjacent
-// form, lowest first. 69 is [(0, 1), (2, 1), (6, 1)], and 7 is [(0, -1),
-// (3, 1)].
 std::vector<std::pair<int, int>> non_adjacent_form(asdl::Int value) {
   std::vector<std::pair<int, int>> out;
   int k = 0;
@@ -177,21 +113,6 @@ std::vector<std::pair<int, int>> non_adjacent_form(asdl::Int value) {
   return out;
 }
 
-// Rewrites a one-byte `Multiply(x, C)` whose constant modulo 256 is three
-// signed powers of two, `2^a ± 2^b ± 2^c` with a > b > c, as
-//
-//     t = x << c;  u = t << (b - c);  v = u << (a - b)
-//     w = v ± u;   dst = w ± t
-//
-// Ali Baba's PRNG step, `69 * s + $53`, had called `mul8`, which takes
-// the two operands in HARGS and loops over eight bits. The shifts and
-// adds, `ASL; ASL; STA t; ASL` four times and two `CLC; ADC`, are 4 or 5
-// bytes longer than the call's 11, and take about 30 cycles against the
-// helper's few hundred. The original game computes its PRNG step with
-// shifts for the same reason. The digits are the constant's non-adjacent
-// form, which has the fewest nonzero ones. A digit at bit 8 or above
-// adds a multiple of 256, which is 0 in a byte, so it's dropped, and the
-// top digit left must be +1.
 std::optional<framework::Instrs> three_term_byte_multiply(const ir::Var& x,
                                                           const ir::Type_val& const_side,
                                                           const ir::Type_val& dst,
@@ -240,20 +161,6 @@ std::optional<framework::Instrs> three_term_byte_multiply(const ir::Var& x,
   return out;
 }
 
-// Rewrites `Multiply(x, C)` with `C = 2^a + 2^b` or `C = 2^a - 2^b` (a >
-// b >= 0) into shifts and one Add or Subtract:
-//
-//     C = 2^a ± 1:     t = x << a;  dst = t ± x
-//     C = 2^a ± 2^b:   t = x << b;  u = t << (a-b);  dst = u ± t
-//
-// Both forms wrap as the multiply does, modulo 2^(8n) for an n-byte
-// destination, for signed and unsigned alike. The rewrite is made only
-// when `inline_shift_ok` takes every shift at the destination's width,
-// so the multiply helper is never traded for a shift helper. `x * 9` on
-// a 16-bit int becomes `(x << 3) + x`, which is 6 shift instructions
-// and a 16-bit add where it was a `JSR mul16`. The temporaries are named
-// after `dst` and registered with its type, and are SSA names, so later
-// passes treat them like any other.
 std::optional<framework::Instrs> two_term_multiply(const ir::Var& x,
                                                    const ir::Type_val& const_side,
                                                    const ir::Type_val& dst,
@@ -302,9 +209,6 @@ std::optional<framework::Instrs> two_term_multiply(const ir::Var& x,
   return out;
 }
 
-// Python's `_build_multiply`: `Multiply(x, 2^k)` becomes `LeftShift(x,
-// k)`, and `Multiply(x, 1)` a Copy, with the constant on either side.
-// Two constants are left to constant folding.
 std::optional<framework::Instrs> build_multiply(const ir::Binary& b, const PassContext& ctx) {
   if (asdl::isa<ir::Constant>(b.src1) && asdl::isa<ir::Constant>(b.src2)) {
     return std::nullopt;
@@ -338,10 +242,6 @@ std::optional<framework::Instrs> build_multiply(const ir::Binary& b, const PassC
   return std::nullopt;
 }
 
-// Returns whether `val` is unsigned (Python's `_is_unsigned`): a
-// Constant by its class, and a Var by its type in the symbol table, by
-// the rule of `tac_to_asm._is_unsigned_val`, so that both passes treat
-// a value alike.
 bool is_unsigned(const ir::Type_val& val, const SymbolTable* symbols) {
   if (const auto* c = std::get_if<ir::Constant>(&val)) {
     return asdl::isa<ir::ConstUChar, ir::ConstUInt, ir::ConstULong, ir::ConstULongLong>(c->const_);
@@ -360,12 +260,6 @@ bool is_unsigned(const ir::Type_val& val, const SymbolTable* symbols) {
   return false;
 }
 
-// Returns whether `val` can't be negative (`value_range::max_value`). A
-// signed divide or remainder of such a value by a power of two is then
-// the unsigned one, since truncating toward zero and rounding down give
-// the same nonnegative quotient. `(space + 1) / 2` on a `uint8_t space` is
-// `ZeroExtend(space) + 1`, at most 256, so it's a shift where it had
-// called `sdivmod16`.
 bool nonnegative(const ir::Type_val& val, const RuleEnv& env, const PassContext& ctx) {
   const value_range::DefOf def_of = [&](const ir::Var& v) -> const ir::Type_instruction* {
     return env.def_of(ir::Type_val{v});
@@ -373,9 +267,6 @@ bool nonnegative(const ir::Type_val& val, const RuleEnv& env, const PassContext&
   return value_range::max_value(val, def_of, ctx.symbols, ctx.ssa_dsts).has_value();
 }
 
-// Python's `_build_divide`: an unsigned `Divide(x, 2^k)` becomes
-// `RightShift(x, k)`, and `Divide(x, 1)` a Copy. Only `x / const` is
-// taken, since a divide doesn't commute.
 std::optional<framework::Instrs> build_divide(const ir::Binary& b, const RuleEnv& env,
                                               const PassContext& ctx) {
   const auto c = power_of_two_const(b.src2);
@@ -397,8 +288,6 @@ std::optional<framework::Instrs> build_divide(const ir::Binary& b, const RuleEnv
   return out;
 }
 
-// Returns a zero of the class of `val`: a Constant's own class, or for a
-// Var the class of its type in the symbol table (Python's `_zero_const`).
 std::optional<ir::Type_const> zero_const(const ir::Type_val& val, const SymbolTable* symbols) {
   if (const ir::Type_const* c = int_const(val)) {
     return bit_precise::with_value(*c, 0);
@@ -417,8 +306,6 @@ std::optional<ir::Type_const> zero_const(const ir::Type_val& val, const SymbolTa
   return strength_reduction::zero_for_c99_type(sym->type);
 }
 
-// Python's `_build_modulo`: an unsigned `Modulo(x, 2^k)` becomes
-// `BitwiseAnd(x, 2^k - 1)`, and `Modulo(x, 1)` a Copy of a zero.
 std::optional<framework::Instrs> build_modulo(const ir::Binary& b, const RuleEnv& env,
                                               const PassContext& ctx) {
   const auto c = power_of_two_const(b.src2);
@@ -437,8 +324,6 @@ std::optional<framework::Instrs> build_modulo(const ir::Binary& b, const RuleEnv
   if (!is_unsigned(b.src1, ctx.symbols) && !nonnegative(b.src1, env, ctx)) {
     return std::nullopt;
   }
-  // The mask is a constant of src2's class, which the type checker made
-  // src1's promoted type.
   const ir::Type_const& divisor = std::get<ir::Constant>(b.src2).const_;
   out.push_back(binary(ir::BitwiseAnd{}, b.src1,
                        ir::Constant{.const_ = bit_precise::with_value(divisor, c->second - 1)},
@@ -485,7 +370,6 @@ std::optional<ir::Type_const> zero_for_c99_type(const c99::Type_data_type& t) {
     case TK::ULongLong:
       return ir::ConstULongLong{0};
     case TK::Char:
-      // `char` promotes to int.
       return ir::ConstUInt{0};
     case TK::SChar:
       return ir::ConstInt{0};

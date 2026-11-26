@@ -1,6 +1,3 @@
-// The port of passes/optimization/optimizer.py, the TAC optimizer: the
-// table of its driver's passes and the functions that run it on a
-// function and on a program.
 #pragma once
 
 #include "passes/optimization/driver.h"
@@ -9,9 +6,8 @@
 
 namespace c6502::passes {
 
-// Returns the driver with the passes of Python's `_DRIVER`, in its
-// lists and its order. A pass whose port hasn't landed has a null
-// `run`, and the groups that port the passes fill them in.
+// Returns the TAC optimizer's driver, with its lists of passes in the
+// order they run.
 const framework::PhaseDriver& tac_driver();
 
 // Returns `fn` after the driver: SSA construction, the fixed point, and

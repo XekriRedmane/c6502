@@ -1,51 +1,3 @@
-/* Reads a global just stored from a temporary in place of the temporary.
-
-What it does. `*++P` on a pointer `P` that isn't an SSA name (a global,
-here one in zero page) is
-
-    Binary(Add, P, 1, %0.1)
-    Copy(%0.1, P)
-    Load(%0.1, %1.1)
-
-`%0.1` is read twice, so copy folding can't make the add write `P`
-directly, and `tac_to_asm` adds into two zero-page bytes, copies them
-to `P`, and loads through the copy, 14 bytes more than `P++; *P`. This
-pass makes the load read `P`:
-
-    Binary(Add, P, 1, %0.1)
-    Copy(%0.1, P)
-    Load(P, %1.1)
-
-after which copy folding gives `Binary(Add, P, 1, P)`, which the INC
-peephole turns into `INC P; BNE; INC P+1`, and the load is `LDA
-(P),Y`.
-
-When it applies.
-
-- `Copy(T, G)` comes right after the `Binary` or `Unary` that defines
-  `T`, an SSA name, and `G` is a variable of the same type (or both are
-  pointers) that isn't an SSA name and isn't volatile. A `T` that is a
-  `ZeroExtend` of a byte is left alone, since `tac_to_asm` lowers it
-  with its high byte as 0 and has no such fact about `G`. Zork's `main`
-  grew by 2 bytes when `disk_sector`, stored from such a `T`, was read
-  in its place.
-- `T` has exactly one read besides the `Copy`, in an instruction `U`
-  later in the same block, with no label or jump between. `U` isn't a
-  `Phi`, an extend, or a `Truncate`, and when it loads or stores
-  through a pointer, `T` is that pointer and nothing else. A narrowing
-  pass looks through an extend to its source, and a byte comparison is
-  narrowed through a `ZeroExtend` of a global only when the global is
-  unchanged up to the comparison. In Ali Baba's `handle_event_slot` a
-  call came between the two.
-- No instruction between the `Copy` and `U` writes `G` by name, stores
-  through a pointer or at a fixed address, stores into `G` as an object
-  (`IndexedSymbolStore`), or calls a function.
-
-`G` then holds the value of `T` at `U`, so `U` reads the same value.
-`T` is left with the `Copy` as its only reader, and copy folding, later
-in the same sweep, removes it. A read of `G` in place of `T` costs at
-most a byte more (an absolute address in place of a zero-page one), and
-the store of `T` that goes with it saves two or more. */
 #include "passes/optimization/read_stored_global.h"
 
 #include <map>
@@ -64,8 +16,6 @@ namespace c99 = ::c6502::c99_ast;
 using framework::PassContext;
 using K = ir::Kind_instruction;
 
-// Returns whether the scan for `U` stops at `ins`: a label, a jump, a
-// `Ret`, a call, or a store through a pointer or at a fixed address.
 bool ends_scan(const ir::Type_instruction& ins) {
   switch (ir::kind(ins)) {
     case K::Label:
@@ -86,8 +36,6 @@ bool ends_scan(const ir::Type_instruction& ins) {
   }
 }
 
-// Returns whether the type `t` is volatile, looking through `const`
-// qualifiers to the first other one.
 bool is_volatile(const c99::Type_data_type* t) {
   while (const auto* c = std::get_if<c99::Const>(t)) {
     t = &*c->referenced_type;
@@ -95,7 +43,6 @@ bool is_volatile(const c99::Type_data_type* t) {
   return std::holds_alternative<c99::Volatile>(*t);
 }
 
-// Returns `t` without its qualifiers.
 const c99::Type_data_type* strip(const c99::Type_data_type* t) {
   for (;;) {
     if (const auto* c = std::get_if<c99::Const>(t)) {
@@ -113,9 +60,6 @@ bool is_var(const ir::Type_val& v, const std::string& name) {
   return var != nullptr && var->name == name;
 }
 
-// Returns whether `ins` reads `t` only as the pointer it loads or stores
-// through. Any other instruction but a `Phi`, an extend, and a
-// `Truncate` passes.
 bool through_pointer(const ir::Type_instruction& ins, const std::string& t) {
   const ir::Type_val* ptr = nullptr;
   std::vector<const ir::Type_val*> others;

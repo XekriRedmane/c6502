@@ -1,56 +1,3 @@
-/* TAC pass: a byte-indexed access to a static object, with a constant
-offset, as `IndexedLoad` or `IndexedSymbolStore`.
-
-# What it does
-
-`prompts[which].answer` on `struct prompt prompts[3]` (records of 16
-bytes, with `answer` at byte 15) lowers to
-
-    GetAddress(prompts, %g)
-    Binary(LeftShift, which, 4, %b)       ; the index scaled to bytes
-    ZeroExtend(%b, %z)
-    Binary(Add, %g, %z, %a)
-    Binary(Add, %a, 15, %p)
-    Load(%p, %key)
-
-which, through a pointer, becomes `LDY #15; LDA (ptr),Y` with the
-pointer built in two zero-page bytes first. This pass turns the access
-into
-
-    IndexedLoad(prompts, %b, %key, offset=15)
-
-which `tac_to_asm` lowers as `LDX b; LDA prompts+15,X`. The same goes
-for a `Store` (as `IndexedSymbolStore`), and for an
-`IndirectIndexedLoad` or `IndirectIndexedStore` whose index is a
-constant.
-
-The rewrite is exact. `abs,X` adds the index to the full 16-bit address
-`prompts+15`, so it reads `prompts + 15 + b` as the `Load` did, with no
-bound on the object's size.
-
-A pointer that's passed on and not read through,
-`cout_string(&prompts[which].answer, 1)`, is `(prompts + z) + 15`. The
-pass reassociates that to `(prompts + 15) + z`, so that the constant
-part is one link-time address, `#<(prompts+15)`
-(`passes/label_offset_fold.py` folds the add of a label's halves and a
-constant), and the value takes one 16-bit add.
-
-# Pattern
-
-  * The address is `GetAddress(o) + ZeroExtend(b)`, optionally plus a
-    constant, with `o` a static object and `b` one byte. Each
-    intermediate is an SSA value.
-  * Any `Load`, `Store`, `IndirectIndexedLoad`, or `IndirectIndexedStore`
-    through it is rewritten. The address computation is left for
-    dead-code elimination when nothing else uses it.
-
-# Where it runs
-
-Once, after the fixed-point loop and before `recognize_indirect_indexed`.
-
-The new temporary of a reassociation, `<dst>.base` (or `<dst>.base<n>`
-for the first `n` free), takes the destination's type and attributes,
-which Python shares with the destination's symbol and C++ copies. */
 #include "passes/optimization/static_indexed_access.h"
 
 #include <map>
@@ -69,8 +16,6 @@ using asdl::Int;
 using framework::Instrs;
 using framework::PassContext;
 
-// Returns the constant `v`'s value modulo 2^16 when it is a constant of
-// 1, 2, or 4 bytes of one of the C types, or none.
 std::optional<Int> const16(const ir::Type_val& v) {
   const auto* c = std::get_if<ir::Constant>(&v);
   if (c == nullptr) {
@@ -90,7 +35,6 @@ std::optional<Int> const16(const ir::Type_val& v) {
   }
 }
 
-// Returns whether `t`, without its qualifiers, is a 1-byte integer type.
 bool byte_type(const c99::Type_data_type& t) {
   const c99::Type_data_type* p = &t;
   for (;;) {
@@ -106,8 +50,6 @@ bool byte_type(const c99::Type_data_type& t) {
          std::holds_alternative<c99::UChar>(*p);
 }
 
-// `GetAddress(o) + ZeroExtend(b)`: the static object, the byte index,
-// and the Add's two operands.
 struct StaticBase {
   std::string obj;
   ir::Type_val index;
@@ -115,7 +57,6 @@ struct StaticBase {
   ir::Type_val z;
 };
 
-// The object, the byte index, and the offset of an address.
 struct Address {
   std::string obj;
   ir::Type_val index;
@@ -132,7 +73,6 @@ class Walker {
     }
   }
 
-  // Returns the instruction that defines the SSA name `v`, or null.
   const ir::Type_instruction* def_of(const ir::Type_val& v) const {
     const auto* var = std::get_if<ir::Var>(&v);
     if (var == nullptr || !ctx_.ssa_dsts->contains(var->name)) {
@@ -151,8 +91,6 @@ class Walker {
     return sym != nullptr && byte_type(sym->type);
   }
 
-  // Returns `(object, byte index, g, z)` when `v` is `GetAddress(o) +
-  // ZeroExtend(b)` for a static `o` and a byte `b`.
   std::optional<StaticBase> static_base(const ir::Type_val& v) const {
     const ir::Type_instruction* d = def_of(v);
     const auto* add = d != nullptr ? std::get_if<ir::Binary>(d) : nullptr;
@@ -179,7 +117,6 @@ class Walker {
     return std::nullopt;
   }
 
-  // Returns `(object, byte index, offset)` for the address `v`.
   std::optional<Address> address(const ir::Type_val& v) const {
     if (auto base = static_base(v)) {
       return Address{std::move(base->obj), std::move(base->index), 0};
@@ -200,8 +137,6 @@ class Walker {
     return std::nullopt;
   }
 
-  // Returns `(g + z) + k` as `(g + k) + z` for `g` the address of a
-  // static object, so that `g + k` is one link-time address, or none.
   std::optional<Instrs> reassociate(const ir::Binary& ins) const {
     const std::pair<const ir::Type_val*, const ir::Type_val*> orders[] = {
         {&ins.src1, &ins.src2}, {&ins.src2, &ins.src1}};

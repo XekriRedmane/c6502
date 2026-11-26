@@ -1,49 +1,3 @@
-/* TAC pass: compute an operation of a Phi of constants in the Phi's
-arguments.
-
-`?:` with constant arms joins them in a Phi, and the arithmetic after
-the join runs on whichever arrived:
-
-    Phi(%c, [3 from .then, 2 from .else])
-    Truncate(%c, %c.lo)
-    Binary(+, %c.lo, 1uc, B)
-
-C's `B = (flag ? 3 : 2) + 1;` lowered that way loads 3 or 2 and then
-adds 1. Every argument is a constant, so the operation's result on each
-path is a constant too, and the Phi can join those instead:
-
-    Phi(%c.lo, [3uc from .then, 2uc from .else])
-    Binary(+, %c.lo, 1uc, B)
-
-and then
-
-    Phi(%c.lo.p0, [4uc from .then, 3uc from .else])
-    Copy(%c.lo.p0, B)
-
-which `tac_to_asm` lowers as a load of 4 or 3 and a store.
-
-The rule. A `Phi` whose arguments are all integer constants, and whose
-destination is an SSA name read by exactly one instruction `U`, takes
-`U`'s operation when `U` is a `Unary`, a `Binary` whose other operand
-is a constant, or a `Truncate`, and constant folding
-(`constant_folding::fold`) folds `U` for every argument. The Phi's
-destination becomes `U`'s when that is an SSA name, and `U` goes.
-Otherwise the Phi gets a new temporary of the type of `U`'s
-destination, and `U` becomes a copy of it into the destination, which
-keeps the store where it was.
-
-`U` reads the Phi's destination, so the Phi's block dominates `U`, and
-every reader of `U`'s destination comes after `U`, so the Phi still
-defines that value before every read. The Phi computes the value on
-every path into its block, where `U` may have run on fewer, but the
-value is a constant on each path and computing it has no effect, so
-that is harmless. An operation that doesn't fold for some argument,
-such as a divide by zero, leaves the Phi alone.
-
-An extend isn't among the operations taken. It would only widen the
-Phi, and a Phi of a byte's constants is what other rules recognize,
-such as the shift of a 0 or 1 through the carry (`tac_to_asm`'s
-`rotate_in`). */
 #include "passes/optimization/phi_constant_fold.h"
 
 #include <string>
@@ -67,8 +21,6 @@ bool int_const(const ir::Type_val& v) {
   return c != nullptr && constant_folding::is_integer_const(c->const_);
 }
 
-// Returns the destination of a `Unary`, `Binary`, or `Truncate`, the
-// operations a Phi takes, or null for any other instruction.
 const ir::Type_val* foldable_dst(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case K::Unary:
@@ -82,8 +34,6 @@ const ir::Type_val* foldable_dst(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns a new SSA local of `like`'s type without its qualifiers,
-// named `<like>.p<k>` for the first k no symbol has.
 ir::Var make_temp(const PassContext& ctx, const std::string& like) {
   int k = 0;
   while (ctx.symbols->contains(like + ".p" + std::to_string(k))) {
@@ -133,7 +83,6 @@ tac_ast::Function fold_into_constant_phis(tac_ast::Function fn, const PassContex
     if (!all_constant) {
       continue;
     }
-    // The one instruction that reads the Phi's destination.
     std::optional<std::size_t> j;
     for (std::size_t k = 0; k < instrs.size() && !j; ++k) {
       for (const std::string_view u : uses_in(instrs[k])) {

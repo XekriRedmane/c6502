@@ -1,59 +1,3 @@
-/* Splits a table of 2-byte elements read by a byte index into byte
-planes.
-
-A `static const` array of 2-byte elements (or wider), such as a
-`uint16_t` or a pointer table, read as `T[i]` with `i` an unsigned
-byte, compiles to
-
-    LDA i; ASL; TAX; LDA T,X; ...; LDA T+1,X
-
-for a table of at most 127 elements, and to a 16-bit shift, a 16-bit
-add, and a read through a pointer for a longer one. 6502 programmers
-keep such a table as two tables, the low bytes of every element and
-then the high bytes, so that the element number is the index:
-
-    LDX i; LDA T,X; ...; LDA T+N,X
-
-This pass does the same when every use of the table is such a read.
-The table's bytes are rewritten in that order, and each read becomes
-`IndexedLoad(T, i, dst, offset=k, plane=N)`: byte j of the element at
-`i + k` is at `T + k + i + j * N`. The table keeps its name, and its
-symbol becomes an array of `const` bytes, which is what it is now.
-
-A table qualifies when both of these are true.
-
-  * It's a `StaticVariable` with internal linkage and a one-dimensional
-    array type whose elements are a `const` scalar of at least 2 bytes,
-    with at most 256 elements, outside zero page, and with an
-    initializer this pass can lay out byte by byte (integers, floating
-    constants, and addresses).
-  * Every reference to it, in every function and every static's
-    initializer, is a read the pass rewrites.
-
-A read is one of these, each with a non-volatile destination as wide
-as an element.
-
-  * `IndexedLoad(T, s, dst, offset=o)`, with `s` a constant multiple of
-    the element size, or `s` defined once in the function, in the same
-    block, by `i << log2(w)` or `i * w` for a one-byte `i`, and `o` a
-    multiple of the element size `w`. This is the shape `c99_to_tac`
-    gives a table of at most 255 bytes.
-  * `Load(p, dst)` with `p = a + s` (either order), `a =
-    GetAddress(T)`, `s = z << log2(w)` or `z * w`, and `z =
-    ZeroExtend(i)` for a one-byte unsigned `i`, each defined once in the
-    function, in the same block as the load. This is the shape of a
-    longer table.
-
-Since the function is no longer in SSA form here, `i` must hold the
-same value at the load as where the chain read it. Nothing between may
-write `i`, and when `i` isn't an automatic variable, nothing between
-may call a function or store through a pointer. A volatile `i` is left
-alone. Each instruction of a chain is dropped once nothing reads its
-result.
-
-The pass runs once over the whole program, after the TAC optimizer and
-the dispatch on small pointer tables, which handles some pointer tables
-better. It doesn't run in the unoptimized pipeline. */
 #include "passes/optimization/split_tables.h"
 
 #include <cstddef>
@@ -73,9 +17,6 @@ namespace tac = ::c6502::tac_ast;
 
 namespace {
 
-// Appends the UTF-8 of the code point `cp`, which is below 256. A
-// Python `str` that holds bytes holds them as the code points 0 to 255,
-// and its C++ string holds their UTF-8.
 void append_code_point(std::string& out, std::uint32_t cp) {
   if (cp < 0x80) {
     out += static_cast<char>(cp);
@@ -158,9 +99,6 @@ namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 using Instrs = std::vector<ir::Type_instruction>;
 
-// A table that qualifies by its declaration: the width of its
-// elements, their count, and its bytes, each an integer or the
-// `AddressByteInit` of one byte of a link-time address.
 struct Table {
   int width = 0;
   int count = 0;
@@ -183,10 +121,6 @@ ValueTree init_cell(ir::Type_static_init init) {
   return t;
 }
 
-// Returns the bytes `init` lays down, in order, each an integer or an
-// `AddressByteInit` for one byte of a link-time address, or none when
-// `init` holds something else. A string can't be in a table of 2-byte
-// elements, so it isn't handled.
 std::optional<std::vector<ValueTree>> init_cells(const std::vector<ir::Type_static_init>& init) {
   std::vector<ValueTree> out;
   const auto num = [&](asdl::Int v, int n) {
@@ -248,8 +182,6 @@ std::optional<std::vector<ValueTree>> init_cells(const std::vector<ir::Type_stat
   return out;
 }
 
-// Maps each table that qualifies by its declaration to its width,
-// count, and bytes, in the program's order.
 Tables candidates(const ir::Program& prog, const SymbolTable& symbols) {
   Tables out;
   for (const auto& tl : prog.top_level) {
@@ -291,10 +223,6 @@ Tables candidates(const ir::Program& prog, const SymbolTable& symbols) {
   return out;
 }
 
-// One read to rewrite: the load at `at` in `function` becomes
-// `IndexedLoad(table, index, dst, offset=element, plane=count)`, and
-// `chain` lists the instructions that computed its address, which go
-// when nothing else reads their results.
 struct Read {
   std::string function;
   std::string table;
@@ -305,11 +233,8 @@ struct Read {
   std::vector<std::string> chain;
 };
 
-// The reads of each table found so far, or none once some use of the
-// table disqualifies it.
 using Plans = OrderedMap<std::string, std::optional<std::vector<Read>>>;
 
-// Returns the number of the basic block each instruction is in.
 std::vector<int> block_starts(const Instrs& instrs) {
   std::vector<int> out;
   out.reserve(instrs.size());
@@ -329,8 +254,6 @@ std::vector<int> block_starts(const Instrs& instrs) {
   return out;
 }
 
-// Returns whether `v` is a one-byte variable (unsigned when `unsigned_`)
-// that isn't volatile.
 bool is_byte(const ir::Type_val& v, const SymbolTable& symbols, bool unsigned_) {
   const auto* var = std::get_if<ir::Var>(&v);
   if (var == nullptr) {
@@ -363,8 +286,6 @@ std::optional<asdl::Int> const_of(const ir::Type_val& v) {
   return c == nullptr ? std::nullopt : bit_precise::raw_value(c->const_);
 }
 
-// Returns the operand `x` when `ins` is `x << log2(width)` or `x *
-// width`, and none otherwise.
 std::optional<ir::Type_val> scaled_by(const ir::Type_instruction& ins, int width) {
   const auto* b = std::get_if<ir::Binary>(&ins);
   if (b == nullptr) {
@@ -388,9 +309,6 @@ std::optional<ir::Type_val> scaled_by(const ir::Type_instruction& ins, int width
   return std::nullopt;
 }
 
-// Returns whether nothing in `instrs[start+1:end]` can change `var`.
-// An automatic variable whose address the function never takes changes
-// only where an instruction defines it.
 bool unchanged(const Instrs& instrs, std::size_t start, std::size_t end, const std::string& var,
                const SymbolTable& symbols) {
   const Symbol* sym = symbols.find(var);
@@ -429,8 +347,6 @@ bool unchanged(const Instrs& instrs, std::size_t start, std::size_t end, const s
   return true;
 }
 
-// Returns the byte width of the variable `v`'s type with its `const`
-// stripped, or none.
 std::optional<int> dst_width(const ir::Type_val& v, const SymbolTable& symbols) {
   const auto* var = std::get_if<ir::Var>(&v);
   if (var == nullptr) {
@@ -447,7 +363,6 @@ std::optional<int> dst_width(const ir::Type_val& v, const SymbolTable& symbols) 
   return split_tables::width(*t);
 }
 
-// The facts about one function that the matching of its reads shares.
 struct FunctionFacts {
   const Instrs& instrs;
   std::map<std::string, std::vector<std::size_t>, std::less<>> defs;
@@ -468,8 +383,6 @@ struct FunctionFacts {
     return n == nullptr ? 0 : *n;
   }
 
-  // Returns the one instruction that defines the Var `v`, or none when
-  // `v` isn't a Var or has no definition or more than one.
   std::optional<std::size_t> single_def(const ir::Type_val& v) const {
     const auto* var = std::get_if<ir::Var>(&v);
     if (var == nullptr) {
@@ -485,8 +398,6 @@ struct FunctionFacts {
 
 const std::string& var_name(const ir::Type_val& v) { return std::get<ir::Var>(v).name; }
 
-// Returns the read for the `IndexedLoad` `ins` at `k`, or none when it
-// isn't one the pass can rewrite.
 std::optional<Read> indexed_read(const ir::Function& fn, const FunctionFacts& f, std::size_t k,
                                  const ir::IndexedLoad& ins, const Table& table,
                                  const SymbolTable& symbols) {
@@ -515,7 +426,7 @@ std::optional<Read> indexed_read(const ir::Function& fn, const FunctionFacts& f,
     return std::nullopt;
   }
   const auto i = scaled_by(f.instrs[*s], width);
-  if (!i || !is_byte(*i, symbols, /*unsigned_=*/false)) {
+  if (!i || !is_byte(*i, symbols, false)) {
     return std::nullopt;
   }
   if (!unchanged(f.instrs, *s, k, var_name(*i), symbols)) {
@@ -530,9 +441,6 @@ std::optional<Read> indexed_read(const ir::Function& fn, const FunctionFacts& f,
               .chain = {var_name(ins.index)}};
 }
 
-// Returns the read for the `Load` `ins` at `k` through `GetAddress(T) +
-// (ZeroExtend(i) << log2(w))`, or none. The address must have no other
-// reader, since it would still need the table as it was.
 std::optional<Read> load_read(const ir::Function& fn, const FunctionFacts& f, std::size_t k,
                               const ir::Load& ins, const Tables& tables,
                               const SymbolTable& symbols) {
@@ -583,7 +491,7 @@ std::optional<Read> load_read(const ir::Function& fn, const FunctionFacts& f, st
     if (ext == nullptr) {
       return std::nullopt;
     }
-    if (!is_byte(ext->src, symbols, /*unsigned_=*/true)) {
+    if (!is_byte(ext->src, symbols, true)) {
       return std::nullopt;
     }
     if (!unchanged(f.instrs, *z, k, var_name(ext->src), symbols)) {
@@ -601,8 +509,6 @@ std::optional<Read> load_read(const ir::Function& fn, const FunctionFacts& f, st
   return std::nullopt;
 }
 
-// Adds `fn`'s reads of each table to `plans`, or sets a table's entry to
-// none when `fn` uses it some other way.
 void find_reads(const ir::Function& fn, const Tables& tables, const SymbolTable& symbols,
                 Plans& plans) {
   const Instrs& instrs = fn.instructions;
@@ -614,7 +520,6 @@ void find_reads(const ir::Function& fn, const Tables& tables, const SymbolTable&
       plan->push_back(std::move(read));
     }
   };
-  // The GetAddress results each chain accounts for.
   std::map<std::string, std::size_t, std::less<>> covered;
   for (std::size_t k = 0; k < instrs.size(); ++k) {
     if (const auto* ins = std::get_if<ir::IndexedLoad>(&instrs[k])) {
@@ -638,7 +543,6 @@ void find_reads(const ir::Function& fn, const Tables& tables, const SymbolTable&
       }
     }
   }
-  // Every other reference to a table disqualifies it.
   for (std::size_t k = 0; k < instrs.size(); ++k) {
     const auto& ins = instrs[k];
     if (const auto* g = std::get_if<ir::GetAddress>(&ins)) {
@@ -697,8 +601,6 @@ ir::Function rewrite_function(ir::Function fn, const std::vector<const Read*>& r
                                     .plane = count};
     chain_names.insert(r->chain.begin(), r->chain.end());
   }
-  // Drop each chain instruction nothing reads any more, repeating since
-  // dropping one can leave the one before it unread.
   while (true) {
     const auto uses = count_uses(instrs);
     Instrs keep;
@@ -747,7 +649,6 @@ ir::Program apply_split_tables(ir::Program prog, SymbolTable* symbols) {
     if (const auto* fn = std::get_if<ir::Function>(&tl)) {
       find_reads(*fn, tables, *symbols, plans);
     } else if (const auto* sv = std::get_if<ir::StaticVariable>(&tl)) {
-      // An address in another static's initializer.
       for (const auto& item : sv->init) {
         const std::string* name = nullptr;
         if (const auto* a = std::get_if<ir::AddressInit>(&item)) {
@@ -774,8 +675,6 @@ ir::Program apply_split_tables(ir::Program prog, SymbolTable* symbols) {
   }
   for (auto& tl : prog.top_level) {
     if (auto* fn = std::get_if<ir::Function>(&tl)) {
-      // The order of the reads doesn't change the result, since each
-      // rewrites its own instruction.
       std::vector<const Read*> reads;
       for (const auto& name : chosen) {
         for (const auto& r : **plans.find(name)) {

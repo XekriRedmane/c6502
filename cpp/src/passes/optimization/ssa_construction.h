@@ -1,5 +1,3 @@
-// The port of passes/optimization/ssa_construction.py, which puts a TAC
-// function in SSA form for the TAC optimizer's driver.
 #pragma once
 
 #include <utility>

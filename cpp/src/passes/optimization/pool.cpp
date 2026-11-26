@@ -15,7 +15,6 @@ bool Range::contains(asdl::Int x) const {
 
 namespace {
 
-// Returns `v` as Python's `f"0x{v:02X}"` writes a value of 0 or more.
 std::string hex2(asdl::Int v) {
   char buf[40];
   std::snprintf(buf, sizeof buf, "0x%02llX", static_cast<unsigned long long>(v));

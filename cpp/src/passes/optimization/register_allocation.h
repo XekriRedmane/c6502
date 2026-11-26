@@ -1,7 +1,3 @@
-// The result of the asm optimizer's register allocation, Python's
-// `Coloring` in passes/optimization/register_allocation.py, and the two
-// helpers of that module that the asm allocator reuses, `_blocked_bytes`
-// and `_find_fit`.
 #pragma once
 
 #include <optional>
@@ -19,12 +15,12 @@ namespace c6502::passes {
 
 // `assignments` maps each colored name to the zero-page address of its
 // lowest byte, in the order the allocator colored them, which
-// `zp_slot_naming.local_slot_names` follows (the first name from the
-// source at an address names it). `spilled` holds the names that fit
-// no pool, a Python set whose order nothing reads. `pool` is the pool
-// the allocator used, and `hwreg_assignments` maps each name pinned to
-// an index register to "X" or "Y". A name is in at most one of
-// `assignments` and `hwreg_assignments`.
+// `local_slot_names` follows (the first name from the source at an
+// address names it). `spilled` holds the names that fit no pool, in no
+// order that anything reads. `pool` is the pool the allocator used, and
+// `hwreg_assignments` maps each name pinned to an index register to "X"
+// or "Y". A name is in at most one of `assignments` and
+// `hwreg_assignments`.
 struct Coloring {
   OrderedMap<std::string, asdl::Int> assignments;
   NameSet spilled;
@@ -44,7 +40,7 @@ std::set<asdl::Int> blocked_bytes(std::string_view name, const InterferenceGraph
 
 // Returns the lowest base in `byte_range` such that the `width` bytes
 // from it are all inside the range and none is in `blocked`, or nothing
-// when there is no such base. The range's step isn't read, as in Python.
+// when there is no such base. The range's step isn't read.
 std::optional<asdl::Int> find_fit(const Range& byte_range, const asdl::Int& width,
                                   const std::set<asdl::Int>& blocked);
 

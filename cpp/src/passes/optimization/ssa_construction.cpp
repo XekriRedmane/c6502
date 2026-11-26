@@ -1,63 +1,3 @@
-/* TAC SSA construction.
-
-Converts a `tac_ast.Function` to SSA form. Each promotable Var gets a
-new name `<orig>.<N>` per definition, and the names are joined by `Phi`
-instructions where control flow merges. Everything else (statics,
-address-taken locals, Vars of aggregate type, function names) passes
-through unchanged.
-
-A Var is promotable if and only if
-
-  * its symbol is a `LocalAttr` (a block-scope automatic, a function
-    parameter, or a TAC temporary `%N` that `c99_to_tac` made),
-  * its type is scalar: `Int`, `Long`, `LongLong`, `UInt`, `ULong`,
-    `ULongLong`, `Char`, `SChar`, `UChar`, `Float`, `Double`, `Pointer`,
-    or one of the bit-precise integers of 3, 5, 6, or 7 bytes. Arrays,
-    structs, and unions are left out because their members are reached
-    through `GetAddress` and `Load` or `Store`, which makes them
-    address-taken in effect, and
-  * its address is never taken, which is to say no `GetAddress` in the
-    function names it as its `operand`.
-
-The algorithm is Cytron et al. 1991's.
-
-  1. When the function's body starts with a `Label`, a synthetic
-     preheader `Label` goes in front of it, so that the first block
-     with instructions of its own has ENTRY as its only predecessor.
-     That keeps the tagging of a Phi's arguments by predecessor label
-     well defined for every later block whose predecessors include the
-     edge from ENTRY.
-  2. The CFG is built, and `ensure_block_labels` gives every block a
-     leading `Label` to use as its `PhiArg.pred_label`.
-  3. The immediate dominators, the dominance frontiers, and the
-     children in the dominator tree are computed.
-  4. For each promotable v, Defs(v) is the set of blocks that define v.
-     An empty `Phi(dst=Var(v), args=[])` goes at each block of the
-     iterated dominance frontier of Defs(v) where v is live, right
-     after the block's leading `Label`.
-  5. The renaming walks the dominator tree from ENTRY in preorder. For
-     each block B it
-       a. gives each Phi's `dst` a new SSA name and pushes it on the
-          Var's stack,
-       b. for each instruction other than a Phi, in source order,
-          rewrites every Var read to the top of its stack, and then
-          every Var written to a new SSA name, which it pushes,
-       c. for each CFG successor S of B, appends `PhiArg(pred_label=B's
-          leading label, source=Var(top of stack[orig_var]))` to every
-          Phi at S, finding each Phi by its original Var through the
-          record of where step 4 placed it, since its `dst` has been
-          renamed by the time it is read,
-       d. visits B's children in the dominator tree, and
-       e. pops everything pushed in (a) and (b).
-
-A parameter's first SSA name is its own name. The renaming starts each
-promotable parameter's stack with its spelling at ENTRY, so the first
-read of `p` stays `p`, and the function's `params` need no rewriting.
-Later definitions of `p` make `p.1`, `p.2`, and so on.
-
-Each new SSA name gets a `LocalAttr` symbol with the original Var's
-type in the symbol table, so that `tac_to_asm` can size its frame slot
-after SSA destruction. */
 #include "passes/optimization/ssa_construction.h"
 
 #include <cstddef>
@@ -86,21 +26,6 @@ using tac_cfg::kEntryId;
 using tac_cfg::kExitId;
 using Names = std::set<std::string, std::less<>>;
 
-// Returns `fn` with a new `Label` in front when its body starts with a
-// Label, and `fn` as it is otherwise.
-//
-// A block whose first instruction is a label that jumps reach can have
-// predecessors besides ENTRY, such as a back edge from the end of a
-// loop. SSA construction can put Phis in such a block whose
-// predecessors include the edge from ENTRY, which has no instructions
-// and so no label to tag the argument with. The preheader is a block
-// with a label that the Phi's argument can name, which SSA destruction
-// later finds to emit the copies for the path from the entry.
-//
-// The label is `.<funcname>@ssa_preheader@<N>`. The prefix of the
-// function's name follows the convention of the user's labels
-// (label_resolution makes `.<funcname>@<orig>`) and keeps the labels of
-// SSA apart between the functions of a program.
 ir::Function maybe_prepend_preheader(ir::Function fn) {
   if (fn.instructions.empty() || !asdl::isa<ir::Label>(fn.instructions.front())) {
     return fn;
@@ -122,11 +47,6 @@ ir::Function maybe_prepend_preheader(ir::Function fn) {
   return fn;
 }
 
-// Puts a new `Label` at the front of every real block whose first
-// instruction isn't one, since the tagging of a Phi's arguments needs
-// every block on the path to have a label to name. The labels are
-// `.<funcname>@ssa_block@<N>`, which keeps the labels of SSA apart
-// between the functions of a program.
 void ensure_block_labels(Cfg& cfg, const std::string& fn_name) {
   Names existing;
   for (const auto& [bid, blk] : cfg.blocks) {
@@ -155,8 +75,6 @@ void ensure_block_labels(Cfg& cfg, const std::string& fn_name) {
   }
 }
 
-// Returns the name of the block's leading `Label`. `ensure_block_labels`
-// must have run first, and a block without one is a bug.
 const std::string& block_label(const BasicBlock& blk) {
   if (blk.instructions.empty() || !asdl::isa<ir::Label>(blk.instructions.front())) {
     throw InternalError("block " + std::to_string(blk.id) +
@@ -165,9 +83,6 @@ const std::string& block_label(const BasicBlock& blk) {
   return std::get<ir::Label>(blk.instructions.front()).name;
 }
 
-// Returns whether `t` has a `Volatile` wrapper at its top, under any
-// number of `Const`s. The parser writes `const volatile T` as
-// `Const(Volatile(T))`, and the test takes either order.
 bool is_volatile_qualified(const c99::Type_data_type* t) {
   while (const auto* c = asdl::as<c99::Const>(*t)) {
     t = &*c->referenced_type;
@@ -175,9 +90,6 @@ bool is_volatile_qualified(const c99::Type_data_type* t) {
   return asdl::isa<c99::Volatile>(*t);
 }
 
-// Returns whether `t` is one of the scalar types a promotable Var may
-// have. The 3-, 5-, 6-, and 7-byte integers left of the bit-precise
-// types are `BitInt`s.
 bool is_scalar(const c99::Type_data_type& t) {
   switch (c99::kind(t)) {
     case c99::Kind_data_type::Int:
@@ -199,16 +111,6 @@ bool is_scalar(const c99::Type_data_type& t) {
   }
 }
 
-// Returns the promotable Vars of the function: those whose symbol is a
-// `LocalAttr`, whose type is scalar (which leaves out `Array`,
-// `Structure`, `Union`, and `FunType`), that aren't volatile-qualified,
-// and that are never the operand of a `GetAddress`. C99 §6.7.3.6
-// requires every access to a volatile object to be an observable side
-// effect, and keeping its value in an SSA temporary joined by Phis
-// would remove those accesses. The scalar test already leaves out a
-// `Volatile` wrapper, but the explicit test keeps a later change that
-// strips qualifiers before the type test from losing volatile's
-// meaning. Every block is walked, reachable or not.
 Names identify_promotable(const Cfg& cfg, const SymbolTable& symbols) {
   Names address_taken;
   Names candidates;
@@ -243,12 +145,6 @@ Names identify_promotable(const Cfg& cfg, const SymbolTable& symbols) {
   return promotable;
 }
 
-// Returns the promotable vars live on entry to each block: those read
-// on some path from the block's entry before they are written again.
-// The Phi placement is pruned by it (Cytron §5.1), since a Phi at B for
-// a v that isn't live into B has a dead `dst`, and the copies SSA
-// destruction makes for it in the predecessors read temporaries that
-// had no value before the join.
 std::map<int, Names> compute_live_in(const Cfg& cfg, const Names& promotable) {
   std::map<int, Names> gen;
   std::map<int, Names> kill;
@@ -301,14 +197,8 @@ std::map<int, Names> compute_live_in(const Cfg& cfg, const Names& promotable) {
   return live_in;
 }
 
-// Where step 4 put the Phis of one block: the original Var of each and
-// its index in the block, in the order they were placed. A later Phi
-// goes after the earlier ones, so the indices stay valid.
 using PhisAt = std::map<int, std::vector<std::pair<std::string, std::size_t>>>;
 
-// Inserts `phi` after the block's leading `Label` and any Phis already
-// there, or at the front when the block has no leading Label, though
-// `ensure_block_labels` should have given it one. Returns its index.
 std::size_t insert_phi(BasicBlock& blk, ir::Phi phi) {
   std::size_t pos = 0;
   if (!blk.instructions.empty() && asdl::isa<ir::Label>(blk.instructions.front())) {
@@ -322,14 +212,8 @@ std::size_t insert_phi(BasicBlock& blk, ir::Phi phi) {
   return pos;
 }
 
-// Puts empty Phis for each promotable Var v at every block of the
-// iterated dominance frontier of the blocks that define v where v is
-// live (pruned SSA, Cytron §5.1), and returns where they went. The
-// defining blocks and the frontiers are walked in the order of
-// Python's sets.
 PhisAt place_phis(Cfg& cfg, const Names& promotable,
                   const OrderedMap<int, PyIntSet>& df, const std::map<int, Names>& live_in) {
-  // Defs(v), the blocks that define v, by v in the order first seen.
   OrderedMap<std::string, PyIntSet> defs;
   for (const auto& [bid, blk] : cfg.blocks) {
     for (const auto& instr : blk.instructions) {
@@ -343,8 +227,6 @@ PhisAt place_phis(Cfg& cfg, const Names& promotable,
 
   PhisAt phis_at;
   for (const auto& [v, def_blocks] : defs) {
-    // The iterated frontier by a worklist, which starts with Defs(v)
-    // and grows by each block's frontier until nothing changes.
     std::vector<std::int64_t> worklist = def_blocks.items();
     std::set<std::int64_t> already_placed;
     std::set<std::int64_t> already_visited(def_blocks.sorted());
@@ -360,16 +242,9 @@ PhisAt place_phis(Cfg& cfg, const Names& promotable,
           continue;
         }
         BasicBlock& blk = *cfg.blocks.find(static_cast<int>(y));
-        // A Phi goes only in a block with several predecessors. The
-        // frontier ensures that, but the test stays, since the frontier
-        // of x may hold x itself for a back edge into x.
         if (blk.predecessors.size() < 2) {
           continue;
         }
-        // Skip a block where v isn't live. Its Phi would have a dead
-        // dst, and its copies in the predecessors would read
-        // uninitialized temporaries on any path that reaches y without
-        // defining v first.
         const auto live = live_in.find(static_cast<int>(y));
         if (live == live_in.end() || !live->second.contains(v)) {
           continue;
@@ -387,9 +262,6 @@ PhisAt place_phis(Cfg& cfg, const Names& promotable,
   return phis_at;
 }
 
-// The state of the renaming: each promotable Var's count of new names
-// and its stack of current names, the names made, and the table the new
-// names' symbols go in.
 struct Renamer {
   Cfg& cfg;
   const Names& promotable;
@@ -406,7 +278,6 @@ struct Renamer {
     return var != nullptr && promotable.contains(var->name);
   }
 
-  // Returns a new SSA name for `orig`, with a symbol of its type.
   std::string fresh(const std::string& orig) {
     const int n = ++counters[orig];
     std::string new_name = orig + "." + std::to_string(n);
@@ -418,9 +289,6 @@ struct Renamer {
     return new_name;
   }
 
-  // Rewrites a read of a promotable Var to the top of its stack. A Var
-  // read with no definition before it keeps its name, as in the Phi
-  // arguments below.
   void use(ir::Type_val& v) const {
     if (!promotable_var(v)) {
       return;
@@ -431,7 +299,6 @@ struct Renamer {
     }
   }
 
-  // Gives a write of a promotable Var a new SSA name and pushes it.
   void def(ir::Type_val& v, std::vector<std::string>& pushed) {
     if (!promotable_var(v)) {
       return;
@@ -443,13 +310,6 @@ struct Renamer {
     v = ir::Var{.name = std::move(name)};
   }
 
-  // Rewrites every promotable Var `instr` reads to the top of its stack,
-  // and then gives every one it writes a new SSA name. The reads come
-  // first, so that a write of a Var from itself, such as `Copy(x, x)`,
-  // reads the old x and writes a new one. The kinds Python's
-  // `_rewrite_instruction` doesn't name (`IndexedConstLoad`, the
-  // indirect-indexed accesses, `JumpIfCmp`, and `JumpIfMasked`) are left
-  // as they are.
   void rewrite_instruction(ir::Type_instruction& instr, std::vector<std::string>& pushed) {
     switch (ir::kind(instr)) {
       case K::Ret: {
@@ -486,9 +346,6 @@ struct Renamer {
         break;
       }
       case K::GetAddress:
-        // The operand names a storage cell and reads no value, so it
-        // isn't renamed. The promotable Vars leave out every operand of a
-        // GetAddress, so this agrees.
         def(std::get<ir::GetAddress>(instr).dst, pushed);
         break;
       case K::Load: {
@@ -558,10 +415,8 @@ struct Renamer {
     if (blk == nullptr) {
       return;
     }
-    // The original names whose stacks this visit pushes on.
     std::vector<std::string> pushed;
 
-    // 1. Rename the Phis' dsts in this block.
     for (auto& instr : blk->instructions) {
       auto* phi = asdl::as<ir::Phi>(instr);
       if (phi == nullptr || !promotable_var(phi->dst)) {
@@ -574,17 +429,12 @@ struct Renamer {
       phi->dst = ir::Var{.name = std::move(name)};
     }
 
-    // 2. Rename the reads and then the writes of the other
-    // instructions.
     for (auto& instr : blk->instructions) {
       if (!asdl::isa<ir::Phi>(instr)) {
         rewrite_instruction(instr, pushed);
       }
     }
 
-    // 3. Fill in the Phis' arguments at every CFG successor. Python
-    // computes the block's own label even where the map has it, and
-    // raises for a real block without one.
     std::string pred_label;
     if (bid != kEntryId && bid != kExitId) {
       pred_label = block_label(*blk);
@@ -600,9 +450,6 @@ struct Renamer {
       }
       BasicBlock& succ = *cfg.blocks.find(succ_id);
       for (const auto& [orig_var, idx] : phis->second) {
-        // A Var with no definition that reaches this path keeps its
-        // name, and the copy after SSA destruction reads whatever that
-        // name holds. Well-formed C programs don't do this.
         const auto& stack = stacks.find(orig_var)->second;
         const std::string& src_name = stack.empty() ? orig_var : stack.back();
         std::get<ir::Phi>(succ.instructions[idx])
@@ -611,14 +458,12 @@ struct Renamer {
       }
     }
 
-    // 4. Visit the children in the dominator tree.
     if (const auto* kids = children.find(bid)) {
       for (const int child : *kids) {
         visit(child);
       }
     }
 
-    // 5. Pop the stacks, once for each push.
     for (const auto& orig : pushed) {
       stacks[orig].pop_back();
     }
@@ -641,8 +486,6 @@ std::pair<ir::Function, NameSet> to_ssa(ir::Function fn, SymbolTable& symbols) {
   const OrderedMap<int, PyIntSet> df = tac_cfg::dominance_frontiers(cfg);
   const OrderedMap<int, std::vector<int>> children = tac_cfg::dominator_tree_children(idom);
   const std::map<int, Names> live_in = compute_live_in(cfg, promotable);
-  // Only real blocks have a leading Label (ENTRY and EXIT are empty
-  // sentinels), and a Phi's argument names only real blocks.
   std::map<int, std::string> block_label_of;
   for (const auto& [bid, dom] : idom) {
     if (bid == kEntryId || bid == kExitId) {
@@ -666,10 +509,6 @@ std::pair<ir::Function, NameSet> to_ssa(ir::Function fn, SymbolTable& symbols) {
     r.counters[v] = 0;
     r.stacks[v];
   }
-  // A parameter's first SSA name is its own, pushed at the entry so
-  // that the first read gets it. The name is an SSA name too, since its
-  // only definition is the function's entry. An address-taken
-  // parameter isn't promotable and stays out.
   for (const auto& p : fn.params) {
     if (promotable.contains(p)) {
       r.stacks[p].push_back(p);

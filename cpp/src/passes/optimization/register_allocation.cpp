@@ -1,11 +1,3 @@
-// The helpers of passes/optimization/register_allocation.py that the
-// asm register allocator (passes/optimization_asm/regalloc.cpp) reuses.
-// The TAC-level allocator that once lived in that module was removed,
-// and the coloring is now done only on the asm IR, which has the
-// precision of bytes. The module keeps `Coloring`, the result that the
-// asm allocator returns and that `apply_coloring` and
-// `replace_pseudoregisters_bare_exit` read, and these two pieces of
-// arithmetic of blocked bytes that take the widths into account.
 #include "passes/optimization/register_allocation.h"
 
 namespace c6502::passes::register_allocation {
@@ -16,9 +8,6 @@ std::set<asdl::Int> blocked_bytes(std::string_view name, const InterferenceGraph
   for (const auto& m : graph.neighbors(name)) {
     const asdl::Int* base = assignments.find(m);
     if (base == nullptr) {
-      // A neighbor that isn't colored or was spilled places no
-      // constraint, since a spilled neighbor lives in the frame and not
-      // in a zero-page slot.
       continue;
     }
     const asdl::Int w = graph.nodes.at(m).width;

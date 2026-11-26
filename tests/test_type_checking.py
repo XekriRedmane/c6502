@@ -1,7 +1,8 @@
 import unittest
 
 import c99_ast
-from passes.type_checking import FunType, Int, LocalAttr, Long, Symbol, SymbolTable, TypeCheckError, TypeChecker
+from c99_ast import FunType, Int, Long
+from passes.type_checking import LocalAttr, Symbol, SymbolTable, TypeCheckError, TypeChecker
 
 
 class TestSymbolTableAPI(unittest.TestCase):

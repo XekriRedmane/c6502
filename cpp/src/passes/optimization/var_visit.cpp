@@ -309,10 +309,10 @@ std::vector<std::string_view> uses_in(const ir::Type_instruction& instr) {
 
 namespace {
 
-// Calls `f` on each operand `instr` reads, in the order Python's
-// `rewrite_uses_in` passes them to its mapper. `Instr` is a const or a
-// mutable instruction, so one walk serves both the test of whether
-// anything changes and the rewrite.
+// Calls `f` on each operand `instr` reads, in the order `rewrite_uses_in`
+// gives in var_visit.h. `Instr` is a const or a mutable instruction, so
+// one walk serves both the test of whether anything changes and the
+// rewrite.
 template <class Instr, class F>
 void for_each_use(Instr& instr, F f) {
   switch (ir::kind(instr)) {

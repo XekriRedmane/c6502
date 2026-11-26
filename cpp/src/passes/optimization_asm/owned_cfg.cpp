@@ -1,14 +1,7 @@
 // The asm CFG with blocks that own their instructions.
 //
-// The Python CFG (passes/optimization_asm/cfg.py) copies each block's
-// instructions into the block, and SSA construction and destruction
-// insert and remove instructions in the blocks before laying them out
-// again. The C++ `Cfg` keeps index ranges into the function instead,
-// which suits the passes that only read the CFG. An `OwnedCfg` is that
-// graph with a vector of instructions per block, which the passes that
-// edit blocks change in place. The edges are those of the function as
-// it was partitioned, so a pass that changes control flow builds a
-// new CFG after the change, as it does in Python.
+// The edges are those of the function as it was partitioned, so a pass
+// that changes control flow builds a new CFG after the change.
 #include "passes/optimization_asm/owned_cfg.h"
 
 namespace c6502::passes {

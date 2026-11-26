@@ -1,6 +1,5 @@
-// The port of passes/optimization_asm/optimizer.py, the driver of the
-// asm optimizer, which runs the asm SSA round trip with the register
-// allocation on each function of a program.
+// The driver of the asm optimizer, which runs the asm SSA round trip with
+// the register allocation on each function of a program.
 #pragma once
 
 #include <optional>
@@ -20,8 +19,8 @@
 
 namespace c6502::passes {
 
-// The keyword arguments of `optimize_program`, with Python's defaults.
-// A pointer that is null stands for Python's None.
+// The options of `optimize_program`. A null pointer leaves the option
+// out.
 struct AsmOptimizerOptions {
   // The names of static storage that the program doesn't define with a
   // `StaticVariable` (such as `extern` references), which byte-granular
@@ -48,11 +47,11 @@ struct AsmOptimizerOptions {
   // prologues of the functions eligible for it.
   const OrderedMap<std::string, std::vector<asdl::Int>>* local_pools = nullptr;
   // The zero-page bytes no function's coloring may take, those of the
-  // zero-page globals (passes/zp_globals.py).
+  // zero-page globals (zp_globals.h).
   std::set<asdl::Int> reserved_zp;
   // Each function on a cycle that saves around its recursive calls,
-  // mapped to its cycle's members (passes/recursion_saves.py). Nothing
-  // the allocation can color may be live across a call to one of them,
+  // mapped to its cycle's members (recursion_saves.h). Nothing the
+  // allocation can color may be live across a call to one of them,
   // since `tac_to_asm` saved every such value on the hardware stack, and
   // a function that breaks this throws an `InternalError` where it would
   // otherwise miscompile.
@@ -74,8 +73,7 @@ struct OptimizedAsmProgram {
 // afterwards are dropped.
 OptimizedAsmProgram optimize_program(asm_ast::Program prog, const AsmOptimizerOptions& options = {});
 
-// The keyword arguments of `optimize_function`, Python's
-// `_optimize_function`.
+// The options of `optimize_function`.
 struct AsmFunctionOptions {
   // The `register` locals, each pinned to Y, which is a hard pin.
   const OrderedMap<std::string, std::string>* local_pins = nullptr;
@@ -93,8 +91,8 @@ struct AsmFunctionOptions {
   // frame.
   bool params_in_frame = true;
   // False when the function's address-taken locals get bytes of its
-  // private pool (passes/address_taken_zp.py), and true when they get
-  // frame slots.
+  // private pool (address_taken_zp.h), and true when they get frame
+  // slots.
   bool address_taken_in_frame = true;
 };
 

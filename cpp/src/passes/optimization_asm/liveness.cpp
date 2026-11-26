@@ -12,12 +12,12 @@
 // `live_after` and `live_before` for each instruction, which the
 // interference builder and the allocator ask.
 //
-// A `Phi` is handled as in the TAC version. Its `dst` is killed at the
-// block's entry, in parallel with the other Phis of the block and
-// before its first instruction that isn't one. Each `args[i].source` is
-// added to the `live_out` of the predecessor its label names, since the
-// copy that SSA destruction writes for it reads it on the edge from
-// that predecessor and not in the merge block.
+// A `Phi`'s `dst` is killed at the block's entry, in parallel with the
+// other Phis of the block and before its first instruction that isn't
+// one. Each `args[i].source` is added to the `live_out` of the
+// predecessor its label names, since the copy that SSA destruction
+// writes for it reads it on the edge from that predecessor and not in
+// the merge block.
 //
 // A `Liveness` is a snapshot. Changing the function after computing it
 // invalidates the sets kept for each instruction.
@@ -208,8 +208,8 @@ const ir::Phi* as_phi_with_pseudo_dst(const ir::Type_instruction& instr) {
 // the usual set of the block's upward-exposed uses.
 void solve(const Cfg& cfg, std::vector<NameSet>& live_in, std::vector<NameSet>& live_out) {
   const std::size_t n = cfg.blocks.size();
-  // The block each label starts, as Python's `_block_labels` inverted,
-  // where a later block wins a label two blocks start with.
+  // The block each label starts, where a later block wins a label two
+  // blocks start with.
   std::map<std::string, int, std::less<>> label_to_bid;
   for (std::size_t bid = 0; bid < n; ++bid) {
     const auto instrs = cfg.instructions(static_cast<int>(bid));

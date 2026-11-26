@@ -1,6 +1,5 @@
-// The port of passes/optimization_asm/hwreg_eligibility.py: which SSA
-// pseudos may live in X or Y, and which the allocator should try there
-// first.
+// Which SSA pseudos may live in X or Y, and which the allocator tries
+// there first.
 #pragma once
 
 #include <string>
@@ -31,9 +30,8 @@ namespace c6502::passes {
 // coloring gives a name with more references the register first: a name
 // used 50 times (a loop's induction variable used in many indexed
 // accesses) wins over one used twice (a short-lived intermediate). The
-// count is approximate, since it weighs every position alike and doesn't
-// model the nesting of loops, but it follows the intuition that more
-// references mean more savings.
+// count weighs every position alike and doesn't model the nesting of
+// loops.
 //
 // `required_x` and `required_y` hold the names that must be pinned to
 // that register, those of a `register` local, which is always Y. The
@@ -96,9 +94,8 @@ namespace hwreg_eligibility {
 
 // Returns the base spelling of the c99 IR that an SSA-renamed name
 // comes from. Two layers of suffix ride on the original name. TAC SSA
-// (`passes.optimization.ssa_construction.fresh`) appends `.<counter>`
-// for each definition, so `@1.acc` becomes `@1.acc.1`, `@1.acc.2`, and
-// so on, and asm SSA (`passes.optimization_asm.ssa_construction.fresh`)
+// construction appends `.<counter>` for each definition, so `@1.acc`
+// becomes `@1.acc.1`, `@1.acc.2`, and so on, and asm SSA construction
 // appends `.b<offset>.v<counter>` for each byte and version. A 1-byte
 // local `@1.acc` may then appear as `@1.acc.2.b0.v3`. The asm suffix is
 // stripped first (`.b<digits>.v<digits>` at the end), then one TAC

@@ -1,5 +1,4 @@
-// The port of passes/optimization_asm/coalescing.py, the move
-// coalescing of the asm register allocation.
+// The move coalescing of the asm register allocation.
 #pragma once
 
 #include <map>
@@ -23,8 +22,7 @@ namespace c6502::passes {
 // `byte_offset` holds the byte position of a 1-byte name merged into
 // one byte of a node of several bytes (see "Carry bytes" in
 // coalescing.cpp), and a name missing from it sits at offset 0 of the
-// name it was merged into. Python keeps it in an order that follows the
-// graph's nodes, which nothing reads, so it is held sorted here.
+// name it was merged into.
 struct CoalesceResult {
   OrderedMap<std::string, std::string> representative;
   std::map<std::string, asdl::Int, std::less<>> byte_offset;

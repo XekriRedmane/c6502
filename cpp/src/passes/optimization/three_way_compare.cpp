@@ -68,7 +68,7 @@ The pattern.
   * The equality compare has the same two operands, in either order.
   * The three outcomes go to three different places.
   * The ordering compare doesn't follow a subtract of its operands,
-    which `tac_to_asm` would branch on instead (compare_subtract.py).
+    which `tac_to_asm` would branch on instead.
 
 A byte of an operand is a byte constant for a constant, the two bytes
 for a value built as `(ZeroExtend(h) << 8) | ZeroExtend(l)` of two
@@ -85,13 +85,6 @@ way around for `b`).
 Where it runs. Once, after SSA destruction. Its new edges would require
 Phi arguments in SSA form, and the labels it adds split blocks that a
 Phi names as predecessors.
-
-The port. Python finds a name's definitions and use counts afresh in
-each helper. Every helper of one rewrite reads the same list, so the
-C++ pass computes them once per candidate compare. A load moved down to
-its compare is left out of the instructions before the compare only;
-when its definition comes after the compare, Python keeps it in place
-as well, and so does the port.
 */
 #include "passes/optimization/three_way_compare.h"
 
@@ -124,8 +117,8 @@ constexpr unsigned kEqual = 2;
 constexpr unsigned kGreater = 4;
 constexpr unsigned kOutcomes[] = {kLess, kEqual, kGreater};
 
-// Returns the outcomes for which `op` is true (Python's `_HOLDS`), or 0
-// for an operator that isn't a comparison.
+// Returns the outcomes for which `op` is true, or 0 for an operator that
+// isn't a comparison.
 unsigned holds(const ir::Type_binary_operator& op) {
   switch (ir::kind(op)) {
     case ir::Kind_binary_operator::LessThan:
@@ -153,7 +146,6 @@ bool is_equality(const ir::Type_binary_operator& op) {
   return asdl::isa<ir::Equal, ir::NotEqual>(op);
 }
 
-// Returns the target of a jump (Python's `_JUMPS`), or null.
 const std::string* jump_target(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case IK::Jump:
@@ -171,8 +163,7 @@ const std::string* jump_target(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns the value of an integer constant. A floating constant has
-// none, where Python's `.value` raises.
+// Returns the value of an integer constant, or none for a floating one.
 std::optional<Int> int_value(const ir::Type_const& c) {
   switch (ir::kind(c)) {
     case ir::Kind_const::ConstChar:
@@ -212,7 +203,6 @@ std::optional<Int> int_value(const ir::Type_const& c) {
   }
 }
 
-// Returns whether `v` is a constant whose value is `n`.
 bool is_const_value(const ir::Type_val& v, Int n) {
   const auto* c = asdl::as<ir::Constant>(v);
   if (c == nullptr) {
@@ -229,9 +219,7 @@ bool is_temp(const ir::Type_val& v) {
   return var != nullptr && var->name.starts_with('%');
 }
 
-// Returns whether the sets {a1, a2} and {b1, b2} are equal, as Python
-// compares the sets of the operands' keys. Two values have equal keys
-// exactly when they are equal.
+// Returns whether the sets {a1, a2} and {b1, b2} are equal.
 bool same_pair(const ir::Type_val& a1, const ir::Type_val& a2, const ir::Type_val& b1,
                const ir::Type_val& b2) {
   return (a1 == b1 && a2 == b2) || (a1 == b2 && a2 == b1);
@@ -258,8 +246,8 @@ const c99::Type_data_type* type_of(const ir::Type_val& v, const SymbolTable& sym
   return sym == nullptr ? nullptr : &sym->type;
 }
 
-// Fresh temporary and label names for one function (Python's `_Names`).
-// One counter numbers both.
+// Fresh temporary and label names for one function. One counter numbers
+// both.
 struct Names {
   std::string fn;
   SymbolTable* symbols;
@@ -324,8 +312,7 @@ struct Analysis {
   }
 
   // Returns the index of the one definition of the Var `v`, or none when
-  // `v` isn't a Var or has no definition or several (Python's
-  // `_only_def`).
+  // `v` isn't a Var or has no definition or several.
   std::optional<std::size_t> only_def(const ir::Type_val& v) const {
     const auto* var = asdl::as<ir::Var>(v);
     if (var == nullptr) {
@@ -409,10 +396,10 @@ bool qualifies(const ir::Type_val& a, const ir::Type_val& b, const SymbolTable& 
   return is_unsigned;
 }
 
-// The bytes of the two operands (Python's `_Split`). `high_pre` and
-// `low_pre` compute any new temporaries for the high and low bytes, and
-// `high_loads` and `low_loads` are the loads of bytes moved from
-// `moved` (their indices) to just before the compares of those bytes.
+// The bytes of the two operands. `high_pre` and `low_pre` compute any
+// new temporaries for the high and low bytes, and `high_loads` and
+// `low_loads` are the loads of bytes moved from `moved` (their indices)
+// to just before the compares of those bytes.
 struct Split {
   Instrs high_pre;
   Instrs low_pre;
@@ -569,7 +556,7 @@ std::optional<Bytes> bytes(const ir::Type_val& v, const Analysis& a, SymbolTable
 }
 
 // Returns the destination of an instruction that writes nothing but its
-// destination (Python's `_PURE`), or null for any other instruction.
+// destination, or null for any other instruction.
 const ir::Type_val* pure_dst(const ir::Type_instruction& ins) {
   switch (ir::kind(ins)) {
     case IK::Binary:
@@ -597,8 +584,6 @@ const ir::Type_val* pure_dst(const ir::Type_instruction& ins) {
   }
 }
 
-// Returns whether `ins` is a volatile load (the only instructions of
-// Python's `_PURE` with an `is_volatile` field are the loads).
 bool volatile_load(const ir::Type_instruction& ins) {
   switch (ir::kind(ins)) {
     case IK::Load:

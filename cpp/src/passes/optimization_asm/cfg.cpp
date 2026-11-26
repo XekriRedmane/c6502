@@ -1,9 +1,9 @@
 // Control-flow graph for an asm function.
 //
-// This mirrors `passes.optimization.cfg` for the asm IR. A `Cfg`
-// partitions an asm function's instructions into basic blocks, adds the
-// edges between blocks from their terminators, and computes immediate
-// dominators and dominance frontiers, which SSA construction builds on.
+// A `Cfg` partitions an asm function's instructions into basic blocks,
+// adds the edges between blocks from their terminators, and computes
+// immediate dominators and dominance frontiers, which SSA construction
+// builds on.
 //
 // The rules of the partition
 //
@@ -182,7 +182,6 @@ std::vector<int> reverse_postorder(const Cfg& cfg) {
   std::vector<bool> visited(cfg.blocks.size(), false);
   visited[kEntryId] = true;
   std::vector<int> postorder;
-  // Each entry is a block and the index of its next successor to try.
   std::vector<std::pair<int, std::size_t>> stack{{kEntryId, 0}};
   while (!stack.empty()) {
     auto& [id, i] = stack.back();

@@ -24,10 +24,10 @@
 // the asm passes in their place.
 //
 // The program comes back with each function's `Coloring` (an empty one
-// for a function where nothing was colored). compile.py and
-// sim/harness.py give the colorings to
-// `replace_pseudoregisters_bare_exit`, which lowers each `Pseudo(name, 0)`
-// whose name is colored to `ZP(addr, 0)`. `StaticVariable`s pass through.
+// for a function where nothing was colored), which
+// `replace_pseudoregisters_bare_exit` reads to lower each
+// `Pseudo(name, 0)` whose name is colored to `ZP(addr, 0)`.
+// `StaticVariable`s pass through.
 #include "passes/optimization_asm/optimizer.h"
 
 #include <map>
@@ -84,8 +84,6 @@ const ParamLayout* layout_of(const Abi* param_layouts, const std::string& name) 
 //
 // The addresses are blocked for the whole function, which is longer than
 // the window of the argument writes or the parameter's lifetime.
-// The few zero-page bytes wasted are usually small next to what removing
-// the frame saves.
 std::set<asdl::Int> blocked_addrs_for(const ir::Function& fn, const Abi* param_layouts) {
   std::set<asdl::Int> out;
   if (param_layouts == nullptr) {
@@ -184,9 +182,8 @@ Hints param_register_hints(const ir::Function& fn, const ParamLayout* layout,
 
 // Returns the registers that `entry_register_limits` keeps the asm SSA
 // name `name` (`<base>.b<k>.v<n>`) out of, or null for a name it doesn't
-// limit. Python matches `^(.*?)\.b(\d+)\.v\d+$`, whose groups are the
-// name before its last `.b<digits>.v<digits>` and the digits of the
-// `.b`, since neither run of digits holds a dot.
+// limit. The local's name is `name` before its last
+// `.b<digits>.v<digits>`, and the byte is the digits of the `.b`.
 const NameSet* entry_limit(const EntryLimits& entry_limits, std::string_view name) {
   auto is_digits = [](std::string_view s) {
     if (s.empty()) {
@@ -326,9 +323,6 @@ NameSet frame_names(const ir::Function& fn, const InterferenceGraph& graph,
 // `hints_y` and `hints_carry`, and the hints are then restricted to the
 // names eligible for some register. A name of `all_names` that the
 // coalescing didn't merge is its own representative.
-//
-// Python keys `use_count` in the order of a walk over a set of names,
-// which no reader follows, since the allocator only looks names up.
 HwRegEligibility project_eligibility(const HwRegEligibility& raw, const CoalesceResult& coalesced,
                                      const NameSet& all_names) {
   std::map<std::string, NameSet, std::less<>> members_by_rep;
@@ -405,7 +399,7 @@ HwRegEligibility project_eligibility(const HwRegEligibility& raw, const Coalesce
 namespace optimizer {
 
 // The registers that each byte of the local a `register` parameter is
-// copied into at entry (`tac_to_asm`'s `_register_param_locals`) mustn't
+// copied into at entry (`tac_to_asm`'s `register_param_locals`) mustn't
 // be colored to, which are X or Y when another byte, of this parameter or
 // another, arrives in it, since that byte's copy would overwrite the
 // register before the other byte's copy reads it. A byte may take the
@@ -433,8 +427,6 @@ EntryLimits entry_register_limits(const ir::Function& fn, const ParamLayout* lay
   for (const auto& pname : fn.params) {
     const Symbol* sym = symbols->find(pname);
     const asdl::Int n = sym != nullptr ? sizeof_type(sym->type, nullptr) : asdl::Int(1);
-    // Python's slice `param_registers[off:off + n]`, which stops at the
-    // end of the list.
     std::vector<std::optional<std::string>> regs;
     for (asdl::Int k = off; k < off + n && k < static_cast<asdl::Int>(count); ++k) {
       regs.push_back(zp->param_registers[static_cast<std::size_t>(k)]);
@@ -467,14 +459,12 @@ EntryLimits entry_register_limits(const ir::Function& fn, const ParamLayout* lay
 // the flags of a move into X (or Y) right before it. The optimizer
 // treats a move as a copy that leaves the flags alone. Copy propagation
 // folds `TXA; TAX` into one move, the coloring makes that a move of X to
-// itself, which emits nothing, and the branch then read the flags of
-// whatever came before. A shift by a count arriving in X, `LDA n; TAX;
-// BEQ done`, branched on the caller's flags. The compare keeps the test,
-// and `redundant_compare` drops it after an `LDX` that sets the same
-// flags. When the code the branch reaches reads C, which the compare
-// sets, `INX; DEX` takes its place. A move into A is left alone, since
-// the allocator never colors a value to A, so a load into A stays a
-// load.
+// itself, which emits nothing, and the branch would then read the flags
+// of whatever came before. The compare keeps the test, and
+// `redundant_compare` drops it after an `LDX` that sets the same flags.
+// When the code the branch reaches reads C, which the compare sets,
+// `INX; DEX` takes its place. A move into A is left alone, since the
+// allocator never colors a value to A, so a load into A stays a load.
 ir::Function explicit_index_tests(ir::Function fn) {
   const auto& instrs = fn.instructions;
   std::vector<ir::Type_instruction> out;
@@ -634,9 +624,8 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   // the ordering of the parallel copies in `from_ssa` can find cycles
   // between moves at the level of the physical slots. Two moves from
   // `Phi`s whose distinct SSA names happen to color to one slot would
-  // otherwise miss each other in the cycle check, which compared SSA
-  // names. After the rewrite they are `Mov(ZP($A), ZP($B))`, which the
-  // check on storage handles.
+  // otherwise miss each other in the cycle check. After the rewrite
+  // they are `Mov(ZP($A), ZP($B))`, which the check on storage handles.
   pass_order::ran("apply_coloring");
   fn = apply_coloring(std::move(fn), coloring, local_pool);
   pass_order::ran("from_ssa");

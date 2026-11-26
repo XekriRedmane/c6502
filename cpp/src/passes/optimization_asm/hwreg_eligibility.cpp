@@ -34,8 +34,8 @@
 //     / STY (zero page or absolute only, where a Stack, Frame, Indirect,
 //     or address-taken pseudo destination would need A and disqualifies
 //     P).
-//   * `Mov(P, <other Pseudo>)`, kept for completeness, which the emitter
-//     writes through A between X and Y. After coalescing it mostly goes.
+//   * `Mov(P, <other Pseudo>)`, which the emitter writes through A
+//     between X and Y. After coalescing it mostly goes.
 //   * `Inc(P)` / `Dec(P)`, already counted as definitions.
 //   * `Compare(P, <Imm | ZP | Data>)`, which is CPX / CPY.
 //   * The index of an `IndexedData`, which the absolute,X or absolute,Y
@@ -49,8 +49,7 @@
 // bytes can't ride in X or Y), no `Call` in the live range, since the
 // helpers' ABI clobbers A, X, and Y (the allocator reads the
 // `lives_across_call` that the interference builder sets), and width 1
-// in the interference graph, a guard against an unusual name of several
-// bytes slipping through.
+// in the interference graph.
 //
 // If any definition or use of P doesn't match these rules, P isn't
 // eligible. The scan visits each instruction once.
@@ -313,8 +312,6 @@ XY peer_is_hwreg_friendly(const ir::Type_operand& peer, Role role) {
       // A store, which goes from A only.
       return {false, false};
     }
-    // `LDA #<name`, an immediate, only as a source, which the emitter
-    // writes into A only today. It counts as fine for now.
     case K::ImmLabelLow:
     case K::ImmLabelHigh:
       return {true, true};
@@ -325,9 +322,7 @@ XY peer_is_hwreg_friendly(const ir::Type_operand& peer, Role role) {
 
 // Returns whether `peer` is a right operand of a `Compare` that CPX /
 // CPY can take. They have only immediate, zero-page, and absolute
-// addressing, with no indirect-Y. A pseudo right operand could become a
-// register or zero page after coloring, but checking that again after
-// the coloring isn't worth it, so it disqualifies.
+// addressing, with no indirect-Y. A pseudo right operand disqualifies.
 bool cmp_peer_is_hwreg_friendly(const ir::Type_operand& peer) {
   return asdl::isa<ir::Imm, ir::Data, ir::ZP>(peer);
 }

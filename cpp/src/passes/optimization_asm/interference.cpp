@@ -20,8 +20,7 @@
 //
 // `lives_across_call` is set on a node when its value is live right
 // before a `Call`, with the call's own definitions removed. The coloring
-// reads it to prefer callee-saved bytes for such a value, as the TAC
-// version did.
+// reads it to prefer callee-saved bytes for such a value.
 #include "passes/optimization_asm/interference.h"
 
 #include <map>
@@ -100,8 +99,6 @@ std::pair<NameSet, std::map<std::string, asdl::Int, std::less<>>> categorize_nam
 
 }  // namespace
 
-// Python's docstring adds that the graph is the type the TAC pipeline
-// used, whose names are all that the colored values refer to.
 InterferenceGraph build_interference(const ir::Function& fn, const Liveness& liveness,
                                      const NameSet& statics) {
   // Named references, since Clang 14 doesn't let a lambda capture a
@@ -175,8 +172,8 @@ InterferenceGraph build_interference(const ir::Function& fn, const Liveness& liv
       }
       // A name live across the call may have no node yet, when its
       // only uses are in a block the walk hasn't reached, so it gets
-      // one here. Skipping it left the value in a caller-saved byte
-      // that the callee is free to overwrite.
+      // one here, or its value could take a caller-saved byte that the
+      // callee overwrites.
       if (asdl::isa<ir::Call>(instr)) {
         for (const auto& n : live) {
           ensure_node(n);

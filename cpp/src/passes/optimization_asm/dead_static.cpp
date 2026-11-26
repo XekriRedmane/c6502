@@ -2,7 +2,7 @@
 // internal-linkage `StaticVariable`s nothing names. It goes with the
 // folding of constants.
 //
-// - The TAC pass `_fold_indexed_load` rewrites `IndexedLoad(name,
+// - The TAC `fold_indexed_load` rewrites `IndexedLoad(name,
 //   ConstInt(idx), dst)` as `Copy(Constant(v), dst)` when `name` is a
 //   const array, so every use of the array's bytes becomes an
 //   immediate, and the `StaticVariable` stays.
@@ -28,11 +28,11 @@
 // since that round trip's dead code elimination can drop the last load
 // of a static, which a run before it would miss.
 //
-// The walk over an instruction follows Python's, which visits each
-// field that holds an operand and each list of operands. That includes
-// the `src` of a `BitTest` and a `Phi`'s `dst`, and leaves out the
-// sources of a `Phi`'s arguments, which are inside `AsmPhiArg`s. No
-// `Phi` is left once the round trip has run.
+// The walk over an instruction visits each field that holds an operand
+// and each list of operands. That includes the `src` of a `BitTest` and
+// a `Phi`'s `dst`, and leaves out the sources of a `Phi`'s arguments,
+// which are inside `AsmPhiArg`s. No `Phi` is left once the round trip
+// has run.
 #include "passes/optimization_asm/dead_static.h"
 
 #include <set>

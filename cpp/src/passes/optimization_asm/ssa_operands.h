@@ -1,8 +1,6 @@
 // The walks over an asm instruction's operands that the passes of the
-// asm SSA round trip share: every operand, read or written
-// (`ssa_construction._operand_fields`, which `backward_copy_propagation`
-// copies as `_all_operands`), and every operand read
-// (`byte_dce._use_operands`, which `backward_copy_propagation` copies).
+// asm SSA round trip share: every operand, read or written, and every
+// operand read.
 #pragma once
 
 #include <variant>
@@ -12,8 +10,7 @@
 
 namespace c6502::passes::ssa_operands {
 
-// Calls `f` on each operand of `instr`, read or written. The shapes
-// follow `replace_pseudoregisters._operands_in`, with the asm `Phi`.
+// Calls `f` on each operand of `instr`, read or written.
 template <class F>
 void for_each_operand(const asm_ast::Type_instruction& instr, F&& f) {
   namespace ir = ::c6502::asm_ast;

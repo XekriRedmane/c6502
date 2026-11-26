@@ -21,10 +21,10 @@
 
 namespace c6502::passes {
 
-// A `Liveness` as the harness records it (`_liveness_fields` in
-// tools/capture_passes.py): each block as its id, its number of
-// instructions, and its edges, in the order of the CFG's blocks, the
-// order of the real blocks, and the sets of each block by id.
+// A `Liveness` as the records in cpp/tests/frozen hold it: each block
+// as its id, its number of instructions, and its edges, in the order of
+// the CFG's blocks, the order of the real blocks, and the sets of each
+// block by id.
 struct LivenessRecord {
   struct Block {
     asdl::Int id = 0;

@@ -31,17 +31,15 @@
 //
 // When %i.v0, %i.phi, and %i.v_post all coalesce into one zero-page
 // byte, every move inserted is a move of `ZP($X)` to itself, which
-// `asm_emit`'s `_emit_mov` drops. The increment becomes a read-modify-
-// write of $X in place, which the INC peephole of several bytes then
-// turns into `INC $X; BNE done; INC $X+1; done:` where it applies.
+// `Emitter::mov` drops. The increment becomes a read-modify-write of $X
+// in place, which the INC peephole of several bytes then turns into
+// `INC $X; BNE done; INC $X+1; done:` where it applies.
 //
 // # Algorithm
 //
 // This is aggressive (Chaitin-style) coalescing without the
-// conservative check of degrees. The zero-page pool has 128 bytes (the
-// default `Pool(start=0x80)`), and coalescing raises a node's count of
-// neighbors but rarely past the size of the pool, so spills aren't a
-// concern.
+// conservative check of degrees. A merged node whose degree is more than
+// the pool holds falls back to `Coloring.spilled`.
 //
 //   1. Walk the instructions and collect the move-related pairs: each
 //      `Mov(Pseudo a, Pseudo b)`, an explicit copy, and each pair
@@ -69,9 +67,9 @@
 // P_b)`. That's the high byte of an add whose other operand's high byte
 // is zero, such as `t + (uint16_t)c` or `t + 53`, or the same with
 // `Sub(Imm(0), A)` for a subtract's borrow. When P_a and P_b share a
-// byte, the peephole in passes/carry_inc.py rewrites the three
-// instructions as `BCC skip; INC P; skip:` (or `BCS skip; DEC P;
-// skip:`), the way hand-written 6502 code adds a byte to a 16-bit value.
+// byte, the peephole in carry_inc.h rewrites the three instructions as
+// `BCC skip; INC P; skip:` (or `BCS skip; DEC P; skip:`), the way
+// hand-written 6502 code adds a byte to a 16-bit value.
 // These pairs come after the move pairs, so they never take a slot away
 // from a copy the move pairs would remove.
 //
@@ -84,11 +82,7 @@
 // for a move: a copy's write of its destination doesn't make the
 // destination interfere with the copy's source, since both hold one
 // value right after it. A later write of either while the other is live
-// still adds the edge. Without the rule, a loop that starts each pass by
-// copying a 1-byte name into a byte of a pointer, and still reads the
-// name on the path that leaves the loop, kept the two apart.
-// `display_message` in examples/ali_baba/text.c copied `msg` into a
-// second pair on every pass that way, and stepped `msg` through a third.
+// still adds the edge.
 //
 // P_a is often byte k of a name of several bytes. A constant shift is
 // lowered to ASL / ROL on its destination in place, and asm SSA keeps
@@ -108,12 +102,6 @@
 // color, and the same holds for B's neighbors. The merged node's degree
 // is the size of the union of the two sets of neighbors, which can be
 // higher than either but no higher than their sum.
-//
-// The filters above handle the widths and `lives_across_call`. A spill
-// is possible in principle, when coalescing makes a node whose degree is
-// more than the pool holds, but the pool is large enough that it doesn't
-// happen on any program of the corpus, and if it did the name would fall
-// back to `Coloring.spilled`.
 #include "passes/optimization_asm/coalescing.h"
 
 #include <optional>
@@ -175,7 +163,6 @@ void merge(InterferenceGraph& graph, const std::string& dst, const std::string& 
     src_neighbors = it->second;
   }
   for (const auto& n : src_neighbors) {
-    // The edge back from n to src goes.
     if (auto it = graph.adj.find(n); it != graph.adj.end()) {
       it->second.erase(src);
     }
@@ -492,8 +479,7 @@ class ByteMerger {
 // A volatile `Mov` isn't a candidate. Coalescing would put the volatile
 // pseudo and a temporary that isn't volatile under one name, and the
 // one color would let the temporary's uses share the volatile byte's
-// storage. Whether that's wrong depends on what later passes assume,
-// and keeping them apart is safe.
+// storage.
 std::vector<std::pair<std::string, std::string>> move_related_pairs(const ir::Function& fn) {
   std::vector<std::pair<std::string, std::string>> out;
   const auto& instrs = fn.instructions;
@@ -666,7 +652,6 @@ CoalesceResult coalesce_moves(const ir::Function& fn, InterferenceGraph& graph) 
     if (graph.has_edge(a_rep, b_rep)) {
       continue;
     }
-    // b_rep merges into a_rep.
     merge(graph, a_rep, b_rep);
     result.representative.insert_or_assign(b_rep, a_rep);
   }

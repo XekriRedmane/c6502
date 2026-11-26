@@ -1,5 +1,4 @@
-// The port of passes/optimization_asm/regalloc.py, the byte-granular
-// register allocation of the asm optimizer.
+// The byte-granular register allocation of the asm optimizer.
 #pragma once
 
 #include <optional>
@@ -21,16 +20,15 @@ namespace c6502::passes {
 // Colors `graph`'s nodes onto zero-page bytes, first pinning nodes
 // eligible for X and Y to those registers when `hwreg_eligibility` is
 // given. Every node of the graph ends up in the result's `assignments`,
-// `hwreg_assignments`, or `spilled`. The arguments are Python's keyword
-// arguments, with null or nothing where Python's default is None.
+// `hwreg_assignments`, or `spilled`. A null or absent argument is left
+// out.
 //
 // `blocked_addrs` holds zero-page bytes that no node may take. The zp_abi
 // path reserves the slots of the incoming parameters with it: a zp_abi
 // function has its parameters at fixed zero-page addresses on entry, and
 // its body's locals must avoid them so as not to overwrite a parameter
-// in mid-computation. It blocks them for the whole function rather than
-// only while the parameters are live, which is simpler and correct, and
-// the few bytes wasted are small next to what removing the frame saves.
+// in mid-computation. It blocks them for the whole function, and not
+// only while the parameters are live.
 //
 // `hwreg_eligibility` drives the pinning to X and Y, which tries the
 // nodes of `hints_x` and `hints_y` against X and Y first and succeeds
@@ -43,8 +41,8 @@ namespace c6502::passes {
 // `lives_across_call` no longer decides the color, since every byte of
 // the range is safe to hold a value across any call the caller knows of
 // (the caller is the optimizer's driver, which passes the function's
-// private range from passes/zp_local_allocation.py). The range may run
-// above $FF, where the addresses assemble in absolute mode, with 3-byte
+// private range from zp_local_allocation.h). The range may run above
+// $FF, where the addresses assemble in absolute mode, with 3-byte
 // instructions in place of 2, and mean the same. Pinning to X or Y still
 // depends on the calls in the live range, since a callee writes X and Y
 // unless it is declared to preserve them, which has nothing to do with
@@ -73,8 +71,6 @@ Coloring color_graph(const asm_ast::Function& fn, const InterferenceGraph& graph
 // and 'Y', for the check of clobbers in a pinned value's live range. An
 // access to a pseudo in `frame_names`, which may be null, counts as a
 // write of Y. The comment at its definition lists what writes X or Y.
-// The unit tests call it, as tests/test_asm_regalloc.py called Python's
-// `_instr_writes_hwregs`.
 std::vector<char> instr_writes_hwregs(const asm_ast::Type_instruction& instr,
                                       const NameSet* frame_names);
 

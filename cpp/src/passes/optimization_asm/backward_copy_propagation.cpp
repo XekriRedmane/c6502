@@ -132,9 +132,7 @@ bool operands_alias(const ir::Type_operand& a, const ir::Type_operand& b) {
   if (na && nb) {
     // A static is still a `Pseudo` where `tac_to_asm` wrote one, and a
     // `Data` where it wrote that, as for a store to a constant byte of
-    // it, so `Pseudo(Z, 2)` and `Data(Z, 2)` are the same byte. With
-    // `Z = 0x01020304UL; ZB[2] = v;` and `v` in A, the pass once moved
-    // the store of `v` in front of `Z`'s.
+    // it, so `Pseudo(Z, 2)` and `Data(Z, 2)` are the same byte.
     return *na->first == *nb->first && na->second == nb->second;
   }
   if (const auto* sa = as<ir::Stack>(a)) {
@@ -348,7 +346,6 @@ ir::Function one_pass(ir::Function fn, const StaticNames& statics) {
       continue;
     }
     if (const auto it = rewrite_def.find(idx); it != rewrite_def.end()) {
-      // The definition moved is always `Mov(Reg(A), P)`.
       const auto& mov = std::get<ir::Mov>(instrs[idx]);
       out.push_back(ir::Mov{.src = mov.src, .dst = *it->second, .is_volatile = mov.is_volatile});
     } else {

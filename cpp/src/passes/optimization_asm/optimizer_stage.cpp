@@ -1,7 +1,7 @@
 // The runners of the asm optimizer's stage calls. Each decodes the
 // recorded arguments with the codecs of src/tagged_json.h, where an
-// argument Python gives as None, or leaves out, is null or absent, and
-// runs the C++ function.
+// argument the record gives as null, or leaves out, is null or absent,
+// and runs the C++ function.
 #include "passes/optimization_asm/optimizer_stage.h"
 
 #include <optional>
@@ -55,7 +55,7 @@ const Value& positional(const Value& args, std::size_t i) {
 bool is_null(const Value* v) { return v == nullptr || v->kind == Value::Kind::kNull; }
 
 // Returns the codec's value of `v`, or nothing when `v` is absent or
-// None.
+// null.
 template <class C>
 std::optional<typename C::type> maybe(const Value* v) {
   if (is_null(v)) {

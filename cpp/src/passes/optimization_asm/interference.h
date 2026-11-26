@@ -1,6 +1,3 @@
-// The port of passes/optimization_asm/interference.py, which builds the
-// interference graph of an asm function in SSA form for the register
-// allocator.
 #pragma once
 
 #include "asm_ast.h"

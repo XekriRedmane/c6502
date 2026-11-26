@@ -1,5 +1,4 @@
-// The port of passes/optimization_asm/ssa_construction.py, the asm SSA
-// form with each byte of a Pseudo versioned on its own.
+// The asm SSA form, with each byte of a Pseudo versioned on its own.
 #pragma once
 
 #include <cstdint>
@@ -12,8 +11,7 @@
 
 namespace c6502::passes {
 
-// The static-storage names a pass of the asm SSA round trip is given,
-// as the optimizer's `statics` frozenset.
+// The static-storage names a pass of the asm SSA round trip is given.
 using StaticNames = std::set<std::string, std::less<>>;
 
 // The Pseudo names a pass of the round trip leaves unversioned.

@@ -1,5 +1,5 @@
-// The port of passes/optimization_asm/liveness.py, the liveness of the
-// pseudos of an asm function in SSA form, by block and by instruction.
+// The liveness of the pseudos of an asm function in SSA form, by block
+// and by instruction.
 #pragma once
 
 #include <cstddef>
@@ -16,8 +16,7 @@ namespace c6502::passes {
 // are the names live at the start and the end of block `b`, by block
 // id. The CFG keeps index ranges into the function's instructions, so
 // the function has to outlive the snapshot and stay unchanged while it
-// is used, as a change to the function invalidates the Python snapshot
-// too.
+// is used.
 struct Liveness {
   Cfg cfg;
   std::vector<NameSet> live_in;

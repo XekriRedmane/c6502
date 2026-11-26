@@ -1,8 +1,7 @@
 // Asm-level copy propagation on the SSA form.
 //
-// This is the asm counterpart of `passes.optimization.copy_propagation`
-// (TAC), with byte-granular (name, offset) keys and the asm
-// instructions.
+// This is the asm counterpart of the TAC `copy_propagate`, with
+// byte-granular (name, offset) keys and the asm instructions.
 //
 // A copy is a `Mov(src, Pseudo dst)` where
 //   * `dst` is a Pseudo that `to_ssa` versioned, or a parameter byte

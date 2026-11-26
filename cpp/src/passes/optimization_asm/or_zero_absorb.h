@@ -1,4 +1,3 @@
-// The port of passes/optimization_asm/or_zero_absorb.py.
 #pragma once
 
 #include "asm_ast.h"

@@ -91,8 +91,6 @@ std::string mint_split_label(const std::string& fn_name, int n) {
 // ends in a `Branch` to the label right after it and both of P's edges
 // go to the merge. `to_ssa` adds the taken edge's argument first, and
 // the taken edge is split first, so each split takes one of the two.
-// Renaming both for the taken edge's split left the fall-through's
-// split with no move.
 void rewrite_phi_pred_label(std::vector<ir::Type_instruction>& instrs,
                             const std::string& merge_label, const std::string& old_pred_label,
                             const std::string& new_pred_label) {
@@ -183,8 +181,9 @@ ir::Function split_critical_edges_for_phi_merges(const ir::Function& fn) {
     appended.push_back(ir::Jump{.target = target_label});
     rewrite_phi_pred_label(instrs, target_label, old_pred_label, split_label);
   }
-  // Python sorts the inserts by position in reverse with a stable sort.
-  // The positions are distinct, since each follows its own branch.
+  // The inserts go in from the last position to the first, so that an
+  // insert doesn't move the positions of those still to go. The
+  // positions are distinct, since each follows its own branch.
   std::stable_sort(fall_through_inserts.begin(), fall_through_inserts.end(),
                    [](const auto& a, const auto& b) { return std::get<0>(a) > std::get<0>(b); });
   for (const auto& [insert_pos, split_label, target_label] : fall_through_inserts) {

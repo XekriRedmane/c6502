@@ -1,7 +1,7 @@
-// The port of the walkers of passes/optimization/var_visit.py over the
-// operands of a TAC instruction, which SSA construction, liveness, the
-// interference graph, dead-store elimination, and the code generation
-// passes share. They work on TAC in SSA form and out of it alike.
+// The walkers over the operands of a TAC instruction, which SSA
+// construction, liveness, the interference graph, dead-store
+// elimination, and the code generation passes share. They work on TAC
+// in SSA form and out of it alike.
 #pragma once
 
 #include <cstddef>
@@ -28,30 +28,26 @@ std::vector<std::string_view> defs_in(const tac_ast::Type_instruction& instr);
 // `GetAddress`'s operand isn't one, since it names a storage cell and
 // reads no value. An `IndexedLoad` and an `IndexedSymbolStore` read the
 // object they name, since the load reads it and the store rewrites only
-// some of its bytes and leaves the rest of the earlier value. Without
-// that, a struct local whose members are accessed in place looked
-// unread, and copy folding dropped the copy that filled it. A `Phi`'s
+// some of its bytes and leaves the rest of the earlier value. A `Phi`'s
 // sources come back as reads too, which liveness handles as reads on
 // the edges from the predecessors. The views are into `instr`.
 std::vector<std::string_view> uses_in(const tac_ast::Type_instruction& instr);
 
 // Returns how many times each name is read (`uses_in`) in `instrs`, by
-// name in the order the names are first read, as Python's `Counter`
-// holds them.
+// name in the order the names are first read.
 OrderedMap<std::string, std::size_t> count_uses(const std::vector<tac_ast::Type_instruction>& instrs);
 
 // The function `rewrite_uses_in` calls on each operand it reads. It
 // returns the operand that replaces the one it is given, or none to
-// leave that operand, where Python's mapper returns the same object.
+// leave that operand.
 using ValMapper = std::function<std::optional<tac_ast::Type_val>(const tac_ast::Type_val&)>;
 
 // Returns `instr` with every operand it reads replaced by what `mapper`
-// gives, or none when `mapper` leaves every operand, where Python
-// returns the same instance. The operands an instruction writes, and
-// the fields that aren't operands (`IndexedLoad.name`,
-// `IndexedStore.address`, and `GetAddress.operand`, which names a
-// storage cell and reads no value), are left alone. `mapper` is called
-// on every operand read, in the order Python calls it: a `Store`'s
+// gives, or none when `mapper` leaves every operand. The operands an
+// instruction writes, and the fields that aren't operands
+// (`IndexedLoad.name`, `IndexedStore.address`, and `GetAddress.operand`,
+// which names a storage cell and reads no value), are left alone.
+// `mapper` is called on every operand read, in this order: a `Store`'s
 // source before its pointer, an `IndexedStore`'s index before its
 // source, an `IndirectIndexedStore`'s pointer, index, and source, an
 // indirect call's pointer before its arguments, and each of a `Phi`'s

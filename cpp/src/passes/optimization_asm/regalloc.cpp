@@ -4,14 +4,14 @@
 // wide, since asm SSA has already split each value of several bytes
 // into independent byte-versioned variables, apart from the blocks of
 // several bytes that `build_interference` keeps whole. The coloring runs
-// a perfect elimination order and a greedy fit, the design of the TAC
-// version, on the asm CFG and the asm SSA names.
+// a perfect elimination order and a greedy fit on the asm CFG and the
+// asm SSA names.
 //
 // It reuses `Coloring` and `Pool` of passes/optimization, which don't
 // depend on the IR. Only the building of the interference graph and the
 // derivation of the order differ.
 //
-// The pool is chosen by the rule of the TAC version:
+// The pool is chosen this way.
 //
 //   * `lives_across_call` set: callee-saved first, saved by the
 //     function's prologue and epilogue around any call it makes.
@@ -104,12 +104,9 @@ void add_if_xy(std::vector<char>& out, const ir::Type_operand& dst) {
 // An operand lowered with its own `LDY #offset` (`Indirect`,
 // `IndirectZp`, `Frame`, `Stack`) counts as a write of Y. A load or
 // store through a pointer, such as `arr[i]` of an element of 8 bytes, is
-// already made of `Indirect` operands here, and pinning a loop counter
-// in Y across one let the `LDY` overwrite the counter (YARPGen seed 66).
-// So does a `Pseudo` named in `frame_names`, which becomes a `Frame`
-// operand after the allocation. A count of a shift in Y across a read of
-// a soft-stack function's parameter got the parameter's frame offset
-// instead (`fuzz.calls` seed 335).
+// already made of `Indirect` operands here. A `Pseudo` named in
+// `frame_names` counts too, since it becomes a `Frame` operand after the
+// allocation.
 std::vector<char> instr_writes_hwregs(const ir::Type_instruction& instr,
                                       const NameSet* frame_names) {
   std::vector<char> out;
@@ -185,9 +182,7 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
   // of each pseudo. The interference graph has edges only between
   // pseudos and none with the registers, so a pseudo whose live range
   // crosses an instruction that writes X or Y, with no neighbor in the
-  // graph at that position, would otherwise slip through. Without the
-  // liveness, which the optimizer's driver always passes, the unsafe old
-  // behavior stays.
+  // graph at that position, would otherwise slip through.
   //
   // `rep_map` is the coalescing's result (`CoalesceResult.representative`).
   // The eligibility holds the representatives after coalescing, while
@@ -230,9 +225,9 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
   // the index setup of `name`: a `Mov(Reg(A), Reg(R))` right after a
   // `Mov(Pseudo N, Reg(A))` with rep(N) == name. Once `name` is pinned
   // to R the pair is `Mov(Reg(R), Reg(A)); Mov(Reg(A), Reg(R))`, a
-  // transfer of R to itself that apply_coloring's
-  // `_rewrite_redundant_transfers` drops later. So it doesn't clobber R
-  // for `name`'s live range, since the value placed in R is `name`'s.
+  // transfer of R to itself that `rewrite_redundant_transfers` drops
+  // later. So it doesn't clobber R for `name`'s live range, since the
+  // value placed in R is `name`'s.
   const auto is_self_transfer_chain = [&](int bid, std::size_t idx, const std::string& name) {
     if (idx == 0) {
       return false;
@@ -458,8 +453,7 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
 }
 
 // Returns an elimination order of `graph`'s nodes: a preorder walk of
-// the dominator tree that lists each definition, reversed. It is the
-// algorithm of the TAC version on the asm CFG.
+// the dominator tree that lists each definition, reversed.
 std::vector<std::string> perfect_elimination_order(const ir::Function& fn,
                                                    const InterferenceGraph& graph) {
   const Cfg cfg = build_cfg(fn);
@@ -506,9 +500,7 @@ std::vector<std::string> perfect_elimination_order(const ir::Function& fn,
     }
   }
 
-  // The nodes left, which is unusual and mostly a guard, since every asm
-  // SSA name has a defining instruction by construction and only what
-  // the filters let through lands here, go last, sorted for determinism.
+  // The nodes without a definition go last, in name order.
   for (const auto& [name, node] : graph.nodes) {
     if (!seen.contains(name)) {
       build.push_back(name);

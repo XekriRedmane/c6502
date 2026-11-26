@@ -27,8 +27,7 @@
 //   (`AddressInit(name=candidate, ...)`),
 // - that is the source of a `LoadAddress` (`&candidate`),
 // - that an instruction writes, which the type checker rejects for a
-//   const lvalue, and which is checked so that such a write can't be
-//   dropped without a word if one ever got this far,
+//   const lvalue,
 // - or that appears as an `IndexedData(name=candidate, ...)` operand.
 //
 // The bytes of the candidates left can be folded. In every function,
@@ -38,18 +37,12 @@
 // optimizer made a direct read, as `*pk` after `pk = &K`. Definitions
 // and the operands of a `LoadAddress` aren't rewritten, since the rules
 // above keep a candidate out of both. Last, the pass drops the
-// `StaticVariable`s that nothing names any more. Before `Data` reads
-// were rewritten, the storage went while an `LDA K` still read it, and
-// the link failed.
+// `StaticVariable`s that nothing names any more.
 //
 // It runs first in `optimize_program`, before the SSA round trip of
 // each function, so the forward copy propagation and the dead code
 // elimination of the round trip clean up the `Mov(Imm, Pseudo)`
 // staging the fold leaves behind.
-//
-// Python holds an integer byte as an `int` and a byte of an address as
-// the label operand. Here an integer byte is an `Imm`, which the
-// rewrite returns as it is.
 #include "passes/optimization_asm/const_static_fold.h"
 
 #include <map>
@@ -403,10 +396,9 @@ ir::Type_instruction rewrite_instr(const ir::Type_instruction& instr, const Cand
 }
 
 // Adds the name of each operand of `instr` that names an object
-// (`Pseudo`, `Data`, `IndexedData`, and a label's halves) to `out`, at
-// any depth, as Python's walk over the dataclass fields does. Those are
-// the operands `all_operands_in` gives, with a `Phi`'s argument sources, and
-// a `BitTest`'s source.
+// (`Pseudo`, `Data`, `IndexedData`, and a label's halves) to `out`.
+// Those are the operands `all_operands_in` gives, with a `Phi`'s
+// argument sources, and a `BitTest`'s source.
 void names_in(const ir::Type_instruction& instr, Names& out) {
   auto add = [&](const ir::Type_operand& op) {
     using K = ir::Kind_operand;

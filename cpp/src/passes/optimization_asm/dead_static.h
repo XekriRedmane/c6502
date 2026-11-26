@@ -1,5 +1,3 @@
-// The port of passes/optimization_asm/dead_static.py, which drops the
-// internal-linkage statics that nothing names.
 #pragma once
 
 #include "asm_ast.h"

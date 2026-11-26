@@ -1,5 +1,5 @@
-// The port of passes/optimization_asm/cfg.py: the basic blocks of an
-// asm function, the edges between them, and its dominators.
+// The basic blocks of an asm function, the edges between them, and its
+// dominators.
 #pragma once
 
 #include <cstddef>
@@ -28,9 +28,8 @@ struct BasicBlock {
 
 // The CFG of a function. `blocks[id]` is the block with that id: the
 // two sentinels, then one block per partition numbered from 2 in source
-// order, which is also `block_order`. The Python CFG copies each
-// block's instructions. This one keeps index ranges into the
-// function's instructions, which the caller has to keep alive and
+// order, which is also `block_order`. The blocks are index ranges into
+// the function's instructions, which the caller has to keep alive and
 // unchanged while it uses the CFG, followed by `extra`, the
 // instructions `build_cfg_tolerant` adds.
 struct Cfg {
@@ -48,8 +47,7 @@ struct Cfg {
 // Partitions the instructions into basic blocks and adds the edges
 // from ENTRY, between the blocks, and to EXIT, as the comment at the
 // top of cfg.cpp describes. Throws `InternalError` for a `Jump` or
-// `Branch` to a label the function doesn't have, where Python raises a
-// `KeyError`.
+// `Branch` to a label the function doesn't have.
 Cfg build_cfg(const asm_ast::Function& fn);
 Cfg build_cfg(std::span<const asm_ast::Type_instruction> instrs);
 // Builds the CFG of `instrs` followed by `extra`, which the CFG keeps.
@@ -67,7 +65,7 @@ std::vector<int> reverse_postorder(const Cfg& cfg);
 // The immediate dominator of each block reachable from ENTRY, with
 // ENTRY its own (Cooper, Harvey, and Kennedy, 2006). `idom[b]` is -1
 // for a block that isn't reachable. `order` lists the blocks in the
-// order the Python dict gains them, which `dominator_tree_children`
+// order they first get a dominator, which `dominator_tree_children`
 // follows.
 struct Dominators {
   std::vector<int> idom;
@@ -76,7 +74,7 @@ struct Dominators {
 Dominators immediate_dominators(const Cfg& cfg);
 
 // Returns the children of each block in the dominator tree, by block
-// id, in the order Python's inversion of the `idom` dict gives them.
+// id, each block's in the order of `doms.order`.
 std::vector<std::vector<int>> dominator_tree_children(const Dominators& doms);
 
 // Returns the dominance frontier of each block reachable from ENTRY,

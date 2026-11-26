@@ -1,5 +1,5 @@
 /*
-Loop unrolling for `[[c6502::unroll]]` (passes/optimization_ast/unroll.py).
+Loop unrolling for `[[c6502::unroll]]`.
 
 It runs under -O before identifier_resolution, and replaces every for
 loop whose `loop_attribute` is "unroll" with a compound of N copies of
@@ -45,15 +45,6 @@ loop_labeling run after it, so each copy's locals get names of their own
 per pass with no more work here, and the constant that replaces the
 induction variable goes through the type checker, the TAC, and the asm
 passes as any constant the program writes does, with no extra folding.
-
-The Python pass keeps the values of the constant arrays in two module
-globals, which it sets for the length of each call and restores after,
-so that a call inside another (as a unit test makes) leaves no state
-behind. Here they are members of an `Unroller` made for each call. The
-Python pass builds a new program and keeps every field, and copies each
-body with `copy.deepcopy` before it replaces the variable in the copy.
-This one rewrites the program it takes by value, and copies each body as
-a value.
 */
 #include "passes/optimization_ast/unroll.h"
 
@@ -81,8 +72,7 @@ using Int = asdl::Int;
   throw CompileError("UnrollError", message);
 }
 
-// Returns the name of the class of an IR value, as Python's
-// `type(x).__name__` gives it, which is the start of its repr.
+// Returns the name of the class of an IR value, the start of its repr.
 template <class T>
 std::string class_name(const T& v) {
   std::string r = asdl::py_repr(v);
@@ -94,8 +84,7 @@ std::string int_text(Int v) {
   return std::to_string(static_cast<long long>(v));
 }
 
-// Returns whether `t` is a type the induction variable may have, the
-// keys of Python's `_IV_TYPE_TO_CONST`.
+// Returns whether `t` is a type the induction variable may have.
 bool is_iv_type(const Type& t) {
   switch (ir::kind(t)) {
     case ir::Kind_data_type::Int:
@@ -177,9 +166,9 @@ const char* c_type_name(const Type& t) {
 }
 
 // Returns the value of an integer constant of one of the kinds an
-// integer bound may be, with its type (Python's `_CONST_TYPE`), or none
-// for the other kinds. `true` and `false` are `bool`, but a bound or a
-// step uses them promoted to `int` (C23 §6.3.1.1), and they hold 0 or 1.
+// integer bound may be, with its type, or none for the other kinds.
+// `true` and `false` are `bool`, but a bound or a step uses them
+// promoted to `int` (C23 §6.3.1.1), and they hold 0 or 1.
 std::optional<std::pair<Int, Type>> integer_constant(const ir::Type_const& c) {
   switch (ir::kind(c)) {
     case ir::Kind_const::ConstInt:
@@ -242,7 +231,7 @@ bool is_var(const ir::Type_exp& exp, const std::string& name) {
 // A constant array's values: a leaf with an integer, or one level of
 // the array with a tree per element. Each level holds as many elements
 // as its declared size, or more when the initializer has more. Padding
-// shares one zero tree, as Python's `[t] * n` shares the element.
+// shares one zero tree.
 struct ValueNode {
   bool leaf = false;
   Int value = 0;
@@ -364,12 +353,12 @@ const Type& array_leaf_type(const Type& type) {
   }
 }
 
-// A walk over a statement in the order of Python's `_walk`: each node
-// before its fields, and the fields in the `.asdl`'s order. The walk
-// calls the visitor's `stmt` on each statement, `decl` on each
-// declaration, `for_init` on each for init, and `exp` on each
-// expression, which returns whether to walk the expression's operands.
-// Types hold no expression, so the walk doesn't enter them.
+// A walk over a statement: each node before its fields, and the fields
+// in the `.asdl`'s order. The walk calls the visitor's `stmt` on each
+// statement, `decl` on each declaration, `for_init` on each for init,
+// and `exp` on each expression, which returns whether to walk the
+// expression's operands. Types hold no expression, so the walk doesn't
+// enter them.
 template <class V>
 class Walker {
  public:
@@ -766,9 +755,9 @@ class Unroller {
   std::unordered_map<std::string, Type> leaves_;
 
   // Records the values of each file-scope `static` array of `const`
-  // integer scalars whose initializer folds, in place of Python's two
-  // module globals. A declaration with an item that doesn't fold is
-  // left out, and a subscript of it then doesn't fold either.
+  // integer scalars whose initializer folds. A declaration with an item
+  // that doesn't fold is left out, and a subscript of it then doesn't
+  // fold either.
   void build_const_array_map(const ir::Program& prog) {
     for (const auto& d : prog.declaration) {
       const auto* v = std::get_if<ir::VarDecl>(&d);
@@ -789,7 +778,7 @@ class Unroller {
       }
     }
     // Every declaration of a recorded name gives its leaf type, the
-    // last one winning, as Python's dict comprehension does.
+    // last one winning.
     for (const auto& d : prog.declaration) {
       const auto* v = std::get_if<ir::VarDecl>(&d);
       if (v != nullptr && arrays_.count(v->var_decl.name) != 0) {

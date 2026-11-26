@@ -36,7 +36,7 @@
 // could be indexed by Y. So a peephole after the substitution finds the
 // chain of transfers, drops it, and indexes the `IndexedData` operands
 // that follow by Y in place of X, or by X in place of Y in the
-// symmetric case ("Redundant transfers" below).
+// symmetric case (`rewrite_redundant_transfers`).
 //
 // Pseudos in neither part of the coloring (parameters, names whose
 // address is taken, statics, spilled values) are left alone, and
@@ -79,10 +79,6 @@ ir::Type_operand apply_to_op(const ir::Type_operand& op, const Coloring& colorin
     return op;
   }
   if (const std::string* letter = coloring.hwreg_assignments.find(p->name)) {
-    // A pin to X or Y holds one byte, so the offset must be 0. The
-    // eligibility scan and the allocator together make sure of that,
-    // and an offset that gets through is a bug of the allocator, which
-    // masking it with `& 0` would hide.
     if (p->offset != 0) {
       throw InternalError("HwReg-colored Pseudo " + p->name + " has nonzero offset " +
                           pyrepr::integer(p->offset) +
@@ -153,9 +149,6 @@ ir::Type_instruction apply_to_instruction(const ir::Type_instruction& instr,
       return ir::Compare{.left = apply(c.left), .right = apply(c.right)};
     }
     case K::LoadAddress: {
-      // The source's address is taken, so it is never colored and
-      // `apply` leaves it alone. The destination is mapped for
-      // completeness.
       const auto& l = std::get<ir::LoadAddress>(instr);
       return ir::LoadAddress{.src = apply(l.src), .dst = apply(l.dst)};
     }
@@ -174,10 +167,7 @@ ir::Type_instruction apply_to_instruction(const ir::Type_instruction& instr,
   }
 }
 
-// --- Redundant transfers ---
-
-// Returns 'X' for X and 'Y' for Y and A, as Python's test of
-// `isinstance(op.index, X)` gives for an index register.
+// Returns 'X' for X and 'Y' for Y and A.
 char index_letter(const ir::Type_reg& r) { return isa<ir::X>(r) ? 'X' : 'Y'; }
 
 // Returns 'A', 'X', or 'Y' for a `Reg`, and 0 for any other operand.
@@ -275,8 +265,7 @@ std::optional<ir::Type_operand> rewrite_index_in_op(const ir::Type_operand& op, 
 
 // Returns a copy of `instr` with the index of its `IndexedData` operands
 // changed from `from` to `to` when it is a `Mov` with such an operand,
-// or nothing when it is left as it is. Python returns the instruction
-// itself for that, and its caller tests the identity.
+// or nothing when it is left as it is.
 std::optional<ir::Type_instruction> rewrite_index_in_instr(const ir::Type_instruction& instr,
                                                            char from, char to) {
   const auto* m = as<ir::Mov>(instr);
@@ -339,11 +328,10 @@ const ir::Type_operand* instr_destination(const ir::Type_instruction& instr) {
 // call, a label, a branch, a jump, a return, a prologue, an allocation
 // of the stack, or a `DecimalArith`.
 //
-// Python's comment adds writes of A to the list, and its code doesn't
-// stop at them, which this follows. A write of A is common, since every
-// read of an `IndexedData` goes through A, and the rewrite of an index
-// stays sound through the instruction that writes A, which reads the
-// index register before anything has changed it.
+// A write of A doesn't break the chain. One is common, since every read
+// of an `IndexedData` goes through A, and the rewrite of an index stays
+// sound through the instruction that writes A, which reads the index
+// register before anything has changed it.
 bool instr_breaks_transfer_chain(const ir::Type_instruction& instr, char dst_reg, char src_reg) {
   using K = ir::Kind_instruction;
   switch (ir::kind(instr)) {
@@ -464,7 +452,6 @@ asm_ast::Function apply_coloring(asm_ast::Function fn, const Coloring& coloring,
   if (local_pool != nullptr && !local_pool->empty()) {
     addr_to_name = local_slot_names(fn.name, coloring, *local_pool);
   }
-  // Substitute the pseudo references.
   Instrs instrs;
   instrs.reserve(fn.instructions.size());
   for (const auto& instr : fn.instructions) {

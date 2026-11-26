@@ -25,8 +25,7 @@
 // `replace_pseudoregisters` gives each one byte, since `size_of_name`
 // returns 1 for a name the symbol table doesn't have.
 //
-// The algorithm is Cytron et al.'s (1991), as in
-// `passes.optimization.ssa_construction`.
+// The algorithm is Cytron et al.'s (1991), as in the TAC `to_ssa`.
 //   1. Build the CFG, and give every block that doesn't start with a
 //      `Label` one, for `AsmPhiArg.pred_label` to name.
 //   2. Compute the immediate dominators, the dominance frontiers, and
@@ -48,11 +47,8 @@
 // promotable parameter byte's stack at ENTRY, so that its first read
 // finds it.
 //
-// The Python pass keeps its sets of pairs in Python sets and its
-// definitions in a dict. The result follows only the dict's order
-// (which sets the order of the `Phi`s in a block) and the order of the
-// dominator tree, so the C++ sets are ordered sets and the dict is a
-// vector in the order of the first definition of each pair.
+// The `Phi`s of a block are in the order of the first definition of
+// each pair.
 #include "passes/optimization_asm/ssa_construction.h"
 
 #include <cstddef>
@@ -76,8 +72,8 @@ using ::c6502::asdl::isa;
 
 ByteVar key_of(const ir::Pseudo& p) { return {p.name, static_cast<std::int64_t>(p.offset)}; }
 
-// Prepends a label when the function's body starts with one, as TAC
-// SSA's `_maybe_prepend_preheader` does. A block that starts with a
+// Prepends a label when the function's body starts with one, as the
+// TAC `maybe_prepend_preheader` does. A block that starts with a
 // label that is a jump target can have predecessors besides ENTRY (a
 // loop's back edge), so the head has to be a labeled block of its own
 // for the arguments that come from the entry to name.
@@ -238,9 +234,8 @@ void for_each_use(const ir::Type_instruction& instr, F&& f) {
       pseudo(i.right);
       break;
     }
-    // A Pseudo destination of an ALU instruction is a use too, but no
-    // emitted instruction has one, and the Python pass yields only the
-    // source.
+    // A Pseudo destination of an ALU instruction would be a use too, but
+    // no emitted instruction has one.
     case ir::Kind_instruction::Add:
       pseudo(std::get<ir::Add>(instr).src);
       break;
@@ -280,7 +275,8 @@ bool is_dptr(const ir::Type_operand& op, int offset) {
 }
 
 // Returns the name of the Pseudo P when instructions `i` to `i + 3`
-// stage it through DPTR in the shape `tac_to_asm._stage_dptr` writes:
+// stage it through DPTR in the shape that `stage_dptr`
+// (tac_to_asm_calls.cpp) writes:
 //
 //     Mov(Pseudo(P, 0), Reg(A))
 //     Mov(Reg(A), Data("DPTR", 0))
@@ -402,7 +398,7 @@ using PhisAt = std::vector<std::vector<std::pair<int, std::size_t>>>;
 PhisAt place_phis(OwnedCfg& cfg, const VarIndex& index, const std::vector<ByteVar>& vars,
                   const std::vector<std::set<int>>& df, const std::vector<VarSet>& live_in) {
   const std::size_t nb = cfg.graph.blocks.size();
-  // The pairs in the order the Python dict gains them, with the blocks
+  // The pairs in the order of their first definition, with the blocks
   // that define each.
   std::vector<int> order;
   std::vector<std::set<int>> def_blocks(vars.size());
@@ -520,7 +516,7 @@ class Renamer {
     for (const int succ : cfg_.graph.blocks[id].successors) {
       for (const auto& [v, pos] : phis_at_[succ]) {
         // With no definition reaching here, the argument is the
-        // original Pseudo, a fallback the Python pass keeps.
+        // original Pseudo.
         ir::Pseudo src = stacks_[v].empty()
                              ? ir::Pseudo{.name = vars_[v].first, .offset = vars_[v].second}
                              : stacks_[v].back();
@@ -684,7 +680,7 @@ class Renamer {
 //   * `LoadAddress.dst`, the pointer that holds the address. The
 //     instruction writes two bytes, low and high, but its operand names
 //     only byte 0, and the write of byte 1 is implicit in the emitter's
-//     `_shift_offset(dst, 1)`. Versioning byte 0 alone would leave byte
+//     `shift_offset(dst, 1)`. Versioning byte 0 alone would leave byte
 //     1 written unseen, and the register allocation could put another
 //     SSA value on it. Excluding the name keeps it in two bytes of the
 //     frame together.
@@ -704,13 +700,7 @@ class Renamer {
 //     accesses to one cell and some to another, where every access has
 //     to reach the one cell.
 //
-// The passes after SSA construction have to agree on these names. A
-// copy of this set in `copy_propagation` once drifted, and that pass
-// took a name SSA construction had left alone as promotable, so it
-// took the last write in source order as the definition and propagated
-// it past a join, which broke the ternary `(page_flag & 0x80) ?
-// screen_row_addr_hi2 : screen_row_addr_hi` in
-// examples/draw_sprite_opaque.c.
+// The passes after SSA construction have to agree on these names.
 ExcludedNames excluded_pseudo_names(const ir::Function& fn) {
   ExcludedNames excluded;
   const auto add = [&](const ir::Type_operand& op) {

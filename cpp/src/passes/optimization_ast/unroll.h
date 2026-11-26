@@ -1,6 +1,5 @@
-// passes/optimization_ast/unroll.py: the full unrolling of the for
-// loops marked `[[c6502::unroll]]`, which runs under -O between the
-// parser and identifier_resolution.
+// The full unrolling of the for loops marked `[[c6502::unroll]]`, which
+// runs under -O between the parser and identifier_resolution.
 #pragma once
 
 #include "c99_ast.h"

@@ -1,4 +1,3 @@
-// The port of passes/optimization_asm/byte_dce.py.
 #pragma once
 
 #include "asm_ast.h"

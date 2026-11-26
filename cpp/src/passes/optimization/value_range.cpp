@@ -40,11 +40,10 @@ multiply whose operands are bounded by 255, and strength reduction
 treats a signed divide or remainder by a power of two as an unsigned
 one when the dividend is bounded.
 
-Python's ints have no bound, and a bound of an 8-byte type is below
-2^64, so every sum and quotient fits an `asdl::Int`. A product of two
-such bounds, or a bound shifted left by up to 63 bits, may not, so
-those two compare the operands with the destination's largest value
-first, which gives the same answer as Python's test of the result. */
+A bound of an 8-byte type is below 2^64, so every sum and quotient
+fits an `asdl::Int`. A product of two such bounds, or a bound shifted
+left by up to 63 bits, may not, so those two compare the operands with
+the destination's largest value first. */
 #include "passes/optimization/value_range.h"
 
 #include <algorithm>
@@ -77,8 +76,7 @@ const c99::Type_data_type& strip(const c99::Type_data_type& t) {
 }
 
 // Returns the value of an integer constant of the eight classes of the
-// C types (Python's `_INT_CONSTS`), whose `value` field is the value
-// itself, or none for any other constant. The odd widths of the
+// C types, or none for any other constant. The odd widths of the
 // bit-precise types aren't among them.
 std::optional<Int> int_const(const ir::Type_const& c) {
   switch (ir::kind(c)) {
@@ -103,8 +101,6 @@ std::optional<Int> int_const(const ir::Type_const& c) {
   }
 }
 
-// Returns the value of an integer constant operand, as `_const_value`
-// does, or none.
 Bound const_value(const ir::Type_val& v) {
   if (const auto* c = std::get_if<ir::Constant>(&v)) {
     return int_const(c->const_);
@@ -112,7 +108,7 @@ Bound const_value(const ir::Type_val& v) {
   return std::nullopt;
 }
 
-// Returns Python's `int.bit_length` of a nonnegative `x`.
+// Returns the number of bits of a nonnegative `x`.
 int bit_length(Int x) {
   int n = 0;
   while (x > 0) {
@@ -215,9 +211,6 @@ struct Walk {
         if (phi.args.empty()) {
           return std::nullopt;
         }
-        // Python computes every argument's bound before it looks for
-        // a missing one, and each computation is pure, so stopping at
-        // the first missing bound gives the same answer.
         Int best = 0;
         for (const auto& a : phi.args) {
           const Bound x = m(std::get<ir::PhiArg>(a).source);
@@ -297,7 +290,8 @@ struct Walk {
           return std::nullopt;
         }
         if (k && *k >= 0) {
-          // A shift of 128 bits or more leaves 0, as Python's does.
+          // Every bound is below 2^127, and C++ leaves a shift by the
+          // width of `Int` or more undefined.
           return *k >= 127 ? Int(0) : *ma >> static_cast<int>(*k);
         }
         return ma;

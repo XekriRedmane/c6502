@@ -176,11 +176,9 @@ std::optional<DefUseRewrite> rewrite_truncate(const ir::Type_instruction& instr,
   if (src_var == nullptr || dst_var == nullptr) {
     return std::nullopt;
   }
-  // The source must be SSA-renamed, so that it has one definition.
   if (!ctx.is_ssa(src_var->name)) {
     return std::nullopt;
   }
-  // Walk back to the defining SignExtend, ZeroExtend, or Truncate.
   const ir::Type_instruction* def = env.def_of(*src_var);
   const std::optional<Cast> cast = def != nullptr ? as_cast(*def) : std::nullopt;
   if (!cast) {
@@ -190,24 +188,15 @@ std::optional<DefUseRewrite> rewrite_truncate(const ir::Type_instruction& instr,
   if (x == nullptr) {
     return std::nullopt;
   }
-  // The rewrite reads `x` at the Truncate instead of at the extend, so
-  // `x` must hold the same value at both points, which only an
-  // SSA-renamed name guarantees. A static or an address-taken local can
-  // be written in between, as in `long l2 = (int)g; g += 1; f((signed
-  // char)l2);`.
   if (!ctx.is_ssa(x->name)) {
     return std::nullopt;
   }
-  // The rewrite is only sound when the destination is no wider than x.
   const auto src_width = byte_width(*x, ctx.symbols);
   const auto dst_width = byte_width(*dst_var, ctx.symbols);
   if (!src_width || !dst_width) {
     return std::nullopt;
   }
   if (*dst_width > *src_width) {
-    // A truncate to a width between x's and the extend's keeps some of
-    // the extend's bytes, and is the same extend of x to the narrower
-    // width. A truncate of a truncate can't be wider than x.
     if (cast->kind == K::Truncate) {
       return std::nullopt;
     }
@@ -245,8 +234,6 @@ std::optional<DefUseRewrite> rewrite_extend(const ir::Type_instruction& instr,
   if (x == nullptr) {
     return std::nullopt;
   }
-  // As in `fold_truncate_extend`, `x` is read at the outer extend in
-  // place of the inner one, so it must be SSA-renamed.
   if (!ctx.is_ssa(x->name)) {
     return std::nullopt;
   }

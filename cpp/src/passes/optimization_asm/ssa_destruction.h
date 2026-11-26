@@ -1,4 +1,3 @@
-// The port of passes/optimization_asm/ssa_destruction.py.
 #pragma once
 
 #include "asm_ast.h"

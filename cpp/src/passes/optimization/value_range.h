@@ -1,8 +1,7 @@
-// The port of passes/optimization/value_range.py: the largest value a
-// TAC operand can hold, when it can't be negative, and the queries of
-// integer types it is built on. Strength reduction, the narrowing of
-// byte ranges, the unsigned compare of nonnegative values, and the
-// jump threads read it.
+// The largest value a TAC operand can hold, when it can't be negative,
+// and the queries of integer types it is built on. Strength reduction,
+// the narrowing of byte ranges, the unsigned compare of nonnegative
+// values, and the jump threads read it.
 #pragma once
 
 #include <functional>
@@ -36,8 +35,8 @@ bool is_unsigned_type(const c99_ast::Type_data_type& t);
 // Returns the largest value `val` can hold when it is never negative,
 // or none. A Var is bounded by its type when the type is unsigned, and
 // for a name in `ssa_dsts` by the instruction `def_of` gives it, by the
-// rules of the Python module's docstring. `symbols` and `ssa_dsts` may
-// be null, as Python's may be None.
+// rules at the top of value_range.cpp. `symbols` and `ssa_dsts` may be
+// null.
 std::optional<asdl::Int> max_value(const tac_ast::Type_val& val, const DefOf& def_of,
                                    const SymbolTable* symbols, const NameSet* ssa_dsts);
 

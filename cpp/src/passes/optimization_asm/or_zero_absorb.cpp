@@ -14,7 +14,7 @@
 // chains of copies from the operand bytes to the bytes of the value
 // built, so the move coalescing can give them one color.
 //
-// `passes.const_arith_fold` isn't used for this. It runs in the
+// `apply_const_arith_fold` isn't used for this. It runs in the
 // peephole fixed point after the coloring, and it drops `Or(Imm(0), A)`
 // after any write of A as an identity that keeps the flags. That is
 // sound when control flow at emission is straight within a block, but

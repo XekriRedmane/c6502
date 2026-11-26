@@ -1,4 +1,3 @@
-// The port of passes/optimization_asm/copy_propagation.py.
 #pragma once
 
 #include "asm_ast.h"

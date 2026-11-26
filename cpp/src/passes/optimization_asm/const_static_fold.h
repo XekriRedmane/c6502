@@ -1,5 +1,5 @@
-// The port of passes/optimization_asm/const_static_fold.py, which folds
-// the const scalar statics of internal linkage into immediates.
+// The fold of the const scalar statics of internal linkage into
+// immediates.
 #pragma once
 
 #include "asm_ast.h"

@@ -35,8 +35,8 @@ namespace {
 
 using json::Value;
 
-// Writes `{"object": cls, "fields": {...}}`, one field at a time, as
-// Python's `json.dumps` writes the harness's encoding of an object.
+// Writes `{"object": cls, "fields": {...}}`, one field at a time, with
+// the spacing of the records in cpp/tests/frozen.
 class Fields {
  public:
   Fields(std::string& out, std::string_view cls) : out_(out) {

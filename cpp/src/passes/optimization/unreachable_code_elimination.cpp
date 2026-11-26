@@ -22,8 +22,7 @@ Five steps, run in order on the function's CFG.
    driver's earlier passes propagate constants into the arguments), a
    `Phi` left with one argument means `Copy(args[0].source, dst)`, and
    becomes that. A Phi with no arguments, all of whose predecessors
-   went, is dropped. That is defensive, since its block is unreachable
-   then and step 1 has already dropped it.
+   went, is dropped.
 
 4. Drop the jumps that go to the next block. A block other than the
    last whose terminator has the next block in source order as its only
@@ -104,13 +103,6 @@ const std::string* leading_label(const BasicBlock& blk) {
   return label != nullptr ? &label->name : nullptr;
 }
 
-// Replaces each `Phi` of `blk` with one that holds the arguments `keep`
-// accepts. Python builds a new Phi here, since its block's instructions
-// are those of the function the pass was given, and the driver's fixed
-// point compares the function after a sweep with the one before it.
-// Pruning the arguments in place changed both, so a sweep whose only
-// change was the pruning looked like no change, and the passes that the
-// pruning enabled didn't run again. The C++ blocks own their copies.
 template <class Keep>
 void filter_phi_args(BasicBlock& blk, Keep keep) {
   for (auto& instr : blk.instructions) {
@@ -122,9 +114,6 @@ void filter_phi_args(BasicBlock& blk, Keep keep) {
   }
 }
 
-// Drops every block a forward walk from ENTRY doesn't reach, with the
-// edges of the surviving blocks that named one, and the `PhiArg`s in the
-// surviving blocks whose `pred_label` named one.
 void remove_unreachable_blocks(Cfg& cfg) {
   std::set<int> reachable;
   std::vector<int> stack{tac_cfg::kEntryId};
@@ -139,8 +128,6 @@ void remove_unreachable_blocks(Cfg& cfg) {
     }
   }
 
-  // The labels of the blocks about to go, so that the PhiArgs that
-  // name them can go too.
   Labels dropped_labels;
   std::vector<int> dropped;
   for (const auto& [bid, blk] : cfg.blocks) {
@@ -166,12 +153,6 @@ void remove_unreachable_blocks(Cfg& cfg) {
   }
 }
 
-// For each block with Phis, drops each PhiArg whose `pred_label` isn't
-// the label of one of the block's present predecessors. That catches a
-// conditional jump that constant folding dropped (`JumpIfFalse(true)`
-// folds to nothing), which takes the edge from the predecessor out
-// without taking out the predecessor, and leaves the Phi with a stale
-// argument from it.
 void prune_dead_phi_edges(Cfg& cfg) {
   std::map<int, std::string> leading;
   for (const auto& [bid, blk] : cfg.blocks) {
@@ -196,9 +177,6 @@ void prune_dead_phi_edges(Cfg& cfg) {
   }
 }
 
-// Makes each `Phi` with one remaining argument `Copy(args[0].source,
-// dst)`, and drops each Phi with none, which is defensive, since its
-// block is unreachable in a well-formed CFG.
 void fold_singleton_phis(Cfg& cfg) {
   for (auto& [bid, blk] : cfg.blocks) {
     std::vector<ir::Type_instruction> out;
@@ -222,9 +200,6 @@ void fold_singleton_phis(Cfg& cfg) {
   }
 }
 
-// For each real block but the last whose terminator is a jump or a
-// conditional jump with the next block in source order as its every
-// successor, drops the terminator and merges the duplicate edges.
 void remove_useless_jumps(Cfg& cfg) {
   for (std::size_t i = 0; i + 1 < cfg.block_order.size(); ++i) {
     const int bid = cfg.block_order[i];
@@ -237,9 +212,6 @@ void remove_useless_jumps(Cfg& cfg) {
       continue;
     }
     blk.instructions.pop_back();
-    // A conditional jump's two successors merge from [next, next] into
-    // [next], and an unconditional jump had one already. The next
-    // block's predecessor list does the same.
     blk.successors = {next_bid};
     std::vector<int>& next_preds = cfg.blocks.find(next_bid)->predecessors;
     if (std::count(next_preds.begin(), next_preds.end(), bid) > 1) {
@@ -249,11 +221,6 @@ void remove_useless_jumps(Cfg& cfg) {
   }
 }
 
-// Collects every jump target and every `PhiArg.pred_label` in the
-// function, and drops each leading `Label(L)` whose L isn't among them.
-// A Phi's labels count, since SSA destruction finds the predecessor
-// block by its leading label later, and dropping a label a Phi names
-// would break that.
 void remove_useless_labels(Cfg& cfg) {
   Labels targets;
   for (const auto& [bid, blk] : cfg.blocks) {

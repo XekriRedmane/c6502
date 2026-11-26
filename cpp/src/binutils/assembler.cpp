@@ -487,51 +487,42 @@ bool balanced(U32View s) {
   return depth == 0;
 }
 
-std::size_t back_over_space(U32View s, std::size_t k) {
-  while (k != U32::npos && space(s[k])) k = k == 0 ? U32::npos : k - 1;
-  return k;
+std::optional<U32View> before_index(U32View s, char32_t upper_reg) {
+  const char32_t lower_reg = upper_reg - U'A' + U'a';
+  if (s.empty() || (s.back() != upper_reg && s.back() != lower_reg)) return std::nullopt;
+  const U32 rest = rstrip(s.substr(0, s.size() - 1));
+  if (rest.empty() || rest.back() != ',') return std::nullopt;
+  return s.substr(0, rest.size() - 1);
+}
+
+std::optional<U32View> parenthesized(U32View s) {
+  if (s.size() < 2 || s.front() != '(' || s.back() != ')') return std::nullopt;
+  const U32View inner = s.substr(1, s.size() - 2);
+  if (!balanced(inner)) return std::nullopt;
+  return inner;
 }
 
 std::pair<Syntax, ExprPtr> split_operand(const std::string& op, U32View operand,
                                          const std::string& where) {
   const U32 s = strip(operand);
-  const std::size_t n = s.size();
   if (s.empty()) return {is_shift(op) ? Syntax::kAcc : Syntax::kImp, nullptr};
   if (is_shift(op) && pcpp::upper(to_utf8(s)) == "A") return {Syntax::kAcc, nullptr};
   if (s[0] == '#') return {Syntax::kImm, parse_expr(U32View(s).substr(1), where)};
   if (s[0] == '(') {
-    if (s[n - 1] == 'Y' || s[n - 1] == 'y') {
-      std::size_t k = back_over_space(s, n >= 2 ? n - 2 : U32::npos);
-      if (k != U32::npos && s[k] == ',') {
-        k = back_over_space(s, k == 0 ? U32::npos : k - 1);
-        if (k != U32::npos && k >= 1 && s[k] == ')') {
-          const U32View group = U32View(s).substr(1, k - 1);
-          if (balanced(group)) return {Syntax::kIndy, parse_expr(group, where)};
-        }
+    if (const auto base = before_index(s, 'Y')) {
+      const U32 pointer = rstrip(*base);
+      if (const auto inner = parenthesized(pointer)) return {Syntax::kIndy, parse_expr(*inner, where)};
+    }
+    if (s.back() == ')') {
+      const U32 inner = rstrip(U32View(s).substr(1, s.size() - 2));
+      if (const auto base = before_index(inner, 'X'); base && balanced(*base)) {
+        return {Syntax::kIndx, parse_expr(*base, where)};
       }
     }
-    if (s[n - 1] == ')') {
-      std::size_t k = back_over_space(s, n >= 2 ? n - 2 : U32::npos);
-      if (k != U32::npos && (s[k] == 'X' || s[k] == 'x')) {
-        k = back_over_space(s, k == 0 ? U32::npos : k - 1);
-        if (k != U32::npos && k >= 1 && s[k] == ',') {
-          const U32View group = U32View(s).substr(1, k - 1);
-          if (balanced(group)) return {Syntax::kIndx, parse_expr(group, where)};
-        }
-      }
-    }
-    if (n >= 2 && s[n - 1] == ')' && balanced(U32View(s).substr(1, n - 2))) {
-      return {Syntax::kInd, parse_expr(U32View(s).substr(1, n - 2), where)};
-    }
+    if (const auto inner = parenthesized(s)) return {Syntax::kInd, parse_expr(*inner, where)};
   }
-  const char32_t last = s[n - 1];
-  if (last == 'X' || last == 'x' || last == 'Y' || last == 'y') {
-    const std::size_t k = back_over_space(s, n >= 2 ? n - 2 : U32::npos);
-    if (k != U32::npos && s[k] == ',') {
-      const U32 group = rstrip(U32View(s).substr(0, k));
-      return {last == 'X' || last == 'x' ? Syntax::kX : Syntax::kY, parse_expr(group, where)};
-    }
-  }
+  if (const auto base = before_index(s, 'X')) return {Syntax::kX, parse_expr(rstrip(*base), where)};
+  if (const auto base = before_index(s, 'Y')) return {Syntax::kY, parse_expr(rstrip(*base), where)};
   return {Syntax::kPlain, parse_expr(s, where)};
 }
 

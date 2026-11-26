@@ -116,6 +116,22 @@ TEST_CASE("binutils: TestAssembler::test_zero_page_chosen_by_value") {
   CHECK(far->value == 0x1234);
 }
 
+TEST_CASE("binutils: an index register may be lowercase and spaced from its comma") {
+  const std::string text =
+      kEqus + fn({"LDA   ( ZP ) , y", "LDA   ( ZP , x )", "JMP   ( FAR )", "LDA   ZP , x",
+                  "LDA   FAR ,Y", "LDA   (ZP)+1,Y", "LDA   (ZP+1) ,X", "RTS"});
+  CHECK(first(image(assemble(text)), 18) == Bytes{
+                                                0xB1, 0x80,
+                                                0xA1, 0x80,
+                                                0x6C, 0x34, 0x12,
+                                                0xB5, 0x80,
+                                                0xB9, 0x34, 0x12,
+                                                0xB9, 0x81, 0x00,
+                                                0xB5, 0x81,
+                                                0x60,
+                                            });
+}
+
 TEST_CASE("binutils: TestAssembler::test_read_modify_write_of_an_element") {
   // `INC t,X` and the rest take zp,X for an address in zero page and
   // abs,X otherwise, and the disassembler reads them back.

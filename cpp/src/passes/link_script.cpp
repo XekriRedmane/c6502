@@ -300,8 +300,8 @@ class Parser {
   std::string take(std::optional<std::string_view> want = std::nullopt) {
     const std::string* tok = peek();
     if (tok == nullptr) {
-      script_error("unexpected end of script; expected " +
-                   (want ? std::string(*want) : std::string("None")));
+      script_error(want ? "unexpected end of script; expected " + std::string(*want)
+                        : std::string("unexpected end of script"));
     }
     if (want && *tok != *want) {
       script_error("expected " + repr(*want) + ", found " + repr(*tok));

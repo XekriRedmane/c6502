@@ -39,7 +39,7 @@ std::string error_of(const std::string& text) {
 // of the 18 raise sites of link_script.py in the order of the file.
 const std::vector<std::pair<std::string, std::string>> kErrors = {
     {"MEMORY { r : ORIGIN = 0, LENGTH = 1 }\n  @oops", "line 2: can't read '@oops'"},
-    {"MEMORY {", "unexpected end of script; expected None"},
+    {"MEMORY {", "unexpected end of script"},
     {"MEMORY ( r )", "expected '{', found '('"},
     {"ENTRY(main)", "'ENTRY' isn't supported; a script has MEMORY and SECTIONS commands"},
     {"MEMORY { r : START = 0 }", "region 'r': expected ORIGIN or LENGTH, found 'START'"},

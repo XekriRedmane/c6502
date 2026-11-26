@@ -602,9 +602,9 @@ OptimizedAsmFunction optimize_function(ir::Function fn, const StaticNames& stati
   const HwRegEligibility rep_eligibility =
       project_eligibility(raw, coalesced, all_pseudo_names(fn));
   pass_order::ran("color_graph");
-  Coloring coloring = color_graph(fn, graph, std::nullopt, &blocked_addrs, &rep_eligibility,
-                                  allowed_range, &liveness, &coalesced.representative,
-                                  &in_frame);
+  const HwRegPinning pinning{.eligibility = rep_eligibility, .liveness = liveness};
+  Coloring coloring = color_graph(fn, graph, std::nullopt, &blocked_addrs, &pinning,
+                                  allowed_range, &coalesced.representative, &in_frame);
   // Every name merged into a representative takes the representative's
   // color, since `apply_coloring` looks names up, so the merged names go
   // back into the assignments.

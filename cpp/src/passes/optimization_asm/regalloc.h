@@ -17,9 +17,16 @@
 
 namespace c6502::passes {
 
+// What the pinning to X and Y reads. `liveness` is the function's
+// before coalescing, which the check of the writes of X and Y in a
+// pinned value's live range reads.
+struct HwRegPinning {
+  const HwRegEligibility& eligibility;
+  const Liveness& liveness;
+};
+
 // Colors `graph`'s nodes onto zero-page bytes, first pinning nodes
-// eligible for X and Y to those registers when `hwreg_eligibility` is
-// given. Every node of the graph ends up in the result's `assignments`,
+// eligible for X and Y to those registers when `pinning` is given. Every node of the graph ends up in the result's `assignments`,
 // `hwreg_assignments`, or `spilled`. A null or absent argument is left
 // out.
 //
@@ -30,7 +37,7 @@ namespace c6502::passes {
 // in mid-computation. It blocks them for the whole function, and not
 // only while the parameters are live.
 //
-// `hwreg_eligibility` drives the pinning to X and Y, which tries the
+// `pinning.eligibility` drives the pinning to X and Y, which tries the
 // nodes of `hints_x` and `hints_y` against X and Y first and succeeds
 // where the graph allows. It holds representatives, so the caller
 // projects the names before coalescing through the coalescing's
@@ -61,9 +68,8 @@ namespace c6502::passes {
 Coloring color_graph(const asm_ast::Function& fn, const InterferenceGraph& graph,
                      const std::optional<Pool>& pool = std::nullopt,
                      const std::set<asdl::Int>* blocked_addrs = nullptr,
-                     const HwRegEligibility* hwreg_eligibility = nullptr,
+                     const HwRegPinning* pinning = nullptr,
                      const std::optional<Range>& allowed_range = std::nullopt,
-                     const Liveness* liveness = nullptr,
                      const OrderedMap<std::string, std::string>* rep_map = nullptr,
                      const NameSet* frame_names = nullptr);
 

@@ -21,6 +21,7 @@
 #include "passes/optimization_asm/liveness.h"
 #include "passes/optimization_asm/regalloc.h"
 #include "passes/optimization_asm/regalloc_stage.h"
+#include "record_case.h"
 #include "tagged_json.h"
 
 namespace {
@@ -502,7 +503,8 @@ passes::Coloring color(std::string_view instrs,
   auto g = passes::build_interference(fn, live);
   const auto co = passes::coalesce_moves(fn, g);
   const auto elig = passes::scan_function(fn, pins);
-  return passes::color_graph(fn, g, std::nullopt, blocked, &elig, allowed, &live,
+  const passes::HwRegPinning pinning{.eligibility = elig, .liveness = live};
+  return passes::color_graph(fn, g, std::nullopt, blocked, &pinning, allowed,
                              &co.representative);
 }
 
@@ -571,8 +573,8 @@ TEST_CASE("regalloc: both carry bytes go in X, or neither") {
   const auto live = passes::compute_liveness(fn);
   const auto g = passes::build_interference(fn, live);
   const auto elig = passes::scan_function(fn);
-  CHECK(coloring_json(passes::color_graph(fn, g, std::nullopt, nullptr, &elig, std::nullopt,
-                                          &live)) ==
+  const passes::HwRegPinning pinning{.eligibility = elig, .liveness = live};
+  CHECK(coloring_json(passes::color_graph(fn, g, std::nullopt, nullptr, &pinning)) ==
         R"({"object": "passes.optimization.register_allocation.Coloring", "fields": {"assignments": {"dict": [["h0", 128]]}, "spilled": {"set": []}, "pool": {"object": "passes.optimization.pool.Pool", "fields": {"start": 128}}, "hwreg_assignments": {"dict": [["h1", "X"], ["h2", "X"]]}}})");
   // After coalescing, the pair's second name has left the graph, so the
   // first one isn't pinned either.
@@ -609,8 +611,9 @@ TEST_CASE("regalloc: a read of a frame slot loads Y") {
   const auto live = passes::compute_liveness(fn);
   const auto g = passes::build_interference(fn, live);
   const auto elig = passes::scan_function(fn);
+  const passes::HwRegPinning pinning{.eligibility = elig, .liveness = live};
   const auto pinned = [&](const NameSet* frame) {
-    const auto c = passes::color_graph(fn, g, std::nullopt, nullptr, &elig, std::nullopt, &live,
+    const auto c = passes::color_graph(fn, g, std::nullopt, nullptr, &pinning, std::nullopt,
                                        nullptr, frame);
     const std::string* letter = c.hwreg_assignments.find("i");
     return letter == nullptr ? std::string() : *letter;
@@ -634,9 +637,10 @@ TEST_CASE("regalloc: a spilled value's access loads Y") {
   const auto live = passes::compute_liveness(fn);
   const auto g = passes::build_interference(fn, live);
   const auto elig = passes::scan_function(fn);
+  const passes::HwRegPinning pinning{.eligibility = elig, .liveness = live};
   const auto color = [&](asdl::Int stop) {
-    return passes::color_graph(fn, g, std::nullopt, nullptr, &elig,
-                               passes::Range{.start = 0x80, .stop = stop}, &live);
+    return passes::color_graph(fn, g, std::nullopt, nullptr, &pinning,
+                               passes::Range{.start = 0x80, .stop = stop});
   };
   const auto roomy = color(0x83);
   CHECK(roomy.spilled.empty());
@@ -644,6 +648,23 @@ TEST_CASE("regalloc: a spilled value's access loads Y") {
   const auto tight = color(0x82);
   CHECK(tight.spilled.size() == 1);
   CHECK(tight.hwreg_assignments == OrderedMap<std::string, std::string>{{"i", "X"}});
+}
+
+TEST_CASE("regalloc: a recorded call pins only with the liveness") {
+  // The pinning reads the liveness for the writes of X and Y in a live
+  // range, so a record that gives the eligibility alone is refused.
+  testing::check_record(R"(c6502-capture 2
+pass color_graph
+source cpp/tests/test_regalloc.cpp
+args {"args": [{"object": "passes.optimization.interference.InterferenceGraph", "fields": {"nodes": {"dict": []}, "adj": {"dict": []}}}], "kwargs": {"hwreg_eligibility": {"object": "passes.optimization_asm.hwreg_eligibility.HwRegEligibility", "fields": {"eligible_x": {"set": []}, "eligible_y": {"set": []}, "hints_x": {"set": []}, "hints_y": {"set": []}, "use_count": {"dict": []}, "required_x": {"set": []}, "required_y": {"set": []}, "hints_carry": {"set": []}, "carry_pairs": []}}, "liveness": null}}
+context {"layout":[0,2,4,32,36],"user_zp_globals":[],"user_zp_bytes":[]}
+input
+Function("f" true [] [
+  Return(true false false)
+])
+output-error
+{"type": "Exception", "message": "the call gives hwreg_eligibility or liveness without the other"}
+)");
 }
 
 }  // namespace

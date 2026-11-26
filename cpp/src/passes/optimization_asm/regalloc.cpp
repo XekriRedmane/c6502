@@ -175,7 +175,7 @@ namespace {
 // meets all its constraints by construction.
 void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& eligibility,
                       OrderedMap<std::string, std::string>& hwreg_assignments,
-                      const Liveness* liveness,
+                      const Liveness& liveness,
                       const OrderedMap<std::string, std::string>* rep_map_arg,
                       const NameSet* frame_names) {
   // The positions of the writes of each register and of the definitions
@@ -206,17 +206,15 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
     return cur;
   };
 
-  if (liveness != nullptr) {
-    for (std::size_t b = 0; b < liveness->cfg.blocks.size(); ++b) {
-      const int bid = static_cast<int>(b);
-      const auto instrs = liveness->cfg.instructions(bid);
-      for (std::size_t idx = 0; idx < instrs.size(); ++idx) {
-        for (const char letter : instr_writes_hwregs(instrs[idx], frame_names)) {
-          clobber_positions[letter].emplace_back(bid, idx);
-        }
-        for (const auto* d : liveness::defs_in(instrs[idx])) {
-          def_positions_rep[resolve_rep(d->name)].emplace(bid, idx);
-        }
+  for (std::size_t b = 0; b < liveness.cfg.blocks.size(); ++b) {
+    const int bid = static_cast<int>(b);
+    const auto instrs = liveness.cfg.instructions(bid);
+    for (std::size_t idx = 0; idx < instrs.size(); ++idx) {
+      for (const char letter : instr_writes_hwregs(instrs[idx], frame_names)) {
+        clobber_positions[letter].emplace_back(bid, idx);
+      }
+      for (const auto* d : liveness::defs_in(instrs[idx])) {
+        def_positions_rep[resolve_rep(d->name)].emplace(bid, idx);
       }
     }
   }
@@ -232,7 +230,7 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
     if (idx == 0) {
       return false;
     }
-    const auto instrs = liveness->cfg.instructions(bid);
+    const auto instrs = liveness.cfg.instructions(bid);
     const auto* instr = asdl::as<ir::Mov>(instrs[idx]);
     if (instr == nullptr) {
       return false;
@@ -260,9 +258,6 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
   // becomes a transfer of R to itself after pinning, so its second `Mov`
   // isn't one either.
   const auto clobbered_in_live_range = [&](const std::string& name, char reg) {
-    if (liveness == nullptr) {
-      return false;
-    }
     const auto& positions = clobber_positions[reg];
     if (positions.empty()) {
       return false;
@@ -277,7 +272,7 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
       if (is_self_transfer_chain(bid, idx, name)) {
         continue;
       }
-      for (const auto& live_name : liveness->live_after(bid, idx)) {
+      for (const auto& live_name : liveness.live_after(bid, idx)) {
         if (resolve_rep(live_name) == name) {
           return true;
         }
@@ -302,13 +297,6 @@ void try_hwreg_assign(const InterferenceGraph& graph, const HwRegEligibility& el
       return false;
     }
     if (node->second.width != 1) {
-      return false;
-    }
-    // With the liveness, the clobber check below sees each call that
-    // writes `reg` (`instr_writes_hwregs`), so a value can stay in X or
-    // Y across a call that preserves it. Without it, any call
-    // disqualifies.
-    if (node->second.lives_across_call && liveness == nullptr) {
       return false;
     }
     if (hwreg_assignments.contains(name)) {
@@ -575,8 +563,7 @@ NameSet names_resolving_to(const ir::Function& fn, const NameSet& reps,
 
 Coloring color_graph(const ir::Function& fn, const InterferenceGraph& graph,
                      const std::optional<Pool>& pool_arg, const std::set<asdl::Int>* blocked_addrs,
-                     const HwRegEligibility* hwreg_eligibility,
-                     const std::optional<Range>& allowed_range, const Liveness* liveness,
+                     const HwRegPinning* pinning, const std::optional<Range>& allowed_range,
                      const OrderedMap<std::string, std::string>* rep_map,
                      const NameSet* frame_names) {
   const Pool pool = pool_arg.value_or(Pool{});
@@ -592,16 +579,16 @@ Coloring color_graph(const ir::Function& fn, const InterferenceGraph& graph,
   }
   while (true) {
     Coloring out{.pool = pool};
-    if (hwreg_eligibility != nullptr) {
-      try_hwreg_assign(graph, *hwreg_eligibility, out.hwreg_assignments, liveness, rep_map,
-                       &in_frame);
+    if (pinning != nullptr) {
+      try_hwreg_assign(graph, pinning->eligibility, out.hwreg_assignments, pinning->liveness,
+                       rep_map, &in_frame);
     }
     color_bytes(graph, peo, pool, blocked_addrs, allowed_range, out);
     bool y_used = false;
     for (const auto& [name, letter] : out.hwreg_assignments) {
       y_used = y_used || letter == "Y";
     }
-    if (out.spilled.empty() || liveness == nullptr || !y_used) {
+    if (out.spilled.empty() || !y_used) {
       return out;
     }
     bool grew = false;

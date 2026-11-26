@@ -343,10 +343,17 @@ StageOutput run_color_graph(const capture::Call& call, const AsmContext&, const 
   if (const Value* f = kwarg(kwargs, "frame_names")) {
     frame_names = NameSetC::decode(*f);
   }
+  if (eligibility.has_value() != live.has_value()) {
+    throw std::runtime_error("the call gives hwreg_eligibility or liveness without the other");
+  }
+  std::optional<HwRegPinning> pinning;
+  if (eligibility) {
+    pinning.emplace(HwRegPinning{.eligibility = *eligibility, .liveness = *live});
+  }
   const auto coloring =
       color_graph(fn, graph, pool, blocked ? &blocked_plain : nullptr,
-                  eligibility ? &*eligibility : nullptr, allowed, live ? &*live : nullptr,
-                  rep_map ? &*rep_map : nullptr, frame_names ? &*frame_names : nullptr);
+                  pinning ? &*pinning : nullptr, allowed, rep_map ? &*rep_map : nullptr,
+                  frame_names ? &*frame_names : nullptr);
   return {encode<ColoringC>(coloring), ""};
 }
 

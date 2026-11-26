@@ -25,12 +25,6 @@ struct StageTables {
   HelperFootprints footprints;
 };
 
-struct SymbolChanges {
-  std::vector<std::string> reg_locals;
-  std::vector<std::string> carry;
-  std::vector<NewFunction> new_functions;
-};
-
 // What a run of the stage gives. With `emit`, `emitted` holds the `-S`
 // text and the finished asm and asm2 programs. Without it, the stage
 // stops where `optimized_asm` (or the simulator harness's unoptimized
@@ -41,7 +35,6 @@ struct SymbolChanges {
 struct StageResult {
   EmitResult emitted;
   OrderedSymbolAddrs harness_symbols;
-  SymbolChanges changes;
   // The TAC that code generation lowered, which `codegen` sets.
   tac_ast::Program tac;
 };

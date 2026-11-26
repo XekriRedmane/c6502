@@ -135,31 +135,6 @@ NameSet static_names(const SymbolTable& symbols) {
   return out;
 }
 
-SymbolChanges symbol_changes(const SymbolTable& symbols, std::size_t before,
-                             const NameSet& carry_before) {
-  SymbolChanges out;
-  std::size_t k = 0;
-  for (const auto& [name, sym] : symbols) {
-    if (k++ < before) {
-      continue;
-    }
-    constexpr std::string_view kSuffix = ".reg";
-    if (name.size() <= kSuffix.size() ||
-        name.compare(name.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0 ||
-        !std::holds_alternative<LocalAttr>(sym.attrs)) {
-      throw InternalError("the stage added the symbol " + name +
-                          ", which isn't a register parameter's local");
-    }
-    out.reg_locals.push_back(name);
-  }
-  for (const auto& name : carry_functions(symbols)) {
-    if (!carry_before.contains(name)) {
-      out.carry.push_back(name);
-    }
-  }
-  return out;
-}
-
 AbiLayouts abi_layouts(const Abi& abi) {
   AbiLayouts out;
   for (const auto& [name, layout] : abi) {
@@ -173,8 +148,6 @@ AbiLayouts abi_layouts(const Abi& abi) {
 
 StageResult optimized_stage(const tac_ast::Program& unoptimized_tac, const tac_ast::Program& tac,
                             StageTables& tables, bool emit) {
-  const std::size_t symbols_before = tables.symbols.size();
-  const NameSet carry_before = carry_functions(tables.symbols);
   const ZpGlobals zp = plan(unoptimized_tac, tables, /*promote=*/true);
   const AsmContext ctx = context_of(zp);
   OptimizedFront front = optimized_front(tac, tables.c99, tables.symbols, tables.types, zp,
@@ -214,15 +187,11 @@ StageResult optimized_stage(const tac_ast::Program& unoptimized_tac, const tac_a
     out.emitted.new_functions = std::move(finished.new_functions);
     out.harness_symbols = merged(pairs_of(front.slot_symbols), zp_equs(zp));
   }
-  out.changes = symbol_changes(tables.symbols, symbols_before, carry_before);
-  out.changes.new_functions = out.emitted.new_functions;
   return out;
 }
 
 StageResult unoptimized_stage(const tac_ast::Program& tac, StageTables& tables,
                               bool link_metadata, bool emit) {
-  const std::size_t symbols_before = tables.symbols.size();
-  const NameSet carry_before = carry_functions(tables.symbols);
   const ZpGlobals zp = plan(tac, tables, /*promote=*/false);
   const AsmContext ctx = context_of(zp);
   const OrderedMap<std::string, ZpLayout> fixed = fixed_address_layouts(tac, tables.c99, &tables.types);
@@ -273,7 +242,6 @@ StageResult unoptimized_stage(const tac_ast::Program& tac, StageTables& tables,
     out.emitted.asm_prog = place_zp_globals(std::move(tail), zp, tables.footprints);
     out.harness_symbols = equs;
   }
-  out.changes = symbol_changes(tables.symbols, symbols_before, carry_before);
   return out;
 }
 

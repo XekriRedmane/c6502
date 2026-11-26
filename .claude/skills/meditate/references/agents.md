@@ -5,6 +5,7 @@ All agents are spawned as `subagent_type: "general-purpose"`. All agents are **r
 ## Common prompt inclusions
 
 Every agent prompt should include:
+- That the agent is read-only, skips the reflect skill, and ends with SubagentHandback
 - Brain snapshot path: `<scratchpad>/brain-snapshot.md`, in the session's scratchpad directory — Read this one file for all brain content
 - Brain vault path: `brain/`
 - Use Glob/Grep only for **codebase verification**, not for reading brain/skill files

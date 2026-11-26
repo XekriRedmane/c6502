@@ -9,8 +9,6 @@ description: >-
 
 Produce implementation plans grounded in project principles. Write plans to `brain/plans/`. **Do NOT implement anything — the plan is the deliverable.**
 
-**Use Tasks to track progress.** Create a task for each step (TaskCreate), mark each in_progress when starting and completed when done (TaskUpdate). Check TaskList after completing each step.
-
 ## Step 0 — Triage Complexity
 
 Before running the full planning workflow, assess whether this task actually needs a plan:
@@ -38,7 +36,7 @@ Use `AskUserQuestion` to resolve ambiguity before exploring the codebase:
 - Are there constraints (dependencies, platform requirements, existing patterns to preserve)?
 - What does "done" look like?
 
-Frame questions with concrete options. If the request is already clear, confirm scope boundaries briefly and move on.
+Ask only about scope that can't be inferred, with concrete options. When the request is clear, write the scope boundaries into the overview's Scope section and move on without asking.
 
 ## Step 3 — Explore Context with Subagents
 
@@ -54,9 +52,11 @@ Run multiple agents in parallel when investigating independent areas.
 
 ## Step 4 — Gather Domain Skills
 
-Check `.claude/skills/` and the user-level skills for any that match the plan's domain, and invoke those that do. If no installed skill covers a domain the plan touches, say so and name a skill that would help. Robert decides what gets installed. A plan for the C++ port extends docs/cpp_port.md instead of brain/plans/.
+Check `.claude/skills/` and the user-level skills for any that match the plan's domain, and invoke those that do. If no installed skill covers a domain the plan touches, say so and name a skill that would help. Robert decides what gets installed.
 
 ## Step 5 — Write the Plan
+
+A plan for the C++ port extends docs/cpp_port.md, and the rest of this step doesn't apply to it.
 
 Create the plan directory and files manually:
 
@@ -109,7 +109,7 @@ Each phase file must include:
 
 Order phases per the sequencing principle: infrastructure and shared types first, features after. Each phase should be independently shippable.
 
-**Skill changes:** If a phase involves creating or updating a skill (any file in `.claude/skills/` or `.agents/skills/`), the phase must instruct the implementer to use the `skill-creator` skill during that phase.
+**Skill changes:** If a phase involves creating or updating a skill (any file in `.claude/skills/`), the phase must instruct the implementer to use the `anthropic-skills:skill-creator` skill during that phase.
 
 ### Redesign check
 
@@ -138,13 +138,7 @@ Every phase **must** have a verification section with both:
 
 Per prove-it-works: "it compiles" is not verification. Every phase must describe how to **prove** the change works.
 
-## Step 7 — Update Plans Index
-
-Update `brain/plans/index.md` with a wikilink to the new plan's overview.
-
-Do NOT edit `brain/index.md` — the auto-index hook maintains it automatically.
-
-## Step 8 — Present to User
+## Step 7 — Present to User
 
 Summarize the plan: list the phases, scope boundaries, applicable skills, and verification approach. Ask the user to review the plan files in `brain/plans/`.
 

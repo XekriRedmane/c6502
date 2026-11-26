@@ -13,27 +13,29 @@ Every agent and session reads the brain, so a wrong or speculative note misleads
 
 ## Before Writing
 
-Read `brain/index.md` first. Then read the relevant entrypoint for your topic:
+Read `brain/index.md` first (the SessionStart hook has already shown it to the main session; a subagent reads the file). Then read the relevant entrypoint for your topic, and edit an existing note when possible:
 
+- `brain/codebase.md` for codebase notes
 - `brain/principles.md` for principle updates
-
-For directories without a dedicated index file yet, scan nearby files directly and edit an existing note when possible.
+- `brain/plans/index.md` for plans
 
 ## Structure
 
 ```
 brain/
 ├── index.md              <- root entry point, links to everything
+├── codebase.md           <- index for codebase/
 ├── principles.md         <- index for principles/
 ├── principles/           <- engineering and design principles
 ├── codebase/             <- project-specific knowledge and gotchas
 └── plans/                <- feature plans
+    └── index.md          <- index for plans/
 ```
 
 **Rules:**
 
 - One topic per file. `brain/codebase/deploy-gotchas.md`, not a mega-file.
-- Maintain existing index entrypoints: `brain/index.md`, `brain/principles.md`.
+- Maintain the section indexes by hand: `brain/codebase.md`, `brain/principles.md`, `brain/plans/index.md`. The hook maintains `brain/index.md`.
 - If you introduce a new top-level category, add an index-style entrypoint for it (links only, no inlined content).
 - `brain/index.md` is the root. Every brain file must be reachable from it.
 - File names: lowercase, hyphenated. `worktree-gotchas.md`.

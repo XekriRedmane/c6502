@@ -9,8 +9,6 @@ description: >-
 
 Thorough review grounded in project principles. **Do NOT make changes — the review is the deliverable.**
 
-**Use Tasks to track progress.** Create a task for each step below (TaskCreate), mark each in_progress when starting and completed when done (TaskUpdate). Check TaskList after each step.
-
 ## Step 1 — Load Principles
 
 Read `brain/principles.md`. Follow every `[[wikilink]]` and read each linked principle file. These principles govern review judgments — refer back to them when evaluating issues.
@@ -44,8 +42,6 @@ Check `.claude/skills/` and the user-level skills for any that match the review'
 
 **Invoke matched skills now** — read their output and use domain guidance to inform your review.
 
-For domains not covered by installed skills, use `find-skills` to search for a relevant skill.
-
 ## Step 5 — Assessment Pipeline
 
 Work through all sections in order. For each section, check against loaded principles.
@@ -63,7 +59,7 @@ If no plan phase applies, skip this subsection.
 - System design and component boundaries
 - Dependency graph and coupling
 - Data flow patterns and bottlenecks
-- Security architecture (auth, data access, API boundaries)
+- Which IR the change reads and writes, and whether ir_check (cpp/src/passes/ir_check.h) checks the invariants it relies on
 
 ### 3. Code Quality
 - Code organization and module structure
@@ -71,6 +67,7 @@ If no plan phase applies, skip this subsection.
 - Error handling patterns and missing edge cases (call out explicitly)
 - Over-engineering or under-engineering relative to principles; consider redesign-from-first-principles
 - Technical debt hotspots
+- A new or changed asm pass counts the Y and flag writes of Frame, Stack, Indirect, and IndirectZp operands through `asm_liveness::sets_up_y` and `sets_flags` (brain/codebase/asm-operand-side-effects.md)
 
 ### 4. Tests
 - Coverage gaps (unit, integration, e2e)
@@ -78,6 +75,7 @@ If no plan phase applies, skip this subsection.
 - Missing edge case coverage — be thorough
 - Untested failure modes and error paths
 - New behavior must have new tests. Tests must assert outcomes, not implementation details.
+- Each new test was shown to fail without its fix by reverting only the fixed source, and the `c6502_tests -tc="<pattern>"` case count includes the new cases.
 
 ### 5. Performance
 - Compile time on the corpus
@@ -92,6 +90,7 @@ If no plan phase applies, skip this subsection.
 For each changed file, check against loaded principles. Common violations:
 - Bolted-on changes instead of redesign (redesign-from-first-principles)
 - Missing verification (prove-it-works)
+- A check that would pass while examining nothing (make-checks-show-their-coverage)
 - Unnecessarily added complexity (subtract-before-you-add)
 
 ## Step 6 — Issue Format

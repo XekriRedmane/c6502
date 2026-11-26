@@ -1,18 +1,18 @@
 ---
 name: compile-example
-description: Use when user says "compile example", "compile <name>",
-  or invokes /compile-example with a filename — compiles a C source
-  file from the examples/ directory with full optimization
-  (-O) and writes the resulting 6502 assembly to
-  examples/<name>.asm
+description: Compiles examples/<name>.c with -O into examples/<name>.asm
+  and checks the optimized build against the unoptimized one in the
+  simulator. Triggers: "compile example", "compile <name>",
+  /compile-example.
 ---
 
 # Compile Example
 
 Takes a filename argument naming a source file in `examples/` and runs
 it through `compile.py -S -O`, writing the output to
-the matching `.asm` file in `examples/`. `-O` enables loop
-unrolling and the default zp_abi pipeline.
+the matching `.asm` file in `examples/`. `-O` runs the optimizer,
+including the unrolling of `[[c6502::unroll]]` loops and the default
+zp_abi convention.
 
 ## Input
 
@@ -135,14 +135,15 @@ function-under-test slice into the success report.
 Don't silently overwrite a prior good `.asm` with nothing — leave the
 old file in place. Then:
 
-1. **Diagnose.** The traceback's deepest c6502 frame names the
-   failing pass. Common shapes: `AssemblerError: unsupported Mov:
-   <src> -> <dst>` from `sim/assembler.py` means a peephole or
-   lowering produced a non-encodable atom; an `AssertionError` in
-   an asm pass usually means a precondition (Pseudos resolved,
-   widths matched, etc.) was violated. Find the pass that produced
-   the bad shape by grepping for the constructor that built it
-   (e.g. `IndexedData(` for an `IndexedData` operand). Read that
+1. **Diagnose.** Rerun the command with `C6502_CHECK_IR=1`. A failed
+   IR check is reported as `after <pass>, function '<name>': ...`
+   (cpp/src/passes/ir_check.cpp), which names the pass. An
+   `AssemblerError: unsupported Mov` from `sim/assembler.py` appears
+   only in the sim differential test, and means a pass produced an
+   atom the simulator's assembler can't encode. Find the pass that
+   produced the bad shape by grepping cpp/src/passes/ for the
+   constructor that built it (e.g. `IndexedData` for an
+   `IndexedData` operand). Read that
    pass's eligibility filter; the bug is almost always a missing
    case in the filter.
 
@@ -150,23 +151,29 @@ old file in place. Then:
    to find a small `.c` that triggers it (a few lines of the
    example often suffice). The small repro becomes the test case.
 
-3. **Write a failing test first.** Pick the matching tests/ file
-   for the pass (e.g. `tests/test_direct_index_load.py` for the
-   `direct_index_load` peephole) and add a unit test that builds
-   the asm shape and asserts the pass *doesn't* produce the bad
-   atom (or asserts the eligibility filter rejects the input).
-   Confirm the test fails before the fix. If the offending shape
-   is only producible end-to-end, fall back to an integration
-   test that runs `compile.py -S -O` on the small
-   repro.
+3. **Write a failing test first.** Add a doctest case to the pass's
+   `cpp/tests/test_<pass>.cpp` (e.g.
+   `cpp/tests/test_direct_index_load.cpp` for the
+   `direct_index_load` peephole) that builds the asm shape and
+   checks that the pass *doesn't* produce the bad atom (or that the
+   eligibility filter rejects the input). A new `.cpp` file needs
+   `cmake -S cpp -B cpp/build` again before it is compiled. Confirm
+   the test fails before the fix by putting the fix in and taking it
+   out of the source only, never with `git stash`. If the offending
+   shape is only producible end-to-end, fall back to a test in
+   `tests/test_<pass>.py` that runs `_run_source("codegen", src,
+   optimize=True)` on the small repro.
 
 4. **Fix the pass.** Tighten the eligibility filter (or whatever
    the root cause is). Avoid working around the bug downstream;
    fix it where the bad shape originates.
 
-5. **Re-run the unit test.** It must now pass. Also run the
-   broader test suite for that pass module (`uv run python -m
-   unittest tests.test_<pass>`) to catch regressions.
+5. **Re-run the unit test.** Rebuild (`cmake --build cpp/build
+   --config Release --parallel`, with Visual Studio's cmake on the
+   PATH), run `cpp/build/bin/c6502_tests -tc="<pass>*"`, and check
+   that the case count includes the new case. It must now pass. Then
+   run `uv run python -m unittest tests.test_<pass>` to catch
+   regressions.
 
 6. **Write a sim differential test for the example.** Add
    `tests/test_<example>_sim.py` modeled after
@@ -182,16 +189,25 @@ old file in place. Then:
    - Use `sim.harness.build_sim(_PROGRAM, optimize=...)` to drive
      each variant; cap `max_cycles` generously and assert no
      timeout.
+   - Decorate each class with `@needs_c6502cpp` from
+     `tests/cpp_build.py`, as the model does.
 
 7. **Run the sim differential test.** Both pipelines must produce
    identical observable state. If the optimized variant diverges
    from the unoptimized variant, the optimizer has another bug —
    loop back to step 1.
 
-8. **Re-run the full chapter test suite** (`uv run python -m
-   unittest`) to confirm no regressions. Then re-run the original
+8. **Re-run the checks** to confirm no regressions:
+   `C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q`,
+   `ctest --test-dir cpp/build -C Release --output-on-failure`,
+   `cpp/build/bin/c6502cpp check-golden -j 12` (and `--update`, after
+   reading each changed job, when the output changed on purpose),
+   `cpp/build/bin/c6502cpp check-frozen`, and `uv run python -m
+   unittest tests.test_example_outputs`. Then re-run the original
    `compile.py` command from "Command" above; it should now
-   succeed.
+   succeed. golden/O.txt has a job for each example, so a new
+   example needs one added, modelled on its neighbours, and
+   `check-golden --update`.
 
 9. Proceed to "On success".
 

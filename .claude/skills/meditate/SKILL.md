@@ -1,8 +1,8 @@
 ---
 name: meditate
 description: >-
-  Audit and evolve the brain vault — prune outdated content, discover cross-cutting principles,
-  review skills for structural encoding opportunities. Triggers: "meditate", "audit the brain".
+  Audits brain/, CLAUDE.md, auto-memory, and the project's skills, then applies the fixes.
+  Triggers: "meditate", "audit the brain".
 ---
 
 # Meditate

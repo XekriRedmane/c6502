@@ -1,8 +1,8 @@
 ---
 name: reflect
 description: >-
-  Reflect on the conversation and update the brain. Use when wrapping up, after mistakes
-  or corrections, or when significant codebase knowledge was gained. Triggers: "reflect",
+  Saves this session's mistakes, corrections, and codebase knowledge to c6502's brain/
+  vault or its skills. Subagents run it before handing back. Triggers: "reflect",
   "remember this".
 ---
 
@@ -12,7 +12,7 @@ Review the conversation and persist learnings — to `brain/`, to skill files, o
 
 ## Process
 
-1. **Read `brain/index.md`** to understand what notes already exist
+1. **Read `brain/index.md`** to understand what notes already exist (the SessionStart hook has already shown it to the main session; a subagent reads the file)
 2. **Scan the conversation** for:
    - Mistakes made and corrections received
    - User preferences and workflow patterns
@@ -50,7 +50,7 @@ A bug found along the way gets fixed now, with a test. Other follow-up work that
 
 ### In a subagent
 
-A subagent runs this skill before its SubagentHandback. The SubagentStop hook can't make a subagent reflect once it has handed back its report. Before committing the notes, compare `git diff --numstat` with `git diff --numstat --ignore-cr-at-eol`, and restore the line endings of any file whose counts differ.
+A subagent runs this skill before its SubagentHandback. The SubagentStop hook can't make a subagent reflect once it has handed back its report. Before committing the notes, run `python ~/.claude/skills/exact-edits/eol.py` from the worktree's root, and `eol.py --fix` if it reports a file whose ending differs from HEAD. A subagent whose brief says it is read-only, such as meditate's auditor and reviewer, skips this skill.
 
 ## Summary
 

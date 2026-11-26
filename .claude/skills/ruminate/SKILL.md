@@ -73,7 +73,7 @@ Apply only the changes the user approves. Follow brain writing conventions:
 
 - One topic per file, organized in directories
 - Use `[[wikilinks]]` to connect related notes
-- Update `brain/index.md` after all changes
+- The hook rebuilds `brain/index.md`. Update `brain/codebase.md` and `brain/principles.md` by hand
 - Default to updating existing notes over creating new ones
 
 ### 7. Clean up
@@ -89,4 +89,3 @@ rm -rf "$OUT_DIR"
 - **Filter aggressively.** Most conversations will have low signal — automated tasks, trivial exchanges, already-captured knowledge. Only surface what's genuinely new and impactful.
 - **Prefer reduction.** If a finding is a special case of an existing brain principle, update the existing note rather than creating a new one.
 - **Quote the user.** When a finding stems from a direct user correction, include the user's words — they carry the most signal about what matters.
-- **Shut down agents** when analysis is complete. Don't leave them idle.

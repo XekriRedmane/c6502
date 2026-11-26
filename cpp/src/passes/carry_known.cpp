@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -18,12 +19,13 @@ using ::c6502::asdl::isa;
 
 using InstrList = std::vector<ir::Type_instruction>;
 
-constexpr int kUnknown = -1;
-constexpr int kUnseen = -2;
+// What is known of C before an instruction. `kUnseen` is the state of
+// an instruction no path from the function's entry reaches yet.
+enum class Carry { kClear, kSet, kUnknown, kUnseen };
 
 struct Edge {
   std::size_t from = 0;
-  int c = kUnknown;
+  Carry c = Carry::kUnknown;
 };
 
 bool keeps_c(const ir::Type_instruction& instr) {
@@ -31,18 +33,19 @@ bool keeps_c(const ir::Type_instruction& instr) {
              ir::BitTest, ir::Label, ir::Branch, ir::Jump>(instr);
 }
 
-int after(const ir::Type_instruction& instr, int c) {
+Carry after(const ir::Type_instruction& instr, Carry c) {
   if (isa<ir::SetCarry>(instr)) {
-    return 1;
+    return Carry::kSet;
   }
   if (isa<ir::ClearCarry>(instr)) {
-    return 0;
+    return Carry::kClear;
   }
-  return keeps_c(instr) ? c : kUnknown;
+  return keeps_c(instr) ? c : Carry::kUnknown;
 }
 
-std::vector<std::pair<std::size_t, int>> edges(const InstrList& instrs, const LabelMap& labels,
-                                               std::size_t i, int c) {
+std::vector<std::pair<std::size_t, Carry>> edges(const InstrList& instrs,
+                                                 const LabelMap& labels, std::size_t i,
+                                                 Carry c) {
   const auto& ins = instrs[i];
   if (isa<ir::Return, ir::Ret>(ins)) {
     return {};
@@ -55,16 +58,16 @@ std::vector<std::pair<std::size_t, int>> edges(const InstrList& instrs, const La
     return {{static_cast<std::size_t>(at), c}};
   }
   if (const auto* b = as<ir::Branch>(ins)) {
-    int taken = c;
-    int fall = c;
+    Carry taken = c;
+    Carry fall = c;
     if (isa<ir::CS>(b->cond)) {
-      taken = 1;
-      fall = 0;
+      taken = Carry::kSet;
+      fall = Carry::kClear;
     } else if (isa<ir::CC>(b->cond)) {
-      taken = 0;
-      fall = 1;
+      taken = Carry::kClear;
+      fall = Carry::kSet;
     }
-    std::vector<std::pair<std::size_t, int>> out;
+    std::vector<std::pair<std::size_t, Carry>> out;
     if (i + 1 < instrs.size()) {
       out.emplace_back(i + 1, fall);
     }
@@ -81,36 +84,36 @@ std::vector<std::pair<std::size_t, int>> edges(const InstrList& instrs, const La
 }
 
 struct CarryStates {
-  std::vector<int> before;
+  std::vector<Carry> before;
   std::vector<std::vector<Edge>> incoming;
 };
 
 CarryStates carry_states(const InstrList& instrs) {
   const LabelMap labels(instrs);
   CarryStates s;
-  s.before.assign(instrs.size(), kUnseen);
+  s.before.assign(instrs.size(), Carry::kUnseen);
   s.incoming.resize(instrs.size());
   if (instrs.empty()) {
     return s;
   }
-  s.before[0] = kUnknown;
+  s.before[0] = Carry::kUnknown;
   std::vector<std::size_t> work = {0};
   while (!work.empty()) {
     const std::size_t i = work.back();
     work.pop_back();
     for (const auto& [j, c] : edges(instrs, labels, i, s.before[i])) {
-      const int old = s.before[j];
-      if (old == kUnseen) {
+      const Carry old = s.before[j];
+      if (old == Carry::kUnseen) {
         s.before[j] = c;
         work.push_back(j);
-      } else if (old != kUnknown && old != c) {
-        s.before[j] = kUnknown;
+      } else if (old != Carry::kUnknown && old != c) {
+        s.before[j] = Carry::kUnknown;
         work.push_back(j);
       }
     }
   }
   for (std::size_t i = 0; i < instrs.size(); ++i) {
-    if (s.before[i] == kUnseen) {
+    if (s.before[i] == Carry::kUnseen) {
       continue;
     }
     for (const auto& [j, c] : edges(instrs, labels, i, s.before[i])) {
@@ -120,14 +123,16 @@ CarryStates carry_states(const InstrList& instrs) {
   return s;
 }
 
-int setter_value(const ir::Type_instruction& ins) {
+// Returns what a `SEC` or `CLC` sets C to, or nothing for any other
+// instruction.
+std::optional<Carry> setter_value(const ir::Type_instruction& ins) {
   if (isa<ir::SetCarry>(ins)) {
-    return 1;
+    return Carry::kSet;
   }
   if (isa<ir::ClearCarry>(ins)) {
-    return 0;
+    return Carry::kClear;
   }
-  return -1;
+  return std::nullopt;
 }
 
 InstrList drop_zero_adds(InstrList instrs) {
@@ -137,12 +142,12 @@ InstrList drop_zero_adds(InstrList instrs) {
   out.reserve(instrs.size());
   for (std::size_t i = 0; i < instrs.size(); ++i) {
     const auto& ins = instrs[i];
-    const int c = s.before[i];
+    const Carry c = s.before[i];
     bool no_op = false;
     if (const auto* x = as<ir::Add>(ins)) {
-      no_op = c == 0 && is_reg_a(x->dst) && x->src == ir::Type_operand(ir::Imm{.value = 0});
+      no_op = c == Carry::kClear && is_reg_a(x->dst) && x->src == ir::Type_operand(ir::Imm{.value = 0});
     } else if (const auto* y = as<ir::Sub>(ins)) {
-      no_op = c == 1 && is_reg_a(y->dst) && y->src == ir::Type_operand(ir::Imm{.value = 0});
+      no_op = c == Carry::kSet && is_reg_a(y->dst) && y->src == ir::Type_operand(ir::Imm{.value = 0});
     }
     if (no_op && v_dead_at(instrs, labels, i + 1)) {
       bool flags_ok = flags_dead_at(instrs, labels, i + 1);
@@ -164,8 +169,8 @@ InstrList drop_known(InstrList instrs) {
   InstrList out;
   out.reserve(instrs.size());
   for (std::size_t i = 0; i < instrs.size(); ++i) {
-    const int v = setter_value(instrs[i]);
-    if (v < 0 || s.before[i] == kUnseen || s.before[i] != v) {
+    const std::optional<Carry> v = setter_value(instrs[i]);
+    if (!v || s.before[i] != *v) {
       out.push_back(std::move(instrs[i]));
     }
   }
@@ -177,8 +182,8 @@ InstrList move_into_loops(InstrList instrs) {
   std::set<std::size_t> drop;
   std::map<std::size_t, std::size_t> move;
   for (std::size_t i = 0; i < instrs.size(); ++i) {
-    const int want = setter_value(instrs[i]);
-    if (want < 0 || s.before[i] == kUnseen) {
+    const std::optional<Carry> want = setter_value(instrs[i]);
+    if (!want || s.before[i] == Carry::kUnseen) {
       continue;
     }
     std::size_t p = i;
@@ -203,7 +208,7 @@ InstrList move_into_loops(InstrList instrs) {
           ++falls;
         } else {
           ++others;
-          others_agree = others_agree && e.c == want;
+          others_agree = others_agree && e.c == *want;
         }
       }
     }
@@ -236,7 +241,7 @@ void rewrite_function(ir::Function& fn) {
   InstrList out;
   out.reserve(instrs.size());
   for (std::size_t i = 0; i < instrs.size(); ++i) {
-    if (setter_value(instrs[i]) < 0 || !c_dead_at(instrs, labels, i + 1)) {
+    if (!setter_value(instrs[i]) || !c_dead_at(instrs, labels, i + 1)) {
       out.push_back(instrs[i]);
     }
   }

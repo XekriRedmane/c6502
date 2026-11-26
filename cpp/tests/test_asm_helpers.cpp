@@ -269,6 +269,26 @@ TEST_CASE("collect_address_taken_names reads a label's halves in every operand")
                        "__local_f__e"});
 }
 
+TEST_CASE("asm_dead_store: DPTR dies at a direct call and at a return") {
+  CHECK(asm_dead_store::is_dead_at_exit(data("DPTR", 1), nullptr));
+  CHECK_FALSE(asm_dead_store::is_dead_at_exit(data("g"), nullptr));
+  const auto after_call = [](const char* callee) {
+    const List instrs = {
+        mov(kA, data("DPTR")),
+        ir::Call{.name = callee},
+        mov(data("DPTR"), kA),
+        ret(true),
+    };
+    return asm_dead_store::mem_dead_after(instrs, 0, data("DPTR"), kCtx, "f");
+  };
+  CHECK(after_call("g"));
+  CHECK_FALSE(after_call("icall"));
+  const List to_return = {mov(kA, data("DPTR")), ret()};
+  CHECK(asm_dead_store::mem_dead_after(to_return, 0, data("DPTR"), kCtx, "f"));
+  const List read = {mov(kA, data("DPTR")), mov(data("DPTR"), kA), ret(true)};
+  CHECK_FALSE(asm_dead_store::mem_dead_after(read, 0, data("DPTR"), kCtx, "f"));
+}
+
 TEST_CASE("asm_dead_store::successors") {
   const List instrs = {
       branch(ir::EQ{}, ".t"),

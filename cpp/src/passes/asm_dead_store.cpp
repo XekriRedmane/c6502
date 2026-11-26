@@ -22,6 +22,15 @@ bool starts_with(std::string_view s, std::string_view prefix) {
   return s.substr(0, prefix.size()) == prefix;
 }
 
+// Returns whether `target` is a byte of DPTR, the scratch pointer that
+// a function called directly neither reads on entry nor keeps, so its
+// value dies at such a call and at a return. The `icall` trampoline
+// jumps through it.
+bool is_call_scratch(const ir::Type_operand& target) {
+  const auto* d = as<ir::Data>(target);
+  return d != nullptr && d->name == "DPTR";
+}
+
 bool operands_equal_exact(const ir::Type_operand& a, const ir::Type_operand& b) {
   if (const auto* za = as<ir::ZP>(a)) {
     const auto* zb = as<ir::ZP>(b);
@@ -43,7 +52,6 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
                  const ir::Type_operand& target) {
   const bool is_private =
       call_cannot_touch(target, local_prefix, address_taken_names);
-  const auto* target_data = as<ir::Data>(target);
   std::unordered_set<std::size_t> visited;
   std::vector<std::size_t> stack = successors(instrs, start, labels);
   while (!stack.empty()) {
@@ -60,8 +68,7 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
       }
       continue;
     }
-    if (call != nullptr && call->name != "icall" && target_data != nullptr &&
-        target_data->name == "DPTR") {
+    if (call != nullptr && call->name != "icall" && is_call_scratch(target)) {
       continue;
     }
     if (is_opaque(next)) {
@@ -153,10 +160,10 @@ bool is_dead_at_exit(const ir::Type_operand& target,
     const asdl::Int addr = zp->address + zp->offset;
     return kPoolLo <= addr && addr < kPoolHi;
   }
+  if (is_call_scratch(target)) {
+    return true;
+  }
   if (const auto* d = as<ir::Data>(target)) {
-    if (d->name == "DPTR") {
-      return true;
-    }
     if (starts_with(d->name, "__local_")) {
       return true;
     }

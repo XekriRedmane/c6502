@@ -1,5 +1,6 @@
 // Calls of the TAC optimizer's passes on inputs that the corpus doesn't
 // reach, written by hand, each with the result the pass must give.
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -7,6 +8,7 @@
 #include "asdl/runtime.h"
 #include "doctest.h"
 #include "errors.h"
+#include "passes/optimization/narrow_widened_arith.h"
 #include "passes/optimization/ssa_construction.h"
 #include "passes/optimization/ssa_destruction.h"
 #include "stage_case.h"
@@ -205,4 +207,19 @@ TEST_CASE("to_ssa places a Phi at the frontier of a Phi it placed") {
     }
   }
   CHECK(phi_blocks == std::vector<std::string>{".loop", ".join"});
+}
+
+TEST_CASE("var_unchanged doesn't look past an instruction a rewrite replaced with a list") {
+  c6502::passes::SymbolTable symbols;
+  symbols.insert_or_assign("g", c6502::passes::Symbol{.type = c6502::c99_ast::Int{},
+                                                      .attrs = c6502::passes::LocalAttr{}});
+  c6502::passes::NameSet ssa;
+  c6502::passes::framework::PassContext ctx{.symbols = &symbols, .ssa_dsts = &ssa};
+  c6502::passes::framework::DefUseEnv env;
+  const ir::Type_instruction copy =
+      ir::Copy{.src = ir::Var{.name = "g"}, .dst = ir::Var{.name = "t"}};
+  env.instructions = {copy, std::nullopt, copy};
+  CHECK_FALSE(c6502::passes::var_unchanged(ir::Var{.name = "g"}, 0, 2, env, ctx));
+  env.instructions[1] = copy;
+  CHECK(c6502::passes::var_unchanged(ir::Var{.name = "g"}, 0, 2, env, ctx));
 }

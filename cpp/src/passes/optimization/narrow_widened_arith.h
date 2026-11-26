@@ -13,8 +13,9 @@ namespace c6502::passes {
 // held at `env.instructions[start]`. An SSA-renamed Var has one
 // definition, so it always does. Any other Var must be non-volatile,
 // with `start` before `end` in one block and nothing between them that
-// may write it: no label, return, or jump, no call or store, and no
-// instruction that names it as a destination. `ctx.ssa_dsts` and
+// may write it: no label, return, or jump, no call or store, no
+// instruction that names it as a destination, and no instruction that
+// an earlier rewrite replaced with a list. `ctx.ssa_dsts` and
 // `ctx.symbols` must not be null.
 bool var_unchanged(const tac_ast::Var& var, std::size_t start, std::size_t end,
                    const framework::DefUseEnv& env, const framework::PassContext& ctx);

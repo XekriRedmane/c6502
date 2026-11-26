@@ -71,10 +71,7 @@ bool var_unchanged(const ir::Var& var, std::size_t start, std::size_t end,
   }
   for (std::size_t k = start + 1; k < end; ++k) {
     const auto& entry = env.instructions[k];
-    if (!entry) {
-      continue;
-    }
-    if (ends_block_or_writes_memory(*entry)) {
+    if (!entry || ends_block_or_writes_memory(*entry)) {
       return false;
     }
     for (const auto name : defs_in(*entry)) {

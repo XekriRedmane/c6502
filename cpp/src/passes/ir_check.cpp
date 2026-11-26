@@ -31,10 +31,12 @@ using ::c6502::asdl::isa;
 
 bool g_enabled = false;
 
+constexpr std::size_t kProblemsShown = 5;
+
 std::string message(std::string_view after, std::string_view name,
                     const std::vector<std::string>& problems) {
   std::string out = "after " + std::string(after) + ", function '" + std::string(name) + "': ";
-  for (std::size_t i = 0; i < problems.size() && i < 5; ++i) {
+  for (std::size_t i = 0; i < problems.size() && i < kProblemsShown; ++i) {
     if (i != 0) {
       out += "; ";
     }

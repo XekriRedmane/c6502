@@ -2,7 +2,9 @@
 // Python unit tests make (tests/test_constant_expression.py), each
 // recorded with Python's result: the expression's dump, and the value
 // with the type's repr, or the message of the ConstantExpressionError.
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "c99_ast.h"
 #include "doctest.h"
@@ -83,4 +85,27 @@ TEST_CASE("sizeof of a string literal counts its code points and the null") {
   const auto [value, type] = ce::evaluate_integer_constant_expression(exp);
   CHECK(value == 4);
   CHECK(asdl::py_repr(type) == "UInt()");
+}
+
+TEST_CASE("an error names a named constant as the program spells it") {
+  using namespace c6502;
+  const ce::NamedConstants scope(
+      [](const c99_ast::Type_exp&) -> std::optional<ce::NamedConstant> {
+        return ce::NamedConstant{.type = c99_ast::Double{}, .value = {}};
+      });
+  const std::pair<const char*, const char*> cases[] = {
+      {R"(Var("@3.d" Double))", "named constant `d` doesn't"},
+      {R"(Var("g" Double))", "named constant `g` doesn't"},
+      {R"(Dot(Var("@4.s" None) "m" Double))", "named constant `s.m` doesn't"},
+  };
+  for (const auto& [input, want] : cases) {
+    CAPTURE(input);
+    std::string got;
+    try {
+      ce::evaluate_integer_constant_expression(asdl::load<c99_ast::Type_exp>(input));
+    } catch (const ce::ConstantExpressionError& e) {
+      got = e.what();
+    }
+    CHECK(got.starts_with(want));
+  }
 }

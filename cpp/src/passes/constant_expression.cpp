@@ -229,17 +229,8 @@ std::string describe(const Exp& exp) {
   if (asdl::isa<ir::CompoundLiteral>(exp)) {
     return "(a compound literal)";
   }
-  std::string name;
-  if (const auto* v = std::get_if<ir::Var>(&exp)) {
-    name = v->name;
-  }
-  if (!name.empty() && name[0] == '@') {
-    const std::size_t dot = name.find('.');
-    if (dot != std::string::npos) {
-      name = name.substr(dot + 1);
-    }
-  }
-  return "`" + name + "`";
+  const auto* v = std::get_if<ir::Var>(&exp);
+  return "`" + (v != nullptr ? type_checking::display_name(v->name) : std::string()) + "`";
 }
 
 struct FloatingOperand {

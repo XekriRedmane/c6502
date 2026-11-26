@@ -1,6 +1,7 @@
 // Tests of the parts of the TAC CFG (src/passes/optimization/cfg.*) that
 // the recorded cases of tests/test_cfg.py don't reach: flattening a
 // graph back into a function, and a jump to a label no block has.
+#include <cstddef>
 #include <string>
 
 #include "asdl/runtime.h"
@@ -49,6 +50,27 @@ TEST_CASE("cfg_to_function drops the blocks left out of block_order") {
         "Function(\"main\" true [\"@1.p\"] [\n"
         "  Jump(\".end\")\n"
         "])\n");
+}
+
+TEST_CASE("is_terminator is true of the returns and jumps and of nothing else") {
+  const auto fn = c6502::asdl::load<tac::Function>(
+      "Function(\"main\" true [] [\n"
+      "  Ret(Constant(ConstInt(0)))\n"
+      "  Jump(\".l\")\n"
+      "  JumpIfTrue(Var(\"x\") \".l\")\n"
+      "  JumpIfFalse(Var(\"x\") \".l\")\n"
+      "  JumpIfCmp(LessThan Var(\"x\") Var(\"y\") \".l\")\n"
+      "  JumpIfMasked(Var(\"x\") 128 true \".l\")\n"
+      "  Label(\".l\")\n"
+      "  FunctionCall(\"f\" [] None false false)\n"
+      "  FunctionCall(\"g\" [] None false true)\n"
+      "  Copy(Var(\"x\") Var(\"y\"))\n"
+      "])\n");
+  REQUIRE(fn.instructions.size() == 10);
+  for (std::size_t i = 0; i < fn.instructions.size(); ++i) {
+    CAPTURE(i);
+    CHECK(cfg::is_terminator(fn.instructions[i]) == (i < 6));
+  }
 }
 
 TEST_CASE("build_cfg rejects a jump to a label no block starts with") {

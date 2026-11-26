@@ -29,11 +29,6 @@ bool is_volatile_qualified(const c99_ast::Type_data_type& t) {
   return isa<c99_ast::Volatile>(*cur);
 }
 
-bool ends_block(const tac::Type_instruction& instr) {
-  return isa<tac::Ret, tac::Jump, tac::JumpIfTrue, tac::JumpIfFalse, tac::JumpIfCmp,
-             tac::JumpIfMasked>(instr);
-}
-
 bool register_only(const tac::Type_instruction& instr) {
   return isa<tac::Copy, tac::Binary, tac::Unary, tac::SignExtend, tac::ZeroExtend,
              tac::Truncate>(instr);
@@ -277,7 +272,7 @@ SavePlan plan_saves(const tac::Function& fn, const NameSet& members, const Symbo
     }
     const auto* call = as<tac::FunctionCall>(instr);
     if (call == nullptr || members.count(call->name) == 0) {
-      if (ends_block(instr)) {
+      if (tac_cfg::is_terminator(instr)) {
         block_start = i + 1;
       }
       continue;

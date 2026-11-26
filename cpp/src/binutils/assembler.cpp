@@ -343,13 +343,11 @@ Int const_op(const std::string& op, Int a, Int b, const std::string& where) {
 
 struct Constants {
   const std::map<std::string, Int>* values = nullptr;
-  const std::map<std::string, std::optional<Int>>* overlay = nullptr;
+  const std::map<std::string, Int>* overlay = nullptr;
 
   const Int* operator()(const std::string& name) const {
     if (overlay != nullptr) {
-      if (const auto it = overlay->find(name); it != overlay->end() && it->second) {
-        return &*it->second;
-      }
+      if (const auto it = overlay->find(name); it != overlay->end()) return &it->second;
     }
     const auto it = values->find(name);
     return it == values->end() ? nullptr : &it->second;
@@ -551,7 +549,15 @@ class Assembler {
   Assembler(std::string_view text, std::string_view filename, const LinkSymbols& link_symbols,
             bool keep_source)
       : filename_(filename), lines_(pcpp::splitlines(text)), keep_source_(keep_source) {
-    for (const auto& [name, value] : link_symbols) link_symbols_[name] = value;
+    for (const auto& [name, value] : link_symbols) {
+      if (value) {
+        link_addresses_[name] = *value;
+        link_outside_zp_.erase(name);
+      } else {
+        link_outside_zp_.insert(name);
+        link_addresses_.erase(name);
+      }
+    }
   }
 
   elf::ElfFile run() {
@@ -630,7 +636,7 @@ class Assembler {
 
     for (const Equ& equ : equs) {
       const std::string w = where(equ.line);
-      const Constants known{.values = &constants_, .overlay = &link_symbols_};
+      const Constants known{.values = &constants_, .overlay = &link_addresses_};
       const Value v = evaluate(*parse_expr(equ.text, w), known, w);
       Int value = v.addend;
       if (v.symbol) {
@@ -642,7 +648,7 @@ class Assembler {
         error(w + ": " + equ.name + " is given two values");
       }
       if (is_link_placed(equ.name, zp_objects_)) {
-        link_symbols_.emplace(equ.name, value);
+        if (!link_outside_zp_.contains(equ.name)) link_addresses_.emplace(equ.name, value);
       } else {
         constants_[equ.name] = value;
         if (const auto it = std::find_if(abs_symbols_.begin(), abs_symbols_.end(),
@@ -665,8 +671,8 @@ class Assembler {
     if (const auto it = constants_.find(*v.symbol); it != constants_.end()) {
       return py_int::add(it->second, v.addend, w);
     }
-    if (const auto it = link_symbols_.find(*v.symbol); it != link_symbols_.end() && it->second) {
-      return py_int::add(*it->second, v.addend, w);
+    if (const auto it = link_addresses_.find(*v.symbol); it != link_addresses_.end()) {
+      return py_int::add(it->second, v.addend, w);
     }
     return std::nullopt;
   }
@@ -674,7 +680,7 @@ class Assembler {
   bool in_zero_page(const Value& v, const std::string& w) const {
     if (v.select != Byte::kWhole) return true;
     if (const auto value = known_value(v, w)) return *value >= 0 && *value <= 0xFF;
-    if (link_symbols_.contains(*v.symbol)) return false;
+    if (link_outside_zp_.contains(*v.symbol)) return false;
     return is_runtime_name(*v.symbol) && v.addend < 0x100;
   }
 
@@ -1043,7 +1049,8 @@ class Assembler {
   std::string filename_;
   std::vector<std::string> lines_;
   bool keep_source_;
-  std::map<std::string, std::optional<Int>> link_symbols_;
+  std::map<std::string, Int> link_addresses_;
+  std::set<std::string> link_outside_zp_;
   std::vector<Item> items_;
   std::optional<std::string> meta_text_;
   std::set<std::string, std::less<>> zp_objects_;

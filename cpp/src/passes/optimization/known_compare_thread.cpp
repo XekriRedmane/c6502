@@ -24,7 +24,7 @@ using framework::Instrs;
 using IK = ir::Kind_instruction;
 using CK = ir::Kind_const;
 
-constexpr int kSteps = 16;
+constexpr int kMaxWalkInstructions = 16;
 
 constexpr const char* kLabelPrefix = "cthread@";
 
@@ -361,7 +361,7 @@ std::optional<std::size_t> walk(FunctionInfo& info, Facts facts, const std::stri
   std::set<std::string, std::less<>> skipped;
   std::set<std::size_t> seen;
   int steps = 0;
-  while (i < instrs.size() && steps < kSteps) {
+  while (i < instrs.size() && steps < kMaxWalkInstructions) {
     const auto& ins = instrs[i];
     if (std::holds_alternative<ir::Label>(ins)) {
       ++i;

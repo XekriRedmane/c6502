@@ -19,11 +19,11 @@ the three tests assert (a) unopt matches hand-computed expected,
 (b) opt matches expected, (c) opt and unopt agree byte-for-byte.
 """
 
-import shutil
 import unittest
 
 import sim.runtime as rt_mod
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Inlined do_ascend source plus stubs for `sfx_tone` /
@@ -250,7 +250,7 @@ def _flatten(rows: list[list[int]]) -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestDoAscendSim(unittest.TestCase):
     """Differential opt vs unopt check on `do_ascend`."""
 

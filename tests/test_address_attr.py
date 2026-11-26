@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import io
 import re
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,8 +19,8 @@ from unittest.mock import patch
 
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -319,7 +318,7 @@ class TestSim(unittest.TestCase):
                 self.assertEqual(got & 0xFFFF, 0xC800)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestLink(unittest.TestCase):
 
     _ROM = (

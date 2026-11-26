@@ -23,11 +23,11 @@ included, are doctest cases of the C++ port
 (cpp/tests/test_chapter_13_calls.cpp).
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -44,7 +44,7 @@ _INCOMPATIBLE_VALID = frozenset()
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter13Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C13 / "valid").rglob("*.c"))
@@ -58,7 +58,7 @@ class TestChapter13Valid(unittest.TestCase):
                 _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter13InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C13 / "invalid_types").rglob("*.c"))

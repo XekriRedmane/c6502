@@ -19,11 +19,11 @@ arithmetic wraparound, common-type promotion, static initializers
 across width boundaries.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -36,7 +36,7 @@ _INCOMPATIBLE_VALID = frozenset()
 _EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter12Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C12 / "valid").rglob("*.c"))
@@ -58,7 +58,7 @@ class TestChapter12Valid(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter12InvalidLabels(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C12 / "invalid_labels").rglob("*.c"))
@@ -71,7 +71,7 @@ class TestChapter12InvalidLabels(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter12InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C12 / "invalid_types").rglob("*.c"))

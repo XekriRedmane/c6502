@@ -10,15 +10,14 @@ pipelines for the values the simulator computes.
 from __future__ import annotations
 
 import random
-import shutil
 import unittest
 
 import builtin_functions as bf
 import tac_ast
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str, optimize: bool) -> str:
@@ -95,7 +94,7 @@ def _binaries(prog: tac_ast.Program, fn: str) -> list:
     raise KeyError(fn)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestTac(unittest.TestCase):
 
     def test_constants_fold_in_both_pipelines(self) -> None:
@@ -129,7 +128,7 @@ class TestTac(unittest.TestCase):
                 self.assertEqual(_run_tac(src) & 0xFFFF, expected)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestCodegen(unittest.TestCase):
     def test_score(self) -> None:
         src = (
@@ -364,7 +363,7 @@ def _sweeps():
     return out
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSimulator(unittest.TestCase):
     def _run(self, src: str, optimize: bool):
         sim = build_sim(src, optimize=optimize)

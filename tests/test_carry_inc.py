@@ -17,13 +17,13 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestCarryIncSim(unittest.TestCase):
 
     _BYTES = [0x00, 0x01, 0x7F, 0x80, 0xFE, 0xFF]

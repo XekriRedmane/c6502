@@ -28,17 +28,16 @@ script's run, and the two disks must end the same.
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from tests.cpp_build import needs_c6502cpp
 
 _DIR = Path(__file__).parent.parent / "examples" / "lode_runner"
 _UNITS = [
     "main", "level", "player", "input", "guards", "timers", "screen",
     "hiscore", "editor", "sprites", "sound", "wipe",
 ]
-_HAVE_PCPP = shutil.which("pcpp") is not None
 _LR_DIR = os.environ.get("LODE_RUNNER_DIR")
 
 # GAME_MODE's address, which both programs keep.
@@ -70,7 +69,7 @@ def _build(tmp: str) -> Path:
     return linked
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestGoldOutputs(unittest.TestCase):
     """Each unit's output matches the checked-in file. To bless a new
     one, run `uv run python compile.py examples/lode_runner/<unit>.c -S
@@ -174,7 +173,7 @@ def _function_names(exe) -> dict[int, str]:
     }
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp not available")
+@needs_c6502cpp
 @unittest.skipUnless(
     _LR_DIR, "set LODE_RUNNER_DIR to the lode_runner_reveng directory")
 class TestRuns(unittest.TestCase):

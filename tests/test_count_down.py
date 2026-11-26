@@ -4,11 +4,11 @@ of such loops in both pipelines."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestCountDownSim(unittest.TestCase):
 
     _SRC = """

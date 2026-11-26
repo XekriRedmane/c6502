@@ -15,11 +15,11 @@ two bytes to `result_log`: the pre-call row and the post-call row at
 the targeted slot.
 """
 
-import shutil
 import unittest
 
 import sim.runtime as rt_mod
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Source: examples/apply_bobble.c, inlined together with concrete
@@ -111,7 +111,7 @@ def _expected() -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestApplyBobbleSim(unittest.TestCase):
     """Differential opt vs unopt check on `apply_bobble`.
 

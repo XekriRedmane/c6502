@@ -14,11 +14,11 @@ memory model. We skip these rather than expectedFailure them, because
 there's no path to making them pass.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -41,7 +41,7 @@ _EXPECTED_FAILURES_CODEGEN = frozenset({
 })
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter15Valid(unittest.TestCase):
     """Each chapter_15 valid file must compile through `-S`,
     except those listed in `_EXPECTED_FAILURES_CODEGEN` (must fail) or

@@ -6,11 +6,11 @@ goes, and a conditional jump's target block is placed right after the
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 
 # The `if (x == 20 || x == 10) r = x == 20 ? 1 : 2;` shape the
@@ -71,7 +71,7 @@ def _model(test, t):
     raise KeyError(test)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestRuns(unittest.TestCase):
 

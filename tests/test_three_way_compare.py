@@ -4,11 +4,11 @@ split into a compare of the high bytes and then the low ones."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 # Values on both sides of each byte's edges, so every outcome of each
 # byte's compare comes up.
@@ -111,7 +111,7 @@ def _function_asm(src: str, name: str) -> str:
     return asm[start:asm.index("\nmain:", start)]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestRuns(unittest.TestCase):
 

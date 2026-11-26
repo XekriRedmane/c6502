@@ -13,14 +13,13 @@ the C++ port now, each named for the test it came from
 
 from __future__ import annotations
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 # `store` takes its multiplier in X, so that `v` arrives in its slot
@@ -43,7 +42,7 @@ int main(void) {
 _EXPECTED = (((3 * 3 + 7) * 3 + 16) * 3 + 1)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
 
     def test_shared_and_runs(self):

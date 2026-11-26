@@ -23,8 +23,8 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
 _FULL_POOL = """
@@ -56,7 +56,7 @@ int main(void) { pool[0] = f(1, 3, 4); return pool[0]; }
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestUnitFallback(unittest.TestCase):
     """A unit compiled on its own takes the free bytes below the pool,
     around the runtime's block, before it spills out of zero page, as
@@ -143,7 +143,7 @@ int main(void) {
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPoolGrowth(unittest.TestCase):
     """A function whose final register allocation spills a value the
     preliminary one didn't gets a larger pool (`compile._pool_shortfalls`)."""

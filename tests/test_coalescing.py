@@ -24,13 +24,13 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestCoalescingEndToEnd(unittest.TestCase):
     """Programs going through the full pipeline."""
 
@@ -89,7 +89,7 @@ class TestCoalescingEndToEnd(unittest.TestCase):
         self.assertEqual(result.return_int() & 0xFFFF, 10)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestByteMergeSeesWholeClass(unittest.TestCase):
     """fuzz.stmts seed 1921: in `p *= 5` (`(p << 2) + p`) the shift
     temp was put in p's slot, though p is read after the shift. The

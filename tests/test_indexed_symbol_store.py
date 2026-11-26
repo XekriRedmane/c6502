@@ -18,13 +18,13 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedSymbolStoreAsmShape(unittest.TestCase):
     """Source-level tests asserting the emitted asm uses absolute,X."""
 
@@ -87,7 +87,7 @@ class TestIndexedSymbolStoreAsmShape(unittest.TestCase):
         self.assertNotIn("STA   big,X", asm)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedSymbolStoreEndToEnd(unittest.TestCase):
     """Sim-level tests: the emitted code actually writes the right
     bytes."""

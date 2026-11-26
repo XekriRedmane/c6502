@@ -4,11 +4,11 @@ of `*++P` in both pipelines."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestReadStoredGlobalSim(unittest.TestCase):
 
     _SRC = """

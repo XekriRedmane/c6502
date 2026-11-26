@@ -7,10 +7,10 @@ And for the unsigned orderings kept as a value
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 # For each type, values at the edges of the sign bit.
 _CASES = (
@@ -40,7 +40,7 @@ def _program(ctype: str, bits: int, values) -> str:
     )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSignTest(unittest.TestCase):
 
     def test_values(self):
@@ -111,7 +111,7 @@ def _unsigned_program(ctype: str, bits: int) -> str:
     )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestUnsignedOrdering(unittest.TestCase):
 
     def test_values(self):

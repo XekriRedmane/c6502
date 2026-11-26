@@ -17,7 +17,6 @@ fit c6502's 1-byte int range — same operator semantics, scaled
 constants.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from passes.identifier_resolution import IdentifierResolutionError
 from passes.label_resolution import LabelResolutionError
 from passes.loop_labeling import LoopLabelingError
 from passes.type_checking import TypeCheckError
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -43,7 +43,7 @@ _SEMANTIC_FAILURES = (
 )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter5Valid(unittest.TestCase):
     """Each chapter_5/valid file must compile through `-S`."""
 
@@ -59,7 +59,7 @@ class TestChapter5Valid(unittest.TestCase):
                 _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter5InvalidSemantics(unittest.TestCase):
     """Each chapter_5/invalid_semantics file must parse cleanly but
     fail in one of the semantic passes (identifier_resolution,

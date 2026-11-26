@@ -35,7 +35,6 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 import c99_ast
@@ -44,6 +43,7 @@ from passes.type_checking import (
     LocalAttr, Symbol, SymbolTable,
 )
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _var(name: str) -> tac_ast.Var:
@@ -231,7 +231,7 @@ class TestRecognizeIndirectIndexedConstOffset(unittest.TestCase):
                 self.assertEqual(out.return_int(), 0)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestByteIndexSum(unittest.TestCase):
     """`p[i + k]` with a byte `i` whose largest value plus `k` fits in
     a byte is `(p),Y` with Y = `i + k`, so a word table read through a
@@ -364,7 +364,7 @@ class TestSharedByteIndex(unittest.TestCase):
                 self.assertEqual(out.return_int(), 0x1F00 + 0xA1)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndirectIndexedAsmShape(unittest.TestCase):
     """Source-level checks on the emitted asm."""
 
@@ -424,7 +424,7 @@ class TestIndirectIndexedAsmShape(unittest.TestCase):
         self.assertNotIn("ADC", body)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndirectIndexedCorrectness(unittest.TestCase):
     """End-to-end: the optimized program reads/writes the right
     addresses via the indirect-indexed path."""

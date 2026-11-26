@@ -19,10 +19,10 @@ hand-checked tests live in `test_beam_target_tick_sim`; this file
 adds depth of coverage at the cost of trusting unopt.
 """
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Inlined source: the function under test, externs / stubs, plus a
@@ -208,7 +208,7 @@ _SCENARIOS = 24
 _RECORD_SIZE = 8
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestBeamTargetTickOptDiff(unittest.TestCase):
     """Run the same C source through both pipelines and compare the
     full `result_log` buffer byte-for-byte. Any optimizer-introduced

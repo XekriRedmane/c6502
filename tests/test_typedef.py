@@ -21,13 +21,13 @@ AST never names a typedef. Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestTypedefPrograms(unittest.TestCase):
     """Run each program with and without `-O`."""
 

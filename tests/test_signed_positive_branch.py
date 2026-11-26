@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
 _TYPES = {
@@ -52,7 +52,7 @@ def _program(type_name: str, values) -> str:
     return "\n".join(lines) + "\n"
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSignedPositiveBranch(unittest.TestCase):
 
     def test_runs(self):

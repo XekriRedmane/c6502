@@ -23,13 +23,13 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedStoreAsmShape(unittest.TestCase):
     """Source-level checks on the emitted asm."""
 
@@ -92,7 +92,7 @@ class TestIndexedStoreAsmShape(unittest.TestCase):
         self.assertNotIn("STA   $4000,X", asm)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedStoreCorrectness(unittest.TestCase):
     """End-to-end: the optimized program writes to the right
     memory address."""

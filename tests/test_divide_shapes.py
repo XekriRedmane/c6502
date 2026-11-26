@@ -14,12 +14,12 @@ out as the 6502 code a person writes, as Zork's `divu16`
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 _DIVIDE = """
 #include <stdint.h>
@@ -91,7 +91,7 @@ def _function(src: str, name: str) -> str:
     return asm[start:end]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestDivideLoop(unittest.TestCase):
 
@@ -116,7 +116,7 @@ class TestDivideLoop(unittest.TestCase):
         self.assertGreaterEqual(body.count("ROL"), 3)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLocalArrayIndexed(unittest.TestCase):
 
     def test_runs(self):

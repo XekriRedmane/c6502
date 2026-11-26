@@ -7,13 +7,13 @@ subscripts and tests go through the pass, in both pipelines.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestCseSim(unittest.TestCase):
 
     def _both(self, src: str, want: int) -> None:

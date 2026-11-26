@@ -9,14 +9,14 @@ of the first check that fails."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestNarrowingCastInStaticInit(unittest.TestCase):
     """A cast to a narrower integer type in a static initializer kept
     the value it was given, so `static long v = (unsigned char)400;`
@@ -147,7 +147,7 @@ int main(void) {
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
 
     def test_tac_sim(self) -> None:

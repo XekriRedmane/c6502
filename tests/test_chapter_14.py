@@ -23,11 +23,11 @@ empty — all cross-type pointer assignment shapes are now rejected
 at the type-check boundary.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -43,7 +43,7 @@ _EXPECTED_FAILURES_CODEGEN = frozenset()
 _INVALID_TYPES_NOT_REJECTED_TODAY = frozenset()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter14Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C14 / "valid").rglob("*.c"))
@@ -65,7 +65,7 @@ class TestChapter14Valid(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter14InvalidDeclarations(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C14 / "invalid_declarations").rglob("*.c"))
@@ -78,7 +78,7 @@ class TestChapter14InvalidDeclarations(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter14InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C14 / "invalid_types").rglob("*.c"))

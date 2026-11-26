@@ -59,12 +59,12 @@ in two skip sets:
 from __future__ import annotations
 
 import json
-import shutil
 import unittest
 from pathlib import Path
 
 from parser import ParserError
 from tests.test_sim_chapters import _run_program
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -169,7 +169,7 @@ _NOT_A_TEST: frozenset[str] = frozenset({
 })
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestChapter19Sim(unittest.TestCase):
     """One subTest per file. The harness fails if a file is
     missing from every category — that catches new files added

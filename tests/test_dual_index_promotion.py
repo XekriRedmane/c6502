@@ -4,13 +4,13 @@ The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6)."""
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")
+@needs_c6502cpp
 class TestDualIndexPromotionSim(unittest.TestCase):
 
     def _check(self, src, expected):

@@ -5,14 +5,13 @@ the function (`passes/optimization/noreturn_call.py`)."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 # `out` is volatile, since the optimizer drops a store that no path to
@@ -38,7 +37,7 @@ int main(void) {
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestRuns(unittest.TestCase):
 
     def test_stops_in_the_call(self) -> None:
@@ -108,7 +107,7 @@ void command_loop(void) {
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestCallGraph(unittest.TestCase):
 
@@ -190,7 +189,7 @@ int main(void) {
 _GAME_OUT = [200, 0xAA, (200 + 201) & 0xFF]
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestCycleRuns(unittest.TestCase):
 
     def test_one_unit(self) -> None:

@@ -38,7 +38,6 @@ straightforward."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 from pathlib import Path
 
@@ -49,6 +48,7 @@ from tests.test_sim_asm import (
     _DEFAULT_MAX_CYCLES,
 )
 from tests.test_sim_chapters import EXPECTED_RETURNS, SKIPPED as _TAC_SKIPPED
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -142,7 +142,7 @@ def _format_state(name: str, result, ret: bytes) -> str:
     )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestOptUnoptDifferential(unittest.TestCase):
     """Differential check: every chapter program must produce the
     same HARGS bytes under both optimize=False and optimize=True."""

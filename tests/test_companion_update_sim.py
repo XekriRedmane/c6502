@@ -42,10 +42,10 @@ Scenarios:
   H. player-catch hit -> hit_flag := $FF.
 """
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # 256-entry zero perspective tables -- written out so we don't depend
@@ -680,7 +680,7 @@ def _expected() -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestCompanionUpdateSim(unittest.TestCase):
     """Differential opt vs unopt check on `companion_update`.
 

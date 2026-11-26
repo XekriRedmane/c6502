@@ -10,11 +10,11 @@ call reads through `F@ret`, with no copy."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 
 # (name, C source, expected int return of main)
@@ -72,7 +72,7 @@ _CASES: list[tuple[str, str, int]] = [
 ]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
 
     def test_programs(self):
@@ -84,7 +84,7 @@ class TestPrograms(unittest.TestCase):
                     self.assertEqual(result.return_int_signed(), expected)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestCodegen(unittest.TestCase):
 

@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSinkIncrementSim(unittest.TestCase):
     def _both(self, src: str, expected: int) -> None:
         for optimize in (False, True):

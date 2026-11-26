@@ -18,11 +18,11 @@ hand-computed expected state, (b) opt matches expected, and (c)
 opt == unopt byte-for-byte.
 """
 
-import shutil
 import unittest
 
 import sim.runtime as rt_mod
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Inlined beam_target_tick source plus definitions for the externs
@@ -307,7 +307,7 @@ def _flatten(rows: list[list[int]]) -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestBeamTargetTickSim(unittest.TestCase):
     """Differential opt vs unopt check on `beam_target_tick`."""
 

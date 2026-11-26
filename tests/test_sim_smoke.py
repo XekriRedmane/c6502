@@ -9,17 +9,17 @@ until the real 6502 helpers land in the runtime header.
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim, run_c_program
+from tests.cpp_build import needs_c6502cpp
 
 
 def _signed_byte(v: int) -> int:
     return v - 0x100 if v & 0x80 else v
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestBasics(unittest.TestCase):
     def test_constant_return(self) -> None:
         self.assertEqual(run_c_program(
@@ -35,7 +35,7 @@ class TestBasics(unittest.TestCase):
             "int main(void) { return -1; }").return_int_signed(), -1)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestArithmetic(unittest.TestCase):
     def test_add(self) -> None:
         self.assertEqual(run_c_program(
@@ -79,7 +79,7 @@ class TestArithmetic(unittest.TestCase):
             "int main(void) { return 100 >> 2; }").return_int(), 25)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestComparisons(unittest.TestCase):
     def test_equal(self) -> None:
         self.assertEqual(run_c_program(
@@ -103,7 +103,7 @@ class TestComparisons(unittest.TestCase):
             "int main(void) { return 1 || (1 / 0); }").return_int(), 1)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestControlFlow(unittest.TestCase):
     def test_if_else(self) -> None:
         src = """
@@ -163,7 +163,7 @@ class TestControlFlow(unittest.TestCase):
         self.assertEqual(run_c_program(src).return_int(), 0)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestFunctions(unittest.TestCase):
     def test_simple_call(self) -> None:
         src = """
@@ -195,7 +195,7 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(ssp, 0x7FFF, f"SSP not rewound: ${ssp:04X}")
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestStaticsAndPointers(unittest.TestCase):
     def test_file_scope_static(self) -> None:
         src = """

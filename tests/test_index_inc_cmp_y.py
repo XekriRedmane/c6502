@@ -7,6 +7,7 @@ the C++ port now, each named for the test it came from
 import unittest
 
 import asm_ast
+from tests import cpp_build
 
 
 A = asm_ast.Reg(reg=asm_ast.A())
@@ -31,9 +32,8 @@ class TestTmpLiveness(unittest.TestCase):
 
 
     def test_simulated_loop_and_global(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp not installed")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         src = """
 unsigned char ceiling[8] = {1,2,3,4,5,6,7,8};

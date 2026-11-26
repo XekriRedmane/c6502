@@ -25,10 +25,10 @@ accepted IndexedData as a Mov peer and pinned a Pseudo to X whose
 loaded value the IR shape couldn't express.
 """
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 _PROGRAM = r"""
@@ -221,7 +221,7 @@ def _expected_log() -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestFloorEnemyDrawSim(unittest.TestCase):
     """Differential opt-vs-unopt check on `floor_enemy_draw`.
 

@@ -31,10 +31,10 @@ and inspect the diff before committing the new gold output.
 from __future__ import annotations
 
 import os
-import shutil
 import unittest
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _EXAMPLES_DIR = os.path.join(
@@ -57,7 +57,7 @@ def _examples() -> list[str]:
     return out
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestExampleOutputs(unittest.TestCase):
     """Recompile each example with -O and compare against
     the committed .asm file. A failure means the pipeline produces

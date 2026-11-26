@@ -11,12 +11,11 @@ the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6)."""
 from __future__ import annotations
 
-import shutil
 import unittest
 
 import asm_ast
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 _E = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())
 _RTS = asm_ast.Return(save_a=False, save_x=False, save_c=False)
@@ -125,7 +124,7 @@ int main(void) {
 _OUT = [0, 0x80, 0, 255, 0x80, 7, 9, 7, 9, 1, 2, 20, 10, 3, 5, 1]
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
     """Each operation on an element indexed by X, across 0 and 255,
     with the result used and not, and branched on, in both pipelines.

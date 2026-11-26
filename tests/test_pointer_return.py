@@ -2,13 +2,13 @@
 (high byte), as an `unsigned int` comes back, under both calling
 conventions and through a function pointer."""
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPointerReturn(unittest.TestCase):
 
     _PROGRAM = """

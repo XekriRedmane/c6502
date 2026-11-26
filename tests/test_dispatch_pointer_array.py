@@ -2,14 +2,14 @@
 
 import unittest
 
-import shutil
+from tests.cpp_build import needs_c6502cpp
 
 
 # The tables the tests below use, typed `static uint8_t * const
 # name[N]`, so their elements are const.
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestDispatchSim(unittest.TestCase):
     def _both(self, src, expected):
         from sim.harness import build_sim

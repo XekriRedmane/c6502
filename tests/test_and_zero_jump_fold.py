@@ -22,12 +22,12 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 import tac_ast
 from passes.optimization.and_zero_jump_fold import fold_narrow_and_jump
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _var(name: str) -> tac_ast.Var:
@@ -65,7 +65,7 @@ class TestGuards(unittest.TestCase):
         self.assertEqual(out.instructions, fn.instructions)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSimIntegration(unittest.TestCase):
     """End-to-end: a small C program exercising the (uchar & 0x80)
     idiom returns the right value under -O."""
@@ -128,7 +128,7 @@ class TestSimIntegration(unittest.TestCase):
         self.assertEqual(self._run(src), 1)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestWideMaskInOneByte(unittest.TestCase):
     """A mask on a wide value whose set bits fall in one byte tests
     that byte: `if (zchars & 0x8000)` is `LDA zchars+1; BPL`."""

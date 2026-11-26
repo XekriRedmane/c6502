@@ -10,11 +10,11 @@ unary-operator semantics at the boundary of the supported integer
 type.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -24,7 +24,7 @@ _C2 = _TESTS_DIR / "chapter_2"
 _INCOMPATIBLE_VALID = frozenset()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter2Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C2 / "valid").rglob("*.c"))

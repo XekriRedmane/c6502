@@ -25,12 +25,12 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -45,7 +45,7 @@ def _function_text(asm: str, name: str) -> str:
 @no_inlining()
 class TestLowering(unittest.TestCase):
 
-    @unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+    @needs_c6502cpp
     def test_conversion_is_a_zero_test(self) -> None:
         # Static, so that they return in A: main keeps their results
         # as values (passes/carry_return_choice.py). `x` arrives in A
@@ -138,7 +138,7 @@ _PROGRAMS: list[tuple[str, str, int]] = [
 ]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
         for name, src, expected in _PROGRAMS:

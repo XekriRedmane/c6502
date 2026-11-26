@@ -13,7 +13,6 @@ a promoted object that doesn't fit, run in the simulator.
 from __future__ import annotations
 
 import re
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,8 +21,8 @@ from parser import ParserError
 from passes.type_checking import TypeCheckError
 from passes.zp_globals import ZpGlobalError
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -38,7 +37,7 @@ def _equ(asm: str) -> dict[str, int]:
     }
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestPlacement(unittest.TestCase):
 
     def test_automatic_addresses_follow_fixed_ones(self) -> None:
@@ -118,7 +117,7 @@ class TestPlacement(unittest.TestCase):
         self.assertIn("__zp_init", asm)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestCodegen(unittest.TestCase):
 
     def test_pointer_is_indirect_base(self) -> None:
@@ -180,7 +179,7 @@ _PROMOTE = (
 )
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestPromotion(unittest.TestCase):
     """`-O` moves busy scalar globals into zero page."""
 
@@ -223,7 +222,7 @@ class TestPromotion(unittest.TestCase):
                 self.assertEqual(got.return_int(), 2 * 36 + 9)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSim(unittest.TestCase):
 
     def _both(self, src: str, want: int) -> None:
@@ -338,7 +337,7 @@ _UNIT_B = _HEADER + (
 )
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestLink(unittest.TestCase):
     """Linking places the zero-page objects of every unit
     for the whole program and merges their `__zp_init`s."""

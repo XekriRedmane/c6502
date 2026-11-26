@@ -26,7 +26,6 @@ c6502 has no `_Generic`, so the type of `true` is checked through
 from __future__ import annotations
 
 import io
-import shutil
 import unittest
 from unittest.mock import patch
 
@@ -34,6 +33,7 @@ import diagnostics
 from compile import _run_source, main as compile_main
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
 # The warning at each `_Bool` (preprocessor.py's `ALT_BOOL_WARNING`).
 ALT_BOOL_WARNING = (
@@ -152,7 +152,7 @@ int main(void) {
 _EXPECTED = 649
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
     def test_tac_sim(self) -> None:
         self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)

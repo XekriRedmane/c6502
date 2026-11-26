@@ -30,13 +30,13 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIncPeepholeAsmShape(unittest.TestCase):
     """Source-level checks: the emitted asm uses INC + BNE."""
 
@@ -83,7 +83,7 @@ class TestIncPeepholeAsmShape(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIncPeepholeCorrectness(unittest.TestCase):
     """End-to-end: the optimized program produces the same answer
     as the unoptimized one, including across byte-overflow
@@ -130,7 +130,7 @@ class TestIncPeepholeCorrectness(unittest.TestCase):
         self.assertEqual(result.return_long() & 0xFFFFFFFF, 300)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIncDecLeavesA(unittest.TestCase):
     """The ADC / SBC form leaves the new value in A and INC / DEC
     don't, so when A is read afterwards the value is loaded. `return

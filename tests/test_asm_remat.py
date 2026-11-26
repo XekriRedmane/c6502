@@ -12,6 +12,7 @@ the C++ port now, each named for the test it came from
 """
 
 import unittest
+from tests import cpp_build
 
 
 class TestRematPointerStore(unittest.TestCase):
@@ -21,9 +22,8 @@ class TestRematPointerStore(unittest.TestCase):
     `p == &g` returned 7 instead of the old value of `g`."""
 
     def test_simulated_pointer_store_to_global(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp not installed")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         src = (
             "unsigned char g;\n"
@@ -71,9 +71,8 @@ int main(void) {
 '''
 
     def test_runs(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp CLI not available")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         rows = [1, 4, 9, 16, 25, 36]
         cols = [2, 3, 5, 7, 11, 13]

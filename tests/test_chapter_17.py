@@ -27,11 +27,11 @@ flags any drift.
 
 from __future__ import annotations
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -68,7 +68,7 @@ def _is_libraries(rel: str) -> bool:
     return rel.startswith("libraries/") or "/libraries/" in rel
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter17Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C17 / "valid").rglob("*.c"))
@@ -94,7 +94,7 @@ class TestChapter17Valid(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter17InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C17 / "invalid_types").rglob("*.c"))

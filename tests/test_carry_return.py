@@ -12,11 +12,11 @@ the C++ port now, each named for the test it came from
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 _CARRY = "[[c6502::return_bool_in_carry]] "
 _BOOL = "#include <stdbool.h>\n"
@@ -56,7 +56,7 @@ class TestFrontEnd(unittest.TestCase):
                       "bool (*p)(void) = f;")
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSim(unittest.TestCase):
     """Each program runs in both pipelines. Without -O every
     callee has a frame, so its return goes through the `PHP` / `PLP`
@@ -163,7 +163,7 @@ class TestSim(unittest.TestCase):
         self._check(src, 7)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestCodeShape(unittest.TestCase):
 
     def test_constant_returns_are_sec_clc(self):
@@ -262,7 +262,7 @@ class TestStructFrontEnd(unittest.TestCase):
         self.assertNotIn(".sret", tac)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestStructSim(unittest.TestCase):
     """Each program runs on both TACs and through both pipelines."""
 

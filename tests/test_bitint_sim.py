@@ -29,13 +29,13 @@ covers each storage size and padding."""
 from __future__ import annotations
 
 import random
-import shutil
 import struct
 import unittest
 from dataclasses import dataclass
 
 import bit_precise
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 _CHUNK = 40
 # Bytes of call results per program. Without -O, main holds each
@@ -383,12 +383,12 @@ def _check(test: unittest.TestCase, programs, optimize: bool, shard: int,
     test.assertEqual(failures, [], msg="\n" + "\n".join(failures[:40]))
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestBitIntOperators(unittest.TestCase):
     pass
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestBitIntStorage(unittest.TestCase):
     pass
 

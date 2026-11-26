@@ -12,15 +12,14 @@ the C++ port now, each named for the test it came from
 
 from __future__ import annotations
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 _SRC = """
@@ -51,7 +50,7 @@ def _expected():
     return acc & 0x7FFF
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestPrograms(unittest.TestCase):
 

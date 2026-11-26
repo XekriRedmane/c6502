@@ -9,13 +9,12 @@ optimized code has no separate compare.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 _CASES = [
     # (function, [(call, expected)])
@@ -61,7 +60,7 @@ def _program(fn: str, call: str) -> str:
     return fn + f"\nint main(void) {{ return (int)({call}); }}\n"
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestCompareSubtract(unittest.TestCase):
 
     def test_results(self) -> None:
@@ -91,7 +90,7 @@ class TestCompareSubtract(unittest.TestCase):
                 self.assertEqual(body.count("SBC"), _width(fn), body)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestLoopInRegisters(unittest.TestCase):
     """`while (s >= k) s -= k;` on a 16-bit `s`, as Zork's
     `do_rwts_on_sector` does: `s` stays in A (low) and X (high), the

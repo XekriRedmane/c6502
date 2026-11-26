@@ -18,11 +18,11 @@ We write a uniquely-identifying byte (`0xA5`) through the sprite
 at offset 0, so the byte should land at $2000 (page_flag=0) or
 $4000 (page_flag=0x80)."""
 
-import shutil
 import os
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _source() -> str:
@@ -59,7 +59,7 @@ int main(void) {
     return body + main
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestDrawSpriteOpaquePageFlag(unittest.TestCase):
     def _run(self, optimize: bool) -> int:
         sim = build_sim(_source(), optimize=optimize)

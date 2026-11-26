@@ -22,11 +22,11 @@ is the boolean `tile_src == special_peek_sprite`, since the absolute
 pointer differs between unopt and opt layouts.
 """
 
-import shutil
 import unittest
 
 import sim.runtime as rt_mod
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Source: examples/special_inactive_draw.c, inlined together with a
@@ -165,7 +165,7 @@ def _flatten(rows: list[list[int]]) -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestSpecialInactiveDrawSim(unittest.TestCase):
     """Differential opt vs unopt check on `special_inactive_draw`.
 

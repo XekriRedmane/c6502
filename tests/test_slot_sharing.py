@@ -21,7 +21,6 @@ for the rest of its parameters.
 from __future__ import annotations
 
 import re
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,8 +29,8 @@ from compile import _run_source
 from passes.abi_selection import AbiSelectionError
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -96,7 +95,7 @@ static uint8_t first(uint8_t k [[c6502::in_a]], const uint8_t *p) {
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestShares(unittest.TestCase):
 
@@ -324,7 +323,7 @@ def _link(sources: list[str]) -> tuple[int, str, str]:
     return rc, text, err
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestAcrossUnits(unittest.TestCase):
 
@@ -399,7 +398,7 @@ int main(void) { return sum(data, 4) + sum(data + 1, 2); }
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestPinnedParams(unittest.TestCase):
 
     def test_defined_function_reads_it_in_place(self) -> None:
@@ -537,7 +536,7 @@ class TestPinnedParams(unittest.TestCase):
         self.assertIn("pinned=$E6,$E7,", asm)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestRegisterParams(unittest.TestCase):
 
     def test_no_slot(self) -> None:
@@ -573,7 +572,7 @@ class TestRegisterParams(unittest.TestCase):
                 self.assertEqual(_run(src, optimize), 64)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestPassedToTwoCallees(unittest.TestCase):
     """A parameter passed on to two callees shares both callees'
     bytes, so the function copies it for neither, as Zork's

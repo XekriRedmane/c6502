@@ -4,11 +4,11 @@ with and without `-O`."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
 
 # (name, C source, expected int return of main)
@@ -61,7 +61,7 @@ _PROGRAMS: list[tuple[str, str, int]] = [
 ]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
 
     def test_tac_sim(self) -> None:

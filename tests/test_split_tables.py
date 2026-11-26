@@ -4,20 +4,19 @@ and then its high bytes."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str) -> str:
     return _run_source("codegen", src, optimize=True)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSplitTablesSim(unittest.TestCase):
     """Programs that read split tables, run in both pipelines."""
 

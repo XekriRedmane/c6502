@@ -22,11 +22,11 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestRedundantLoadAfterRmwE2E(unittest.TestCase):
     def _compile(self, src: str) -> str:
         from compile import _run_source

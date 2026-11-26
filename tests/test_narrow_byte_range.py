@@ -6,8 +6,8 @@ and the pairing of a divide with a remainder)."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
 def _asm(src: str, optimize: bool = True) -> str:
@@ -22,7 +22,7 @@ def _body(asm: str, fn: str) -> str:
     return rest if nxt < 0 else rest[:rest.rfind("\n", 0, nxt)]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLowerings(unittest.TestCase):
 
     def test_byte_divide_is_inline(self):

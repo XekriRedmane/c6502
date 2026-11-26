@@ -11,11 +11,11 @@ masks Constants modulo the target width, and a truncated comparison
 narrowing to its 1-byte result.
 """
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
 
     _SRC = (
@@ -53,7 +53,7 @@ class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
                 self.assertEqual(out.return_int(), 0x0720)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestVariableLeftShift(unittest.TestCase):
     """A byte shifted left by a variable count is a 1-byte shift, which
     `tac_to_asm` lowers as a loop of `ASL`s, where it had called

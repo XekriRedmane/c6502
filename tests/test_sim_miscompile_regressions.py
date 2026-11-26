@@ -12,11 +12,11 @@ The comment on each case names the defect it pins down."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
 
 # (name, C source, expected int return of main)
@@ -623,7 +623,7 @@ def _s16(v: int) -> int:
     return v - 0x10000 if v & 0x8000 else v
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestMiscompileRegressions(unittest.TestCase):
 
     def test_tac_sim(self) -> None:
@@ -640,7 +640,7 @@ class TestMiscompileRegressions(unittest.TestCase):
                     self.assertEqual(result.return_int_signed(), expected)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestExternFunctionAddress(unittest.TestCase):
     """`fp = f;` for an `extern` f stored the address of a soft-stack
     slot, because GetAddress lowered every non-static name as a

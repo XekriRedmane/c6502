@@ -17,15 +17,14 @@ from __future__ import annotations
 
 import random
 import re
-import shutil
 import unittest
 from pathlib import Path
 
 import builtin_functions as bf
 import tac_ast
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 _TYPES = {
     "uc": ("unsigned char", 1),
@@ -203,7 +202,7 @@ class TestModel(unittest.TestCase):
             self.assertEqual(bf.BUILTINS[name], 1)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestFolding(unittest.TestCase):
     def test_constant_arguments_fold_in_both_pipelines(self) -> None:
         for suffix, (tname, width) in _TYPES.items():
@@ -235,7 +234,7 @@ class TestFolding(unittest.TestCase):
                         self.assertIn(want, copies)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestHeader(unittest.TestCase):
     _HEADER = Path(__file__).parent.parent / "include" / "stdbit.h"
 
@@ -277,7 +276,7 @@ class TestHeader(unittest.TestCase):
         self.assertNotIn("stdc_", asm.replace(".stdbit_", ""))
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestFunctions(unittest.TestCase):
     """The functions with a suffix as functions (C23 §7.1.4)."""
 
@@ -333,7 +332,7 @@ int main(void) {
             self.assertEqual(len(copies), 2)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestCodegen(unittest.TestCase):
     """The code a call compiles to, with -O, for operands in memory."""
 
@@ -418,7 +417,7 @@ def _program(suffix: str | None, tname: str, values: list[int],
     return "\n".join(lines) + "\n"
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSimulator(unittest.TestCase):
     """Every function on every value of an `unsigned char` and a sweep
     of each wider type, against `builtin_functions.stdbit`, in both

@@ -6,10 +6,10 @@ Verifies functional equivalence: both pipelines must produce the
 same `call_count` value, demonstrating that the optimizer pipeline
 correctly preserves the loop semantics."""
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # The refresh_hit_entities body matches `examples/refresh_hit_entities.c`,
@@ -76,7 +76,7 @@ int main(void) {
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestRefreshHitEntitiesSim(unittest.TestCase):
     """All 12 slots in the test setup are visible (delta = 10 <
     0x2F), so refresh_hit_entities must call draw_sprite_opaque

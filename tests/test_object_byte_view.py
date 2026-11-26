@@ -16,10 +16,10 @@ doesn't carry the object's earlier value past it.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 _PRELUDE = (
@@ -54,7 +54,7 @@ def _function(asm: str, name: str) -> str:
     return "\n".join(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestObjectByteViewShape(unittest.TestCase):
     """The TAC and asm use indexed access on the object's symbol."""
 
@@ -157,7 +157,7 @@ class TestObjectByteViewShape(unittest.TestCase):
         self.assertIn("GetAddress(", tac)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestObjectByteViewSim(unittest.TestCase):
     """Each check sets a bit of the result when it fails, so a result
     of 0 means every check passed."""

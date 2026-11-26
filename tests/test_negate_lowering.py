@@ -4,10 +4,10 @@ lowering)."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 # For each type, values at the edges of each byte.
 _CASES = (
@@ -34,7 +34,7 @@ def _program(ctype: str, bits: int, values) -> str:
     )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestNegate(unittest.TestCase):
 
     def test_values(self):

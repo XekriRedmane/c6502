@@ -31,11 +31,11 @@ then defined locally to point at a backing byte. The volatile bit
 on the pointee is the gate that keeps every read in the asm output.
 """
 
-import shutil
 import unittest
 
 import sim.runtime as rt_mod
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Inlined source of examples/sfx_tone.c plus a `main` driver that
@@ -129,7 +129,7 @@ _EXPECTED_LOG = bytes([0x11, 0x22, 0x33, 0x44, 0x55])
 _EXPECTED_RET = 5  # log_idx after the fifth record_sentinel call
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestSfxToneSim(unittest.TestCase):
     """Differential opt vs unopt check on `sfx_tone`.
 

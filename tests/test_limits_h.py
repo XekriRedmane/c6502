@@ -14,17 +14,17 @@ box. Tests:
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
 import unittest
 
 from sim.harness import run_c_program
+from tests.cpp_build import needs_c6502cpp
 
 
 _HEADER = "#include <limits.h>\n"
 
 
-@unittest.skipUnless(shutil.which("pcpp") or True, "pcpp lives in-process")
+@needs_c6502cpp
 class TestLimitsH(unittest.TestCase):
     def _run_int_signed(self, body: str) -> int:
         src = _HEADER + f"int main(void) {{ {body} }}"

@@ -18,10 +18,10 @@ the stack. Nothing checks for that, and the results come back wrong."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 # (C type, bytes)
 _TYPES = [
@@ -85,7 +85,7 @@ def _programs(ctype: str, size: int, x: int):
         yield src, {name: expected[name] for name in chunk}
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestConstShiftMul(unittest.TestCase):
 
     def _check(self, optimize: bool) -> None:
@@ -116,7 +116,7 @@ class TestConstShiftMul(unittest.TestCase):
 
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestByteShift(unittest.TestCase):
     """`(uint8_t)(x << k)` narrows to a 1-byte shift, which runs in A."""
 

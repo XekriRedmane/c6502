@@ -34,12 +34,11 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 _PROGRAM = r"""
@@ -104,7 +103,7 @@ _EXPECTED = [
 ]
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestProgram(unittest.TestCase):
     def test_program(self) -> None:
         for optimize in (False, True):

@@ -11,12 +11,12 @@ instead of a pointer.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program
+from tests.cpp_build import needs_c6502cpp
 
 _S = "struct s { unsigned char a; int b; unsigned char c; };\n"
 
@@ -29,7 +29,7 @@ def _codegen(src: str) -> str:
     return _run_source("codegen", src, optimize=True)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestDirectMemberAccessSim(unittest.TestCase):
 
     def _check(self, src: str, expected: int) -> None:
@@ -128,7 +128,7 @@ class TestDirectMemberAccessSim(unittest.TestCase):
         ), 45 * 10 + 5)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestDirectMemberAccessShape(unittest.TestCase):
 
     def test_global_member_store_is_absolute(self):

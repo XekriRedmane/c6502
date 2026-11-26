@@ -2,17 +2,17 @@
 function's `bool` in the carry flag, without the annotation, when
 every call to it suits the carry."""
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 
 _HEAD = "#include <stdint.h>\n#include <stdbool.h>\nuint8_t g;\n"
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestChoice(unittest.TestCase):
 
@@ -44,7 +44,7 @@ class TestChoice(unittest.TestCase):
                 self.assertEqual(out.return_int(), 40 + 4)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestGlobalChoice(unittest.TestCase):
     """A `bool` function with external linkage returns in C whenever
     it's zp_abi, whatever its callers do with the result, since the
@@ -100,7 +100,7 @@ _MAIN = (
 )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLinked(unittest.TestCase):
 
     def _compile(self, src: str, path) -> str:

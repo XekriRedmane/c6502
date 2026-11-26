@@ -5,18 +5,18 @@ chapter_3 covers binary arithmetic operators (`+`, `-`, `*`, `/`,
 valid/ and invalid_parse/. Every file passes as written.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
 _C3 = _TESTS_DIR / "chapter_3"
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter3Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C3 / "valid").rglob("*.c"))

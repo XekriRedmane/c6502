@@ -28,8 +28,18 @@ pipeline), `test_bitint_sim` (16 per pipeline for the operators and 4
 for the storage grid), `test_sim_differential` and `test_sim_asm` (4
 each).
 
-Every harness class is `@unittest.skipUnless(shutil.which("pcpp"),
-…)`.
+A harness class that compiles a program is decorated with
+`tests.cpp_build.needs_c6502cpp`, which skips it when `c6502cpp` isn't
+built (cpp/README.md has the build), since compile.py, nm.py, and
+objdump.py run in it under `C6502_CPP_BACKEND=1` and only there once the
+Python compiler is removed. A test that skips itself or combines the
+condition with another, as `TestAgainstDasm` does with dasm, reads
+`cpp_build.BUILT` and `cpp_build.REASON`.
+
+A test that compiles a source text calls `compile._run_source(stage,
+source, ...)`, which preprocesses the text in the same request as the
+compile under the switch, and Python's preprocessor and `_run_stage`
+without it.
 
 ## Layout
 

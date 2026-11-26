@@ -6,8 +6,8 @@ renamed names (globals, statics, address-taken locals) which can
 have multiple definitions.
 """
 
-import shutil
 import unittest
+from tests.cpp_build import needs_c6502cpp
 
 
 _SIZEOF_LOOPS = (
@@ -32,7 +32,7 @@ _SIZEOF_LOOPS = (
 )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestByteLoopAgainstSizeof(unittest.TestCase):
     """`for (uint8_t i = 0; i < sizeof a; i++)` compares one byte. The
     compare is at the width of `size_t`, `unsigned int`, so `i` is

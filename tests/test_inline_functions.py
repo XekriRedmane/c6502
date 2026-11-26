@@ -10,10 +10,10 @@ effects and volatile accesses."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # (name, C source, expected int return of main)
@@ -99,7 +99,7 @@ _CASES: list[tuple[str, str, int]] = [
 ]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
 
     def test_programs(self):

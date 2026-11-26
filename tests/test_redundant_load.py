@@ -22,10 +22,11 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 import asm_ast
+from tests.cpp_build import needs_c6502cpp
+from tests import cpp_build
 
 
 class TestIndexRegisterOfIndexedData(unittest.TestCase):
@@ -35,9 +36,8 @@ class TestIndexRegisterOfIndexedData(unittest.TestCase):
         return asm_ast.IndexedData(name="tab", offset=0, index=reg)
 
     def test_simulated_table_chase(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp not installed")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         src = """
 unsigned char tab[8] = {3, 0, 0, 7, 0, 0, 0, 0};
@@ -50,7 +50,7 @@ int main(void) { unsigned char r = f(0); return g * 100 + r; }
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestRowsOfTwoTablesSim(unittest.TestCase):
     """Two 2-D arrays whose tables of row addresses share the low
     bytes, read and written in one row, as Lode Runner's LEVEL_MAP and

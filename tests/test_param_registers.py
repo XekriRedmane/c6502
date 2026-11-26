@@ -9,7 +9,6 @@ the registers the named ones take, and can't be a pointer.
 from __future__ import annotations
 
 import io
-import shutil
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +16,7 @@ from compile import _run_source, main as compile_main
 from passes.abi_selection import AbiSelectionError
 from passes.type_checking import TypeCheckError
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
@@ -27,7 +27,7 @@ def _body(asm: str, fn: str) -> str:
     return asm.split(f"\n{fn}:")[1].split("SUBROUTINE")[1].split("\n\n", 2)[1]
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestAbiErrors(unittest.TestCase):
 
     _CASES = {
@@ -104,7 +104,7 @@ class TestAbiErrors(unittest.TestCase):
         self.assertNotIn("Traceback", err.getvalue())
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSim(unittest.TestCase):
     """Each program runs through both pipelines."""
 
@@ -218,7 +218,7 @@ class TestSim(unittest.TestCase):
         self._check(src, 10 + 2 * 11, standin=self._ROM_CODE)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestShape(unittest.TestCase):
 
     def test_callee_stores_y_and_caller_loads_it(self):

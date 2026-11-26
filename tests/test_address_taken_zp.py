@@ -12,13 +12,13 @@ the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
 """
 
-import shutil
 import unittest
 
 import asm_ast
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestAddressTakenZp(unittest.TestCase):
     """The allocation function reads sizes via the type-checker's
     `size_of_name`. We test through the full compile pipeline so the

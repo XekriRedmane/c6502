@@ -26,11 +26,11 @@ the C++ port (cpp/tests/test_chapter_18_calls.cpp).
 
 from __future__ import annotations
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -158,7 +158,7 @@ def _is_libraries(rel: str) -> bool:
     return rel.startswith("libraries/") or "/libraries/" in rel
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter18Valid(unittest.TestCase):
     def test_codegen(self):
         # Every valid file is expected to fail today (no struct
@@ -189,7 +189,7 @@ class TestChapter18Valid(unittest.TestCase):
                         _run_source("codegen", source, pcpp_args=include)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter18InvalidParse(unittest.TestCase):
     """The parse of each other invalid_parse file, and the error it
     gives, are doctest cases (cpp/tests/test_chapter_18_calls.cpp)."""
@@ -203,7 +203,7 @@ class TestChapter18InvalidParse(unittest.TestCase):
                 _run_source("codegen", source, pcpp_args=include)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter18InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C18 / "invalid_types").rglob("*.c"))
@@ -220,7 +220,7 @@ class TestChapter18InvalidTypes(unittest.TestCase):
                         _run_source("codegen", source, pcpp_args=include)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter18InvalidStructTags(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C18 / "invalid_struct_tags").rglob("*.c"))

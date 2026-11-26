@@ -26,9 +26,9 @@ explicit so we don't silently lose coverage.
 from __future__ import annotations
 
 import os
-import shutil
 import unittest
 from pathlib import Path
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -775,7 +775,7 @@ def _run_program(source: str) -> int | None:
     return sim.call("main", [])
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSimChapters(unittest.TestCase):
     """Per-file subTest so a regression in one program doesn't mask
     others — the failure summary lists each file by relative path."""

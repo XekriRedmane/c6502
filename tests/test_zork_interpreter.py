@@ -21,19 +21,18 @@ and leave the same screen and printer output.
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from py65.devices.mpu6502 import MPU
+from tests.cpp_build import needs_c6502cpp
 
 _DIR = Path(__file__).parent.parent / "examples" / "zork"
 _UNITS = [
     "main", "decode", "objects", "numbers", "input", "pages", "zstring",
     "output", "disk", "prompts", "save",
 ]
-_HAVE_PCPP = shutil.which("pcpp") is not None
 _DSK = os.environ.get("ZORK_DSK")
 
 # Zork's boot loader reads 26 sectors from track 1 into $0800.
@@ -102,7 +101,7 @@ def _build(tmp: str) -> tuple[list[Path], Path]:
     return paths, linked
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestGoldOutputs(unittest.TestCase):
     """Each unit's output and the linked program match the checked-in
     files. To bless new ones, run the commands in the example's
@@ -179,7 +178,7 @@ def _run_c(text: str, dsk: bytes, lines, keys=()):
     return a
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp not available")
+@needs_c6502cpp
 @unittest.skipUnless(_DSK, "set ZORK_DSK to Zork I r15's disk image")
 class TestSessions(unittest.TestCase):
 

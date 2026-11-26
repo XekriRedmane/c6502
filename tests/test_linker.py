@@ -23,7 +23,6 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,9 +31,10 @@ from tests.link_helpers import (
     compile_object as _compile_to_obj, link as _link,
     link_capture_stderr as _link_capture_stderr, linked_text,
 )
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLinkerHappyPath(unittest.TestCase):
     def test_two_tus_link_and_simulate(self) -> None:
         # TU A: defines main, calls extern helper.
@@ -154,7 +154,7 @@ class TestLinkerHappyPath(unittest.TestCase):
             self.assertEqual(text.count("__zpabi_helper__x_0\tEQU\t"), 1)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLinkerErrors(unittest.TestCase):
     def test_duplicate_definition_rejected(self) -> None:
         # Both TUs define `helper`. Link error.
@@ -267,7 +267,7 @@ def _equs(text: str) -> dict[str, int]:
     return out
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestParameterNames(unittest.TestCase):
     """A zp_abi parameter's slot is named after the parameter, so a
     declaration whose names differ from the definition's spells the
@@ -443,7 +443,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLowZeroPageFallback(unittest.TestCase):
     """When the pool, $80-$FF, has no room left, slots go in the free
     bytes below it, around the runtime's block, before they spill out
@@ -486,7 +486,7 @@ class TestLowZeroPageFallback(unittest.TestCase):
         self.assertEqual(result.return_int(), 1)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPointerInSharedSlotBytes(unittest.TestCase):
     """`f1` and `f2` read through their pointer parameters alike. In
     their unit, neither calls the other, so their parameter slots share
@@ -565,7 +565,7 @@ class TestPointerInSharedSlotBytes(unittest.TestCase):
         self.assertIn("@tail", text)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestStaticFunctionsInTwoUnits(unittest.TestCase):
     """Two units each define a `static` function `f`, and a `static`
     function `pick` that returns a pointer, which `-O` returns in a
@@ -658,7 +658,7 @@ _ROWS = (
 )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestMergedRowTables(unittest.TestCase):
     """`-O` puts the halves of a 2-D array's table of row addresses in
     objects of their own (`A@lo`, `A@hi`), in each unit that indexes the

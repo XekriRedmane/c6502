@@ -20,11 +20,11 @@ truncation, switch-on-wide-int, and rewrite rules for
 constants beyond the immediate-byte range.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -37,7 +37,7 @@ _INCOMPATIBLE_VALID = frozenset()
 _EXPECTED_FAILURES_CODEGEN = frozenset()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter11Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C11 / "valid").rglob("*.c"))
@@ -59,7 +59,7 @@ class TestChapter11Valid(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter11InvalidLabels(unittest.TestCase):
     """Each chapter_11/invalid_labels file must be rejected somewhere
     in the pipeline. We accept any Exception as rejection so a noisy
@@ -77,7 +77,7 @@ class TestChapter11InvalidLabels(unittest.TestCase):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter11InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C11 / "invalid_types").rglob("*.c"))

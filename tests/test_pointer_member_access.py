@@ -27,12 +27,12 @@ the C++ port now, each named for the test it came from
 from __future__ import annotations
 
 import io
-import shutil
 import unittest
 from unittest.mock import patch
 
 from compile import main as compile_main
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _asm(src: str) -> str:
@@ -66,7 +66,7 @@ extern struct node *N [[c6502::zeropage(0xF6)]];
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestShapes(unittest.TestCase):
     def test_member_store_through_zero_page_pointer(self) -> None:
         text = _function(_asm(_STRUCT + "void f(uint16_t v) { P->g = v; }"),
@@ -178,7 +178,7 @@ uint16_t times37(uint8_t n) { return (n + 3) * 37; }
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestRuns(unittest.TestCase):
     def _check(self, body: str, expected: int) -> None:
         src = _RUN + "int main(void) {" + body + "}"

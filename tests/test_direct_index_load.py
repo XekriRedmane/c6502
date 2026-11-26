@@ -23,13 +23,13 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestDirectIndexLoadAsmShape(unittest.TestCase):
     """Source-level checks: real C programs lowered through the
     full pipeline produce the expected `LDX` / `LDY` form."""
@@ -69,7 +69,7 @@ class TestDirectIndexLoadAsmShape(unittest.TestCase):
         self.assertNotRegex(asm, r"LDA   __local[^\n]*\n   TAX")
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestDirectIndexLoadCorrectness(unittest.TestCase):
     """End-to-end correctness."""
 

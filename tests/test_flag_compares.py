@@ -24,14 +24,14 @@ the C++ port now, each named for the test it came from
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from tests.test_register_arguments import _body, _codegen
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")
+@needs_c6502cpp
 class TestCompiled(unittest.TestCase):
     def test_bit_7_compare(self) -> None:
         src = ("#include <stdint.h>\n"
@@ -155,7 +155,7 @@ def _expected():
     return checks
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")
+@needs_c6502cpp
 class TestSimulated(unittest.TestCase):
     def test_both_pipelines(self) -> None:
         checks = _expected()

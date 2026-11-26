@@ -14,15 +14,14 @@ that end by jumping to another falling into it instead
 """
 from __future__ import annotations
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from parser import ParserError
 from passes.type_checking import TypeCheckError
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str) -> str:
@@ -100,7 +99,7 @@ unsigned char pick(unsigned char i) { hits++; return table[i] + hits; }
 _EXPECTED = 147
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSectionAttribute(unittest.TestCase):
 
     def _items(self, src: str) -> dict[str, str]:
@@ -157,7 +156,7 @@ class TestSectionAttribute(unittest.TestCase):
                     _codegen(src + main)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestScriptedLink(unittest.TestCase):
 
     def test_sections_laid_out(self) -> None:
@@ -260,7 +259,7 @@ class TestScriptedLink(unittest.TestCase):
         self.assertIn("doesn't define", err)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestFallThroughLink(unittest.TestCase):
     """A function of one unit that ends by calling one of another's
     falls into it once linked."""
@@ -311,7 +310,7 @@ SECTIONS
                          3 + 11 + 5)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestNames(unittest.TestCase):
     """Internal names two units share are renamed in one of them."""
 

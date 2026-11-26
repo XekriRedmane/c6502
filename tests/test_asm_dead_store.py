@@ -20,6 +20,7 @@ the C++ port now, each named for the test it came from
 from __future__ import annotations
 
 import unittest
+from tests import cpp_build
 
 
 class TestPointerInNumberedZeroPage(unittest.TestCase):
@@ -31,9 +32,8 @@ class TestPointerInNumberedZeroPage(unittest.TestCase):
 
 
     def test_runs(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp CLI not available")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         src = """
             unsigned char table[8] = {10, 20, 30, 40, 50, 60, 70, 80};
@@ -61,9 +61,8 @@ class TestTailCallKeepsAddressTakenLocals(unittest.TestCase):
 
 
     def test_runs(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp CLI not available")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         src = (
             "unsigned char sum(unsigned char *a, unsigned char n) {\n"

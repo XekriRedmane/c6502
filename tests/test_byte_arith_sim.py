@@ -26,10 +26,10 @@ the C++ port now, each named for the test it came from
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 _BYTES = list(range(256))
 # 16-bit values with every byte pattern that matters for a shift: the
@@ -205,7 +205,7 @@ def _program(decl: str, size: int, xs, ys) -> str:
     return "\n".join(lines) + "\n"
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestByteArith(unittest.TestCase):
 
     def _check(self, optimize: bool) -> None:

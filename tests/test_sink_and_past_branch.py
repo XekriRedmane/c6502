@@ -2,6 +2,7 @@
 `ZeroExtend; BitwiseAnd; Truncate` past a `JumpIfMasked`."""
 
 import unittest
+from tests import cpp_build
 
 
 class TestSinkAndPastBranchKeepsSharedDefs(unittest.TestCase):
@@ -25,9 +26,8 @@ class TestSinkAndPastBranchKeepsSharedDefs(unittest.TestCase):
     )
 
     def test_shared_zero_extend_sim(self):
-        import shutil
-        if not shutil.which("pcpp"):
-            self.skipTest("pcpp CLI not available")
+        if not cpp_build.BUILT:
+            self.skipTest(cpp_build.REASON)
         from sim.harness import build_sim
         # y = 10 - 5 + 3 = 8, and g16 = 3 from the second call.
         for optimize in (False, True):

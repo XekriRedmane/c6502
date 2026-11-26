@@ -21,7 +21,6 @@ don't duplicate that here.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 from pathlib import Path
 
@@ -32,6 +31,7 @@ from tests.test_sim_asm import (
     _expected_returns_in_int_range,
     _signed_int,
 )
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -48,7 +48,7 @@ _CHAPTERS_UNDER_TEST = tuple(
 )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestAsmSimChaptersOptimized(unittest.TestCase):
     """Same expected-return assertions as `test_sim_asm.py`, but
     the pipeline runs with `optimize=True`. Per-file `subTest` so

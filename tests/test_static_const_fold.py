@@ -24,13 +24,13 @@ intermediate temp slots freed up.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestStaticConstFoldAsmShape(unittest.TestCase):
     """Source-level checks on the emitted asm — confirm constants
     appear as immediates."""
@@ -98,7 +98,7 @@ class TestStaticConstFoldAsmShape(unittest.TestCase):
         self.assertNotIn("#$C8", asm)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestStaticConstFoldCorrectness(unittest.TestCase):
     """End-to-end: optimized programs compute the same answers as
     unoptimized ones."""

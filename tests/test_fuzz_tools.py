@@ -7,14 +7,14 @@ here) without the minutes a real fuzz run takes."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from fuzz import calls, exprs
 from fuzz.runner import disagreements, format_result, run_all
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestFuzzGenerators(unittest.TestCase):
 
     def _check(self, make_program, seeds):
@@ -41,7 +41,7 @@ class TestFuzzGenerators(unittest.TestCase):
         self.assertEqual(calls.make_program(7), calls.make_program(7))
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestReducerRejectsFallingOff(unittest.TestCase):
     """The reducer never keeps a candidate that reaches the end of a
     function returning a value, whose value C99 6.9.1p12 leaves

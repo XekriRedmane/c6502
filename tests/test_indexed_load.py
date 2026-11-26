@@ -16,17 +16,17 @@ Coverage:
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _signed_int(v: int) -> int:
     return v - 0x10000 if v & 0x8000 else v
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedLoadAsmShape(unittest.TestCase):
     """Source-level tests asserting the emitted asm uses absolute,X."""
 
@@ -85,7 +85,7 @@ class TestIndexedLoadAsmShape(unittest.TestCase):
         self.assertNotIn("arr,X", asm)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedLoadCorrectness(unittest.TestCase):
     """End-to-end: each load reads the correct bytes."""
 
@@ -136,7 +136,7 @@ class TestIndexedLoadCorrectness(unittest.TestCase):
         self.assertEqual(self._sim(src), 0)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestIndexedConstLoadSignedIndex(unittest.TestCase):
     def test_negative_signed_char_index(self) -> None:
         # `buf[i]` through a constant base with `int8_t i = -1` reads

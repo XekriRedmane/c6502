@@ -4,11 +4,11 @@ Most cases are the standard's own examples."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
 
 _PROGRAM = """\
@@ -31,7 +31,7 @@ int main(void) {
 """
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPrograms(unittest.TestCase):
     """The operand isn't evaluated (C23 §6.7.3.6p4), so `x++` and the
     call of `bump` don't happen. EXAMPLE 4's nested typeof is a cast

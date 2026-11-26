@@ -11,19 +11,18 @@ list, a scalar initializer) are doctest cases of the C++ front end
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _run(src: str, optimize: bool) -> int:
     return build_sim(src, optimize=optimize).run().return_int()
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSizes(unittest.TestCase):
 
     def test_sizes(self) -> None:

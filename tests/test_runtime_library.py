@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import io
 import random
-import shutil
 import tempfile
 import unittest
 from dataclasses import dataclass
@@ -27,6 +26,7 @@ from unittest.mock import patch
 
 from binutils import elf as E
 from rtlib.helpers import all_helper_functions
+from tests.cpp_build import needs_c6502cpp
 
 # The name the runtime library's object goes by in a link.
 LIBRARY_NAME = "runtime.o"
@@ -37,7 +37,6 @@ def helper_names() -> frozenset[str]:
     of rtlib/helpers.py, which the simulator keeps."""
     return frozenset(fn.name for fn in all_helper_functions())
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 @dataclass
@@ -194,7 +193,7 @@ def _read(run, name: str, t: _Type, n: int) -> list[int]:
     ]
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestHelpers(unittest.TestCase):
     """Each helper, linked from the library and run, against Python.
     A 1- or 2-byte shift by a variable count is an inline loop, so
@@ -369,7 +368,7 @@ int main(void) { return a / b; }
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSelection(unittest.TestCase):
     """Which helpers a link takes from the library."""
 
@@ -471,7 +470,7 @@ SECTIONS
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestLinkerScript(unittest.TestCase):
     """A linker script places the helpers by the library's name, or
     with a pattern that catches every unit's code."""

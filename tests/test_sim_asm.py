@@ -42,7 +42,6 @@ reason), keeping the gap visible.
 
 from __future__ import annotations
 
-import shutil
 import unittest
 from pathlib import Path
 
@@ -52,6 +51,7 @@ from sim.harness import build_sim
 # simulators must agree on what each program is supposed to return,
 # so duplicating the table would be a bug magnet.
 from tests.test_sim_chapters import EXPECTED_RETURNS, SKIPPED
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -110,7 +110,7 @@ def _expected_returns_in_int_range() -> dict[str, int]:
     return out
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestAsmSimChapters(unittest.TestCase):
     """Per-file `subTest` so one regression doesn't mask others — the
     failure summary lists each file by relative path. SKIPS entries are

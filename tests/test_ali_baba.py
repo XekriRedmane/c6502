@@ -37,12 +37,12 @@ spans the C program replaces that none of the scripts reach.
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 import tempfile
 import unittest
 from dataclasses import dataclass, field
 from pathlib import Path
+from tests.cpp_build import needs_c6502cpp
 
 _ROOT = Path(__file__).parent.parent
 _DIR = _ROOT / "examples" / "ali_baba"
@@ -52,7 +52,6 @@ _UNITS = [
     "main", "init", "turn", "input", "combat", "ai", "events",
     "entities", "map", "display", "util", "text", "sound", "hrcg",
 ]
-_HAVE_PCPP = shutil.which("pcpp") is not None
 _AB_DIR = os.environ.get("ALI_BABA_DIR")
 _DISK = "Ali Baba and the Forty Thieves (4am and san inc crack).dsk"
 
@@ -421,7 +420,7 @@ def _compile(unit: str, out: Path, stage: str) -> Path:
     return out
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestGoldOutputs(unittest.TestCase):
     """Each unit's output matches the checked-in file. To bless a new
     one, run `uv run python compile.py examples/ali_baba/<unit>.c -S
@@ -466,7 +465,7 @@ def _function_names(exe) -> dict[int, str]:
     }
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp not available")
+@needs_c6502cpp
 @unittest.skipUnless(
     _AB_DIR, "set ALI_BABA_DIR to the ali_baba_reveng directory")
 @unittest.skipUnless((_DIR / "ali_baba.ld").exists(),
@@ -532,7 +531,7 @@ class TestRuns(unittest.TestCase):
         self._compare(_PARTY)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp not available")
+@needs_c6502cpp
 @unittest.skipUnless(
     _AB_DIR, "set ALI_BABA_DIR to the ali_baba_reveng directory")
 @unittest.skipUnless((_DIR / "ali_baba.ld").exists(),

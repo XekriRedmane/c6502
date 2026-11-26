@@ -32,10 +32,10 @@ mode where the bug fires."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 _MAX_CYCLES = 400_000
@@ -52,7 +52,7 @@ def _run(source: str, *, optimize: bool) -> int:
     return result.return_int()
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestHwRegPinClobberAcrossLiveRange(unittest.TestCase):
     """Each test verifies the optimizer doesn't pin a value to a
     hardware register whose value is overwritten by another

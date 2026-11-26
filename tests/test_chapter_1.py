@@ -13,18 +13,18 @@ moved under tests/chapter_1/ to match the per-chapter layout used by
 chapters 2 onwards.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
 from compile import _run_source
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
 _C1 = _TESTS_DIR / "chapter_1"
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter1Valid(unittest.TestCase):
     def test_codegen(self):
         files = sorted((_C1 / "valid").rglob("*.c"))

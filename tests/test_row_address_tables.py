@@ -3,13 +3,12 @@ the address of a row of a 2-D array in a table of row addresses."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 def _codegen(src: str) -> str:
@@ -21,7 +20,7 @@ def _cell(r: int, c: int) -> int:
     return (r * 16 + c) & 0xFF
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestRowAddressTablesSim(unittest.TestCase):
     """Programs that index 2-D arrays through row tables, run in both
     pipelines. Each program reads its array often enough that the

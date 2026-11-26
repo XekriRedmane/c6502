@@ -4,13 +4,13 @@ The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6)."""
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not installed")
+@needs_c6502cpp
 class TestLoopCounterToXSim(unittest.TestCase):
 
     def test_pivot_after_call_keeps_loop_finite(self):
@@ -42,7 +42,7 @@ class TestLoopCounterToXSim(unittest.TestCase):
                 self.assertEqual(r.return_int(), 4)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestPointerHighByteSim(unittest.TestCase):
     """`msg = msg + msg[0] + 1` steps the pointer's high byte with one
     `INC`, after `SEC; ADC (msg),Y` (passes/carry_in_add.py). The pass

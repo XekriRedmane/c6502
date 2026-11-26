@@ -18,7 +18,6 @@ their current accept-it behavior so a regression OR a fix both flag
 the test as failing — at which point you drop the entry.
 """
 
-import shutil
 import unittest
 from pathlib import Path
 
@@ -30,6 +29,7 @@ from passes.identifier_resolution import IdentifierResolutionError
 from passes.label_resolution import LabelResolutionError
 from passes.loop_labeling import LoopLabelingError
 from passes.type_checking import TypeCheckError
+from tests.cpp_build import needs_c6502cpp
 
 
 _TESTS_DIR = Path(__file__).parent
@@ -72,7 +72,7 @@ def _run_codegen_subtest(test, files, root, not_rejected):
                     _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter9Valid(unittest.TestCase):
     """Each chapter_9/valid file must compile through `-S`."""
 
@@ -88,7 +88,7 @@ class TestChapter9Valid(unittest.TestCase):
                 _run_source("codegen", source)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter9InvalidDeclarations(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C9 / "invalid_declarations").rglob("*.c"))
@@ -98,7 +98,7 @@ class TestChapter9InvalidDeclarations(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter9InvalidLabels(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C9 / "invalid_labels").rglob("*.c"))
@@ -107,7 +107,7 @@ class TestChapter9InvalidLabels(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestChapter9InvalidTypes(unittest.TestCase):
     def test_codegen_rejects(self):
         files = sorted((_C9 / "invalid_types").rglob("*.c"))

@@ -7,11 +7,11 @@ the C++ port now, each named for the test it came from
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
 
 
 # `mul` takes the starting product first, which arrives in A and X, so
@@ -63,7 +63,7 @@ def _expected() -> int:
     return n
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 @no_inlining()
 class TestRuns(unittest.TestCase):
 

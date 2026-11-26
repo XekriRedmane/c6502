@@ -16,7 +16,6 @@ rule in test_bin_to_bcd_ir_check.cpp.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 import builtin_functions as bf
@@ -24,8 +23,8 @@ import tac_ast
 from sim.harness import build_sim
 from tests.test_bcd_builtins import _codegen
 from tests.test_sim_chapters import _run_program as _run_tac
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 
 class TestModel(unittest.TestCase):
@@ -149,7 +148,7 @@ def _sum_expected() -> int:
     return (s ^ (s >> 16)) & 0xFFFF
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestTac(unittest.TestCase):
     def test_lowers_to_a_unary(self) -> None:
         src = (
@@ -220,7 +219,7 @@ int main(void) {{
 """
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestSimulator(unittest.TestCase):
     """Every 16-bit value through the builtin, in batches, in both
     pipelines."""

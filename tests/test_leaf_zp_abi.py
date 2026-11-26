@@ -17,20 +17,20 @@ Coverage:
 from __future__ import annotations
 
 import io
-import shutil
 import unittest
 from unittest.mock import patch
 
 import asm_ast
 from compile import main as compile_main
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _signed_int(v: int) -> int:
     return v - 0x10000 if v & 0x8000 else v
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestLeafZpAbi(unittest.TestCase):
     def _codegen(self, source: str) -> str:
         with patch("sys.stdin", io.StringIO(source)), \

@@ -10,13 +10,12 @@ here.
 """
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
-_HAVE_PCPP = shutil.which("pcpp") is not None
 
 _RECS = """
 struct rec { unsigned char t[5]; unsigned int w; unsigned char a; };
@@ -33,7 +32,7 @@ def _codegen(src: str) -> str:
     return _run_source("codegen", src, optimize=True)
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestStaticIndexedAccess(unittest.TestCase):
 
     def _check(self, src: str, expected: int) -> None:

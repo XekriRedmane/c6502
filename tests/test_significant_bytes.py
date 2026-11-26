@@ -4,11 +4,11 @@ closed form of the loop in Zork's `please_insert_save_diskette`, and
 `==` / `!=` comparing only significant bytes
 (`tac_to_asm._equality_bytes`)."""
 
-import shutil
 import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 def _shift_program(c_type: str, counts: list[int]) -> str:
@@ -45,7 +45,7 @@ def _shift_program(c_type: str, counts: list[int]) -> str:
     return "\n".join(lines)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestWidenedByteShift(unittest.TestCase):
 
     def _check(self, src: str):
@@ -113,7 +113,7 @@ class TestWidenedByteShift(unittest.TestCase):
         self.assertIn("ROL   g+1", asm)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestScratchClosedForm(unittest.TestCase):
     """`please_insert_save_diskette` sets SCRATCH1 to one less than 64
     times the position. The loop it was written with and the closed
@@ -160,7 +160,7 @@ class TestScratchClosedForm(unittest.TestCase):
                 self.assertEqual(result.return_int(), 0)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestTruncatedRightShift(unittest.TestCase):
     """`(uint8_t)(w >> k)` computes only the low byte, from two bytes
     of `w`, for every count that needs two (16 and 32 bits),
@@ -218,7 +218,7 @@ class TestTruncatedRightShift(unittest.TestCase):
         asm = _run_source("codegen", src, optimize=True)
         self.assertNotIn("lsr16", asm)
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestEqualityBytes(unittest.TestCase):
     """`==` and `!=` compare only the low bytes either operand can
     have nonzero (`tac_to_asm._equality_bytes`), as a value and as a

@@ -10,10 +10,10 @@ user code.
 
 from __future__ import annotations
 
-import shutil
 import unittest
 
 from sim.harness import run_c_program
+from tests.cpp_build import needs_c6502cpp
 
 
 def _signed_byte(v: int) -> int:
@@ -36,7 +36,7 @@ def _read_longlong(memory: bytearray) -> int:
     return v
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestMul8(unittest.TestCase):
     """8-bit multiply via char-typed arithmetic. Note: post the C99
     width refresh, char operands integer-promote to int (now 16-bit)
@@ -81,7 +81,7 @@ class TestMul8(unittest.TestCase):
         self._assert("char main(void) { return 5 * (-3); }", -15)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestMul16(unittest.TestCase):
     """16-bit unsigned multiply (low 2 bytes) — exercised by `int *
     int` arithmetic now that Int is 2 bytes."""
@@ -131,7 +131,7 @@ class TestMul16(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestMul32(unittest.TestCase):
     """32-bit unsigned multiply (low 4 bytes) — exercised by `long *
     long` arithmetic now that Long is 4 bytes. Long returns sit at
@@ -185,7 +185,7 @@ class TestMul32(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestShifts8(unittest.TestCase):
     """8-bit asl / asr / lsr exercised via char-typed arithmetic.
     Like TestMul8, the underlying helper is the int-width one
@@ -241,7 +241,7 @@ class TestShifts8(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestShifts16(unittest.TestCase):
     """16-bit asl / asr / lsr — multi-byte ROR/ROL chain. Exercised
     via int-typed arithmetic now that Int is 2 bytes."""
@@ -284,7 +284,7 @@ class TestShifts16(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestShifts32(unittest.TestCase):
     """32-bit asl / asr / lsr — 4-byte ROR/ROL chain. Exercised via
     long-typed arithmetic now that Long is 4 bytes."""
@@ -335,7 +335,7 @@ class TestShifts32(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestUdivmod8(unittest.TestCase):
     """Unsigned 8-bit divmod via char-typed arithmetic. The
     underlying helper is now udivmod16 (char promotes to int before
@@ -401,7 +401,7 @@ class TestUdivmod8(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSdivmod8(unittest.TestCase):
     """Signed 8-bit divmod via signed-char arithmetic. C99 trunc-
     toward-zero — the underlying helper is now sdivmod16 since
@@ -475,7 +475,7 @@ class TestSdivmod8(unittest.TestCase):
                 self._assert(src, expected)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestUdivmod16(unittest.TestCase):
     """16-bit unsigned divmod via shift-and-subtract — exercised via
     `unsigned int` arithmetic now that Int is 2 bytes."""
@@ -527,7 +527,7 @@ class TestUdivmod16(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSdivmod16(unittest.TestCase):
     """16-bit signed divmod with C99 trunc-toward-zero — exercised
     via int-typed arithmetic now that Int is 2 bytes."""
@@ -589,7 +589,7 @@ class TestSdivmod16(unittest.TestCase):
                 self.assertEqual(self._i(src), a, msg=src)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestUdivmod32(unittest.TestCase):
     """32-bit unsigned divmod — exercised via `unsigned long`
     arithmetic now that Long is 4 bytes."""
@@ -619,7 +619,7 @@ class TestUdivmod32(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestSdivmod32(unittest.TestCase):
     """32-bit signed divmod — exercised via `long` arithmetic now
     that Long is 4 bytes."""

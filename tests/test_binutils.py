@@ -24,9 +24,10 @@ from pathlib import Path
 
 from binutils import elf as E
 from tests.no_inlining import no_inlining
+from tests.cpp_build import needs_c6502cpp
+from tests import cpp_build
 
 _ROOT = Path(__file__).parent.parent
-_HAVE_PCPP = shutil.which("pcpp") is not None
 _DASM = shutil.which("dasm")
 
 
@@ -201,7 +202,7 @@ def _run(module, argv: list[str]) -> tuple[int, str]:
     return rc, out.getvalue()
 
 
-@unittest.skipUnless(_HAVE_PCPP, "pcpp CLI not available")
+@needs_c6502cpp
 class TestTools(unittest.TestCase):
     """`compile.py -c`, linking, `nm.py`, and `objdump.py` on files."""
 
@@ -324,7 +325,9 @@ class TestTools(unittest.TestCase):
         self.assertRegex(out, r"(?m)^n\tEQU\t\$[0-9A-F]{2}$")
 
 
-@unittest.skipUnless(_DASM and _HAVE_PCPP, "needs dasm and pcpp")
+@unittest.skipUnless(
+    _DASM and cpp_build.BUILT, "needs dasm and c6502cpp",
+)
 class TestAgainstDasm(unittest.TestCase):
 
     def _dasm(self, text: str) -> dict[int, int]:

@@ -19,10 +19,10 @@ entity_floor_col[slot], entity_xoff_idx[slot], the last
 apply_bobble args, and a cumulative apply_bobble call count.
 """
 
-import shutil
 import unittest
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Source: examples/step_pos.c, inlined with an `apply_bobble` stub
@@ -156,7 +156,7 @@ def _expected() -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestStepPosSim(unittest.TestCase):
     """Differential opt-vs-unopt check on `step_pos`."""
 

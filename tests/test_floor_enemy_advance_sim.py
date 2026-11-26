@@ -23,11 +23,11 @@ Scenarios exercised:
      including the col >= 0x8F despawn edge.
 """
 
-import shutil
 import unittest
 
 import sim.runtime as rt_mod
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 
 # Source: examples/floor_enemy_advance.c, inlined here together with
@@ -331,7 +331,7 @@ def _flatten(scenarios: dict[str, list[list[int]]]) -> bytes:
     return bytes(out)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not on PATH")
+@needs_c6502cpp
 class TestFloorEnemyAdvanceSim(unittest.TestCase):
     """Differential opt vs unopt check on `floor_enemy_advance`.
 

@@ -13,12 +13,12 @@ can share them.
 """
 from __future__ import annotations
 
-import shutil
 import traceback
 import unittest
 from pathlib import Path
 
 from compile import _run_source, _source_errors
+from tests.cpp_build import needs_c6502cpp
 
 _TESTS_DIR = Path(__file__).parent
 
@@ -30,7 +30,7 @@ def _chapters() -> list[Path]:
     )
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp not available on PATH")
+@needs_c6502cpp
 class TestInvalidProgramsReportErrors(unittest.TestCase):
     def _check_chapter(self, chapter: Path) -> None:
         errors = _source_errors()

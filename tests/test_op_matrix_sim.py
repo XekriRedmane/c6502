@@ -35,11 +35,11 @@ fill."""
 
 from __future__ import annotations
 
-import shutil
 import unittest
 from dataclasses import dataclass
 
 from sim.harness import build_sim
+from tests.cpp_build import needs_c6502cpp
 
 # (C type, bytes, signed)
 _TYPES = [
@@ -298,7 +298,7 @@ def _programs():
         yield emit(chunk)
 
 
-@unittest.skipUnless(shutil.which("pcpp"), "pcpp CLI not available")
+@needs_c6502cpp
 class TestOperatorMatrix(unittest.TestCase):
 
     def _check(self, optimize: bool, shard: int) -> None:

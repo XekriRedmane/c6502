@@ -29,7 +29,10 @@ struct Fact {
 
 bool is_mem(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
 
-bool distinct(const ir::Type_operand& a, const ir::Type_operand& b) {
+// Returns whether `a` and `b` are operands of one kind that name
+// different bytes. Operands of different kinds may name one byte, so
+// they aren't known to be distinct.
+bool known_distinct(const ir::Type_operand& a, const ir::Type_operand& b) {
   return a.index() == b.index() && a != b;
 }
 
@@ -149,7 +152,7 @@ void rewrite_function(ir::Function& fn) {
         held_list[1] = a_src;
         for (const auto& held : held_list) {
           if (held && (written.what == Written::kUnknown ||
-                       !distinct(written.op, *held))) {
+                       !known_distinct(written.op, *held))) {
             if (fact && *held == fact->byte) {
               fact.reset();
             }

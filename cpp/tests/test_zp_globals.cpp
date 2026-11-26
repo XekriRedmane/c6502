@@ -111,3 +111,29 @@ TEST_CASE("zp_globals: __zp_init loads each initial byte once, zero first") {
       store("a", 2), load(7),     store("b", 0), asm_ir::Return{}};
   CHECK(init.instructions == expected);
 }
+
+TEST_CASE("zp_globals: promotion takes the most accesses per byte first, ties by name") {
+  c6502::passes::FrontEndOptions options;
+  options.preprocess = false;
+  options.optimize = true;
+  std::string err;
+  const auto r = c6502::passes::front_end(
+      "unsigned int a = 1;\n"
+      "unsigned char b = 1;\n"
+      "unsigned char c = 1;\n"
+      "unsigned char d = 1;\n"
+      "unsigned long e = 1;\n",
+      options, err);
+  c6502::OrderedMap<std::string, Int> weights;
+  // 3 a byte for `a` and `b`, 8 for `c`, 2 for `d` (too few), and 7/2
+  // for `e`, which comes between.
+  weights.insert_or_assign("a", 6);
+  weights.insert_or_assign("b", 3);
+  weights.insert_or_assign("c", 8);
+  weights.insert_or_assign("d", 2);
+  weights.insert_or_assign("e", 14);
+  const c6502::passes::ZpGlobals zp =
+      c6502::passes::allocate_zp_globals(r.symbols, &r.types, {}, &weights);
+  CHECK(keys(zp.promoted) == Names{"c", "e", "a", "b"});
+  CHECK(keys(zp.addrs) == Names{"c", "e", "a", "b"});
+}

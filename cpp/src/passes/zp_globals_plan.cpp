@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -75,8 +74,6 @@ std::optional<Int> first_free(const std::set<Int>& taken, Int size) {
   return std::nullopt;
 }
 
-double as_double(Int v) { return static_cast<double>(static_cast<std::int64_t>(v)); }
-
 struct Candidate {
   std::string name;
   Int weight = 0;
@@ -112,11 +109,13 @@ std::vector<Candidate> promotion_order(const SymbolTable& symbols, const TypeTab
     }
     out.push_back(Candidate{name, weight, size});
   }
+  // The most accesses per byte first, `a.weight / a.size > b.weight /
+  // b.size` compared with the sizes multiplied out.
   std::sort(out.begin(), out.end(), [](const Candidate& a, const Candidate& b) {
-    const double ka = -(as_double(a.weight) / as_double(a.size));
-    const double kb = -(as_double(b.weight) / as_double(b.size));
+    const Int ka = a.weight * b.size;
+    const Int kb = b.weight * a.size;
     if (ka != kb) {
-      return ka < kb;
+      return ka > kb;
     }
     return a.name < b.name;
   });

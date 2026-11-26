@@ -2,13 +2,16 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "errors.h"
 #include "passes/call_edges.h"
 #include "passes/recursion_saves.h"
-#include "pcpp_text.h"
-#include "py_int.h"
 #include "pyrepr.h"
 
 namespace c6502::passes {
@@ -254,44 +257,120 @@ namespace {
 constexpr std::string_view kBegin = "; @zp-link-meta-begin";
 constexpr std::string_view kEnd = "; @zp-link-meta-end";
 
-constexpr std::string_view kWhere = "the link metadata";
+constexpr std::string_view kSpaces = " \t\r\n\v\f";
 
 [[noreturn]] void value_error(const std::string& message) {
   throw CompileError("ValueError", message);
 }
 
-class Fields {
+std::string quoted(std::string_view s) { return "'" + std::string(s) + "'"; }
+
+std::string_view trim(std::string_view s) {
+  const std::size_t first = s.find_first_not_of(kSpaces);
+  if (first == std::string_view::npos) {
+    return {};
+  }
+  return s.substr(first, s.find_last_not_of(kSpaces) - first + 1);
+}
+
+std::vector<std::string> split_spaces(std::string_view s) {
+  std::vector<std::string> out;
+  std::size_t at = s.find_first_not_of(kSpaces);
+  while (at != std::string_view::npos) {
+    const std::size_t end = s.find_first_of(kSpaces, at);
+    out.emplace_back(s.substr(at, end == std::string_view::npos ? end : end - at));
+    at = s.find_first_not_of(kSpaces, end);
+  }
+  return out;
+}
+
+// A record being read: its words and its text for the messages.
+class Record {
  public:
-  Fields(const std::vector<std::string>& parts, std::size_t first) {
-    for (std::size_t i = first; i < parts.size(); ++i) {
-      auto [k, v] = split_kv(parts[i]);
-      values_[k] = v;
+  explicit Record(std::string_view text) : parts_(split_spaces(text)), shown_(quoted(text)) {}
+
+  const std::vector<std::string>& parts() const { return parts_; }
+  const std::string& kind() const { return parts_[0]; }
+
+  [[noreturn]] void malformed() const {
+    value_error("malformed " + kind() + " record: " + shown_);
+  }
+  [[noreturn]] void unknown_kind() const {
+    value_error("unknown record kind " + quoted(kind()) + ": " + shown_);
+  }
+
+  // Reads the `key=value` words from `parts()[first]` on.
+  void read_fields(std::size_t first) {
+    for (std::size_t i = first; i < parts_.size(); ++i) {
+      auto [k, v] = split_kv(parts_[i]);
+      fields_[k] = v;
     }
   }
 
-  static std::pair<std::string, std::string> split_kv(const std::string& token) {
-    const std::size_t eq = token.find('=');
+  static std::pair<std::string, std::string> split_kv(const std::string& word) {
+    const std::size_t eq = word.find('=');
     if (eq == std::string::npos) {
-      value_error("expected key=value, got " + pcpp::py_repr(token));
+      value_error("expected key=value, got " + quoted(word));
     }
-    return {token.substr(0, eq), token.substr(eq + 1)};
+    return {word.substr(0, eq), word.substr(eq + 1)};
   }
 
+  // Returns the value of a field the record must have.
   const std::string& at(const std::string& key) const {
-    const auto it = values_.find(key);
-    if (it == values_.end()) throw CompileError("KeyError", pcpp::py_repr(key));
+    const auto it = fields_.find(key);
+    if (it == fields_.end()) {
+      value_error("missing " + key + " in " + kind() + " record: " + shown_);
+    }
     return it->second;
   }
 
+  // Returns the value of a field that may be left out, "" when it is.
   std::string get(const std::string& key) const {
-    const auto it = values_.find(key);
-    return it == values_.end() ? std::string() : it->second;
+    const auto it = fields_.find(key);
+    return it == fields_.end() ? std::string() : it->second;
   }
-  bool has(const std::string& key) const { return values_.contains(key); }
-  bool is_true(const std::string& key) const { return has(key) && get(key) == "true"; }
+  bool has(const std::string& key) const { return fields_.contains(key); }
+  bool is_true(const std::string& key) const { return get(key) == "true"; }
+
+  // Returns `text` read as a number in `base`, digits only. Fifteen
+  // digits hold every size and address the writer gives.
+  asdl::Int number(std::string_view text, int base) const {
+    if (text.empty() || text.size() > 15) {
+      bad_number(text);
+    }
+    asdl::Int value = 0;
+    for (const char c : text) {
+      int digit = 0;
+      if (c >= '0' && c <= '9') {
+        digit = c - '0';
+      } else if (base == 16 && c >= 'A' && c <= 'F') {
+        digit = c - 'A' + 10;
+      } else if (base == 16 && c >= 'a' && c <= 'f') {
+        digit = c - 'a' + 10;
+      } else {
+        bad_number(text);
+      }
+      value = value * base + digit;
+    }
+    return value;
+  }
+
+  // Returns an address written `$<hex>`.
+  asdl::Int address(std::string_view text) const {
+    if (text.empty() || text[0] != '$') {
+      bad_number(text);
+    }
+    return number(text.substr(1), 16);
+  }
 
  private:
-  std::map<std::string, std::string> values_;
+  [[noreturn]] void bad_number(std::string_view text) const {
+    value_error("bad number " + quoted(text) + " in " + kind() + " record: " + shown_);
+  }
+
+  std::vector<std::string> parts_;
+  std::string shown_;
+  std::map<std::string, std::string> fields_;
 };
 
 std::vector<std::string> split_csv(const std::string& value) {
@@ -309,18 +388,14 @@ std::vector<std::string> split_csv(const std::string& value) {
   }
 }
 
-std::string lstrip_dollars(const std::string& value) {
-  return value.substr(std::min(value.find_first_not_of('$'), value.size()));
-}
-
-std::vector<std::optional<asdl::Int>> parse_pinned(const std::string& value) {
+std::vector<std::optional<asdl::Int>> parse_pinned(const Record& r, const std::string& value) {
   std::vector<std::optional<asdl::Int>> out;
   if (value.empty()) return out;
   for (const auto& v : split_csv(value)) {
     if (v.empty()) {
       out.emplace_back(std::nullopt);
     } else {
-      out.emplace_back(py_int::parse(lstrip_dollars(v), 16, kWhere));
+      out.emplace_back(r.address(v));
     }
   }
   return out;
@@ -332,39 +407,39 @@ std::pair<std::string, std::string> partition(const std::string& value, char sep
   return {value.substr(0, at), value.substr(at + 1)};
 }
 
-void parse_record(const std::string& record, LinkMetadata& out) {
-  const std::vector<std::string> parts = pcpp::split_whitespace(record);
+void parse_record(std::string_view text, LinkMetadata& out) {
+  Record r(text);
+  const std::vector<std::string>& parts = r.parts();
   if (parts.empty()) return;
-  const std::string& kind = parts[0];
-  const std::string shown = pcpp::py_repr(record);
+  const std::string& kind = r.kind();
   if (kind == "def") {
-    if (parts.size() < 6) value_error("malformed def record: " + shown);
-    const Fields kvs(parts, 2);
+    if (parts.size() < 6) r.malformed();
+    r.read_fields(2);
     FunctionMeta d;
     d.name = parts[1];
-    d.params = split_csv(kvs.at("params"));
-    d.locals = split_csv(kvs.at("locals"));
-    d.indirect = kvs.at("indirect") == "true";
-    d.in_cycle = kvs.at("in_cycle") == "true";
-    d.param_regs = split_csv(kvs.get("param_regs"));
-    d.pinned = parse_pinned(kvs.get("pinned"));
-    d.changes = split_csv(kvs.get("changes"));
-    d.carry = kvs.is_true("carry");
+    d.params = split_csv(r.at("params"));
+    d.locals = split_csv(r.at("locals"));
+    d.indirect = r.at("indirect") == "true";
+    d.in_cycle = r.at("in_cycle") == "true";
+    d.param_regs = split_csv(r.get("param_regs"));
+    d.pinned = parse_pinned(r, r.get("pinned"));
+    d.changes = split_csv(r.get("changes"));
+    d.carry = r.is_true("carry");
     out.defs.push_back(std::move(d));
   } else if (kind == "ext") {
-    if (parts.size() < 3) value_error("malformed ext record: " + shown);
-    const Fields kvs(parts, 2);
+    if (parts.size() < 3) r.malformed();
+    r.read_fields(2);
     ExternMeta e;
     e.name = parts[1];
-    e.params = split_csv(kvs.at("params"));
-    e.param_regs = split_csv(kvs.get("param_regs"));
-    e.pinned = parse_pinned(kvs.get("pinned"));
-    e.carry = kvs.is_true("carry");
+    e.params = split_csv(r.at("params"));
+    e.param_regs = split_csv(r.get("param_regs"));
+    e.pinned = parse_pinned(r, r.get("pinned"));
+    e.carry = r.is_true("carry");
     out.externs.push_back(std::move(e));
   } else if (kind == "share") {
     SlotShare share;
     for (std::size_t i = 1; i < parts.size(); ++i) {
-      const auto [key, value] = Fields::split_kv(parts[i]);
+      const auto [key, value] = Record::split_kv(parts[i]);
       if (key == "member") {
         auto [fn, syms] = partition(value, ':');
         share.members.emplace_back(fn, split_csv(syms));
@@ -378,45 +453,45 @@ void parse_record(const std::string& record, LinkMetadata& out) {
       } else if (key == "writer") {
         share.writers.push_back(value);
       } else {
-        value_error("malformed share record: " + shown);
+        r.malformed();
       }
     }
-    if (share.members.empty()) value_error("malformed share record: " + shown);
+    if (share.members.empty()) r.malformed();
     out.shares.push_back(std::move(share));
   } else if (kind == "zp") {
-    if (parts.size() < 3) value_error("malformed zp record: " + shown);
-    const Fields kvs(parts, 2);
-    const std::string& at = kvs.at("at");
+    if (parts.size() < 3) r.malformed();
+    r.read_fields(2);
+    const std::string& at = r.at("at");
     ZpObjectMeta z;
     z.name = parts[1];
-    z.size = py_int::parse(kvs.at("size"), 10, kWhere);
-    if (at != "auto") z.at = py_int::parse(lstrip_dollars(at), 16, kWhere);
-    z.defined = kvs.at("def") == "true";
-    z.init = split_csv(kvs.get("init"));
-    if (kvs.has("weight")) z.weight = py_int::parse(kvs.get("weight"), 10, kWhere);
-    z.local = kvs.is_true("local");
+    z.size = r.number(r.at("size"), 10);
+    if (at != "auto") z.at = r.address(at);
+    z.defined = r.at("def") == "true";
+    z.init = split_csv(r.get("init"));
+    if (r.has("weight")) z.weight = r.number(r.get("weight"), 10);
+    z.local = r.is_true("local");
     out.zp_objects.push_back(std::move(z));
   } else if (kind == "item") {
-    if (parts.size() < 3) value_error("malformed item record: " + shown);
-    const Fields kvs(parts, 2);
+    if (parts.size() < 3) r.malformed();
+    r.read_fields(2);
     out.items.push_back(ItemMeta{.name = parts[1],
-                                 .section = kvs.at("section"),
-                                 .local = kvs.is_true("local"),
-                                 .zero = kvs.is_true("zero"),
-                                 .merge = kvs.is_true("merge")});
+                                 .section = r.at("section"),
+                                 .local = r.is_true("local"),
+                                 .zero = r.is_true("zero"),
+                                 .merge = r.is_true("merge")});
   } else if (kind == "runtime") {
-    const Fields kvs(parts, 1);
-    out.hargs_size = py_int::parse(kvs.at("hargs_size"), 10, kWhere);
-    if (kvs.has("hargs_need")) out.hargs_need = py_int::parse(kvs.get("hargs_need"), 10, kWhere);
+    r.read_fields(1);
+    out.hargs_size = r.number(r.at("hargs_size"), 10);
+    if (r.has("hargs_need")) out.hargs_need = r.number(r.get("hargs_need"), 10);
   } else if (kind == "call") {
     if ((parts.size() != 4 && parts.size() != 5) || parts[2] != "->" ||
         (parts.size() == 5 && parts[4] != "saved")) {
-      value_error("malformed call record: " + shown);
+      r.malformed();
     }
     out.calls.emplace_back(parts[1], parts[3]);
     if (parts.size() == 5) out.saved_calls.emplace_back(parts[1], parts[3]);
   } else {
-    value_error("unknown record kind " + pcpp::py_repr(kind) + ": " + shown);
+    r.unknown_kind();
   }
 }
 
@@ -425,8 +500,14 @@ void parse_record(const std::string& record, LinkMetadata& out) {
 LinkMetadata parse_metadata(std::string_view asm_text) {
   LinkMetadata out;
   bool in_block = false;
-  for (const auto& raw : pcpp::splitlines(asm_text)) {
-    const std::string line = pcpp::strip(raw);
+  std::size_t start = 0;
+  while (start < asm_text.size()) {
+    std::size_t end = asm_text.find('\n', start);
+    if (end == std::string_view::npos) {
+      end = asm_text.size();
+    }
+    const std::string_view line = trim(asm_text.substr(start, end - start));
+    start = end + 1;
     if (line == kBegin) {
       if (in_block) {
         value_error("nested @zp-link-meta-begin without preceding @zp-link-meta-end");
@@ -440,10 +521,10 @@ LinkMetadata parse_metadata(std::string_view asm_text) {
       continue;
     }
     if (!in_block) continue;
-    if (line.rfind("; ", 0) != 0) {
-      value_error("unexpected line inside zp-link-meta block: " + pcpp::py_repr(line));
+    if (!line.starts_with("; ")) {
+      value_error("unexpected line inside zp-link-meta block: " + quoted(line));
     }
-    parse_record(pcpp::strip(std::string_view(line).substr(2)), out);
+    parse_record(trim(line.substr(2)), out);
   }
   if (in_block) value_error("@zp-link-meta-begin without matching @zp-link-meta-end");
   return out;

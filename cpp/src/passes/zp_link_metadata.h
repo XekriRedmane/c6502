@@ -89,10 +89,10 @@ std::vector<std::string> format_metadata(const LinkMetadata& meta);
 
 // Returns the metadata of the block in the UTF-8 text `asm_text` (a
 // `.asm` file's text or an object's `.c6502.link` section), or an empty
-// `LinkMetadata` when it holds no block. A malformed block throws
-// `CompileError("ValueError", ...)`, a record without a required field
-// throws `CompileError("KeyError", "'<field>'")`, and a number of more
-// than 128 bits throws the OverflowError of src/py_int.h.
+// `LinkMetadata` when it holds no block. The lines end at `\n`, and a
+// record's words are separated by ASCII spaces and tabs. A malformed
+// block, which includes a record without a field it needs and a number
+// that isn't digits, throws `CompileError("ValueError", ...)`.
 LinkMetadata parse_metadata(std::string_view asm_text);
 
 // Returns the records of `prog`'s functions, its zp_abi externs, and

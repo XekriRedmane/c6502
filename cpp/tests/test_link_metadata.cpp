@@ -1,10 +1,6 @@
-// Tests of `parse_metadata` (passes/zp_link_metadata.py), with the
-// result or the error Python gives for each text. `c6502cpp
-// check-binutils` checks it on every block the corpus and the suite
-// parse (the `parse_metadata` records of tools/capture_binutils.py),
-// which reach none of its errors, so each of its thirteen ValueError
-// messages has a case here, and so do the errors of the fields it reads
-// with `kvs[...]` and `int()`.
+// Tests of `parse_metadata`. `c6502cpp check-frozen` checks it on the
+// blocks the corpus and the suite parsed, which reach none of its
+// errors, so each of its messages has a case here.
 #include <string>
 #include <vector>
 
@@ -66,42 +62,61 @@ TEST_CASE("parse_metadata: the errors of the records") {
   CHECK(error_of(block("; item x section")) == "ValueError: expected key=value, got 'section'");
 }
 
-TEST_CASE("parse_metadata: a missing field is Python's KeyError") {
-  CHECK(error_of(block("; def f params= locals= indirect=false x=1")) == "KeyError: 'in_cycle'");
-  CHECK(error_of(block("; runtime hargs_need=3")) == "KeyError: 'hargs_size'");
+TEST_CASE("parse_metadata: a missing field") {
+  CHECK(error_of(block("; def f params= locals= indirect=false x=1")) ==
+        "ValueError: missing in_cycle in def record: 'def f params= locals= indirect=false x=1'");
+  CHECK(error_of(block("; runtime hargs_need=3")) ==
+        "ValueError: missing hargs_size in runtime record: 'runtime hargs_need=3'");
 }
 
-TEST_CASE("parse_metadata: numbers are read as int() reads them") {
-  CHECK(error_of(block("; zp x size=1x at=auto def=true")) ==
-        "ValueError: invalid literal for int() with base 10: '1x'");
-  CHECK(error_of(block("; def f params= locals= indirect=false in_cycle=false pinned=$zz")) ==
-        "ValueError: invalid literal for int() with base 16: 'zz'");
-  // Arabic-Indic digits, a `0x` prefix with an underscore, and a sign.
-  CHECK(formatted(block("; zp x size=١٢ at=$0x1_F def=true weight=+7")) ==
+TEST_CASE("parse_metadata: a number is digits, and an address `$` and hex digits") {
+  CHECK(formatted(block("; zp x size=12 at=$1f def=true weight=7")) ==
         std::vector<std::string>{"; @zp-link-meta-begin",
                                  "; zp x size=12 at=$1F def=true init= weight=7",
                                  "; @zp-link-meta-end"});
-  CHECK(error_of(block("; zp x size=" + std::string(4301, '1') + " at=auto def=true")) ==
-        "ValueError: Exceeds the limit (4300 digits) for integer string conversion: value has "
-        "4301 digits; use sys.set_int_max_str_digits() to increase the limit");
-  // Python reads 2**130, which the port's 128 bits can't hold.
-  const std::string wide = "1361129467683753853853498429727072845824";
-  CHECK(error_of(block("; zp x size=" + wide + " at=auto def=true")).rfind("OverflowError: ", 0) ==
-        0);
+  CHECK(error_of(block("; zp x size=1x at=auto def=true")) ==
+        "ValueError: bad number '1x' in zp record: 'zp x size=1x at=auto def=true'");
+  CHECK(error_of(block("; def f params= locals= indirect=false in_cycle=false pinned=$zz")) ==
+        "ValueError: bad number 'zz' in def record: "
+        "'def f params= locals= indirect=false in_cycle=false pinned=$zz'");
+  // Python's int() took each of these.
+  for (const char* field : {"size=+7", "size=1_2", "size=", "size=١٢"}) {
+    CAPTURE(field);
+    CHECK(error_of(block(std::string("; zp x ") + field + " at=auto def=true"))
+              .rfind("ValueError: bad number ", 0) == 0);
+  }
+  for (const char* at : {"at=$", "at=80", "at=$$80", "at=$0x80"}) {
+    CAPTURE(at);
+    CHECK(error_of(block(std::string("; zp x size=1 ") + at + " def=true"))
+              .rfind("ValueError: bad number ", 0) == 0);
+  }
+  CHECK(error_of(block("; zp x size=" + std::string(16, '1') + " at=auto def=true")) ==
+        "ValueError: bad number '1111111111111111' in zp record: 'zp x size=1111111111111111 "
+        "at=auto def=true'");
+  CHECK(formatted(block("; zp x size=" + std::string(15, '9') + " at=auto def=true")) ==
+        std::vector<std::string>{"; @zp-link-meta-begin",
+                                 "; zp x size=999999999999999 at=auto def=true init=",
+                                 "; @zp-link-meta-end"});
 }
 
-TEST_CASE("parse_metadata: lines and tokens split at Unicode's breaks and spaces") {
-  CHECK(formatted(block("; def f params=a,b locals= indirect=true in_cycle=false "
+TEST_CASE("parse_metadata: lines end at a newline, and words are split at spaces and tabs") {
+  CHECK(formatted(block("; def f params=a,b locals= indirect=true in_cycle=false "
                         "pinned=,$80 carry=true")) ==
         std::vector<std::string>{
             "; @zp-link-meta-begin",
             "; def f params=a,b locals= indirect=true in_cycle=false pinned=,$80 carry=true",
             "; @zp-link-meta-end"});
-  CHECK(formatted("x\u0085" + kBegin + "; call f -> g saved\u0085; item é section=.text "
-                  "local=true " + kEnd) ==
+  // A `.asm` file written with CR LF line ends, and tabs between words.
+  CHECK(formatted("x\r\n; @zp-link-meta-begin\r\n; call\tf -> g  saved\r\n"
+                  "; item \xC3\xA9 section=.text local=true \r\n; @zp-link-meta-end\r\n") ==
         std::vector<std::string>{"; @zp-link-meta-begin", "; call f -> g saved",
-                                 "; item é section=.text local=true zero=false",
+                                 "; item \xC3\xA9 section=.text local=true zero=false",
                                  "; @zp-link-meta-end"});
+  // U+0085 and U+2028 aren't line ends, so a marker after one isn't a
+  // line of its own.
+  CHECK(error_of("x\u0085" + kBegin + kEnd) ==
+        "ValueError: @zp-link-meta-end without preceding @zp-link-meta-begin");
+  CHECK(error_of("x " + kEnd).empty());
   CHECK(formatted(block("; share member=f:a,b holder=g live=g:h forward=k>f writer=g member=m")) ==
         std::vector<std::string>{
             "; @zp-link-meta-begin",

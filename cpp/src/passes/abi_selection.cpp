@@ -83,11 +83,13 @@ bool is_integer_type(const c99::Type_data_type& t) {
              c99::BitInt, c99::Bool>(t);
 }
 
+// Returns the name of parameter `i` of `fn`, or `#<i + 1>` for one the
+// declaration leaves unnamed.
 std::string param_name(const c99::Type_function_decl& fn, std::size_t i) {
-  if (i >= fn.params.size()) {
-    return "#" + std::to_string(i);
+  if (i >= fn.params.size() || fn.params[i].empty()) {
+    return "#" + std::to_string(i + 1);
   }
-  return fn.params[i].empty() ? "None" : fn.params[i];
+  return fn.params[i];
 }
 
 std::string lower(std::string s) {

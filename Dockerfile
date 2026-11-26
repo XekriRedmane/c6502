@@ -1,9 +1,11 @@
 FROM node:22-bookworm
 
-# System packages: git, pdflatex (texlive), build tools for dasm
+# System packages: git, pdflatex (texlive), build tools for dasm and
+# the compiler, and CMake
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     build-essential \
+    cmake \
     python3 \
     python3-pip \
     python3-venv \
@@ -29,9 +31,20 @@ RUN git clone https://github.com/dasm-assembler/dasm.git /tmp/dasm \
 # Install uv (Python package manager)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
-# Install pcpp (C preprocessor) from source
-RUN UV_TOOL_DIR=/opt/uv-tools UV_TOOL_BIN_DIR=/usr/local/bin \
-    uv tool install git+https://github.com/ned14/pcpp.git
+# Build the compiler, c6502cpp (cpp/README.md), from the sources the
+# image is built from. compile.py, nm.py, and objdump.py find it through
+# C6502_CPP, so the project mounted at /project/c6502 runs it without a
+# build of its own. A change to cpp/ in the mounted project takes a
+# rebuild of the image, or a build in the project with C6502_CPP set to
+# its cpp/build/bin/c6502cpp.
+COPY cpp/CMakeLists.txt /opt/c6502/cpp/CMakeLists.txt
+COPY cpp/src /opt/c6502/cpp/src
+COPY cpp/generated /opt/c6502/cpp/generated
+COPY cpp/tests /opt/c6502/cpp/tests
+COPY cpp/third_party /opt/c6502/cpp/third_party
+RUN cmake -S /opt/c6502/cpp -B /opt/c6502/cpp/build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build /opt/c6502/cpp/build --target c6502cpp --parallel
+ENV C6502_CPP=/opt/c6502/cpp/build/bin/c6502cpp
 
 # Create non-root user for Claude Code --dangerously-skip-permissions
 RUN useradd -m -s /bin/bash robertbaruch \

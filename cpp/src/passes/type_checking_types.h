@@ -77,17 +77,20 @@ asdl::Int coerce_int_to_type(asdl::Int value, const Type& t);
 
 // Returns the type of the usual arithmetic conversions (C99 §6.3.1.8p1)
 // of the arithmetic types `a` and `b`: `double` when either is,
-// `float` when either is, and otherwise the integer rules, with a
-// bit-precise type among them handled by `common_bit_precise_type`.
-// Both are read without their top-level qualifiers.
+// `float` when either is, and otherwise `common_integer_type`. Both are
+// read without their top-level qualifiers.
 Type common_type(const Type& a, const Type& b);
 
 // Returns the usual arithmetic conversions of C23 §6.3.1.8p1 for two
-// promoted integer types, at least one of them bit-precise. The
+// promoted integer types: the type of greater rank when the two have
+// the same signedness or the unsigned one has the greater rank, the
+// signed one when it can represent every value of the unsigned one,
+// and otherwise the unsigned counterpart of the signed one. The
 // promotions leave a bit-precise type as it is (§6.3.1.1p2), so
 // `_BitInt(5) + _BitInt(5)` is a `_BitInt(5)` and `_BitInt(24) + int` a
 // `_BitInt(24)`, while `_BitInt(16) + int` is an `int`, whose rank is
-// greater at the same width.
-Type common_bit_precise_type(const Type& a, const Type& b);
+// greater at the same width. Throws InternalError for a type `rank`
+// doesn't take.
+Type common_integer_type(const Type& a, const Type& b);
 
 }  // namespace c6502::passes::type_checking

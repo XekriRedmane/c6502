@@ -211,22 +211,6 @@ Type unsigned_counterpart(const Type& t) {
   }
 }
 
-Type fresh(const Type& t) {
-  switch (ir::kind(t)) {
-    case K::BitInt:
-    case K::FunType:
-    case K::Pointer:
-    case K::Array:
-    case K::Structure:
-    case K::Union:
-    case K::Const:
-    case K::Volatile:
-      throw InternalError("common_type: a type with fields: " + asdl::py_repr(t));
-    default:
-      return t;
-  }
-}
-
 }  // namespace
 
 Type promote_integer(const Type& t) {
@@ -254,7 +238,7 @@ asdl::Int coerce_int_to_type(asdl::Int value, const Type& t) {
   return raw;
 }
 
-Type common_bit_precise_type(const Type& a, const Type& b) {
+Type common_integer_type(const Type& a, const Type& b) {
   if (a == b) {
     return a;
   }
@@ -283,23 +267,7 @@ Type common_type(const Type& a_in, const Type& b_in) {
   if (asdl::isa<ir::Float>(a) || asdl::isa<ir::Float>(b)) {
     return ir::Float{};
   }
-  if (asdl::isa<ir::BitInt>(a) || asdl::isa<ir::BitInt>(b)) {
-    return common_bit_precise_type(a, b);
-  }
-  if (a == b) {
-    return fresh(a);
-  }
-  const bool a_signed = is_signed(a);
-  const bool b_signed = is_signed(b);
-  if (a_signed == b_signed) {
-    return int_width(a) >= int_width(b) ? fresh(a) : fresh(b);
-  }
-  const Type& signed_t = a_signed ? a : b;
-  const Type& unsigned_t = a_signed ? b : a;
-  if (int_width(unsigned_t) >= int_width(signed_t)) {
-    return fresh(unsigned_t);
-  }
-  return fresh(signed_t);
+  return common_integer_type(a, b);
 }
 
 }  // namespace c6502::passes::type_checking

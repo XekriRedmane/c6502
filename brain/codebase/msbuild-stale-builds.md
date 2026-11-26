@@ -6,5 +6,7 @@
 - A wait loop that greps a build log for `error` matches `test_parser_errors.cpp` and ends early. Grep for `error C`, `error LNK`, or the last target's `->` line.
 - Adding a language to `project()` in cpp/CMakeLists.txt makes MSBuild rebuild every target from scratch.
 - A fresh MSVC Release build takes about 7 minutes with `/MP` (897f9a5f), against about 6 for GCC 12.2 in WSL with 16 jobs. Without `/MP`, cl.exe compiled each target's files one at a time and a build took about 23 minutes.
+- Robert's machine has CPU for one build at a time, since `/MP` and MSBuild's `/m` already take every core. Eight agents building at once on 26 Nov 2026 stalled the computer and the run was stopped. When several agents work in parallel, run every configure, build, `c6502_tests`, `check-golden`, `check-frozen`, and pytest run under one machine-wide lock: a directory such as `/c/w/heavy.lock` taken with `mkdir`, which is atomic, holding the holder's PID so that a lock left by a stopped task is taken over. Each agent batches its edits so it takes few turns of the lock.
+- Stopping an agent doesn't stop the `cmake --build` it started. Its MSBuild and `cl.exe` processes go on compiling with no parent. List them with `Get-CimInstance Win32_Process` and stop the `ALL_BUILD` MSBuild and its `cl.exe`s.
 
 Related: [[codebase/worktree-guard]], [[codebase/long-runs-and-scratch-scripts]], [[principles/make-checks-show-their-coverage]], [[principles/fix-root-causes]]

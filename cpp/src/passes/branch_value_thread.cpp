@@ -1,61 +1,5 @@
-// Threads a branch on known values: a branch whose target tests again
-// what the path to it already decided goes past the test.
-//
-// Pattern
-//
-//     LDA   b+1
-//     BNE   L               ; b+1 != 0 on this edge, and A holds it
-//     LDA   b
-//     CMP   #$02
-//     BNE   L               ; b+1 == 0 and A == b != 2 on this edge
-//     ...
-// L:
-//     LDA   b+1             ; A already holds b+1, and Z is the same
-//     BNE   M               ; decided on each edge into L
-//     LDA   b
-//     CMP   #$04
-//     BNE   M
-//
-// Each edge into L knows something about the bytes the code at L
-// tests. On the first, A holds `b+1` and it isn't 0, so the code at L
-// loads A with the same byte again and takes `BNE M`, and the first
-// branch can go straight to M. On the second, `b+1` is 0 from the
-// first test, so the `BNE M` at L isn't taken, and the `LDA b` after it
-// leaves A as it was, so the second branch can go to the `CMP #$04`,
-// where a label is added. A test written as `if (b == 2) ... else if
-// (b == 4) ...` on a 2-byte `b` leaves this shape, and Zork's
-// `instr_mul` and `instr_div` (examples/zork/numbers.c) test `b`'s high
-// byte once, where the C had tested it twice.
-//
-// How
-//
-// For each branch, and each `JMP`, to a label in the function, a scan
-// of the straight-line code before it (from the last label) follows
-// what A holds (a byte of memory or a constant), what N and Z were set
-// from (a load of a byte, or a `CMP #k` of one), and what the branches
-// passed on the way decided about bytes of memory (equal or not equal
-// to a constant). The edge into the target adds what the branch itself
-// decides.
-//
-// From the target, the pass then simulates loads of a byte or a
-// constant into A, `CMP #k` of A, and branches, following each branch
-// it can decide, and stops at anything else. A point it reaches is a
-// new target for the edge when A holds what it held on the edge, or is
-// dead there, and so are N/Z and C. X, Y, V, and memory don't change
-// in the code it simulates. The edge goes to the furthest such point.
-//
-// A byte that's volatile is never followed, and a store, a call, or any
-// instruction the scan doesn't model forgets what it knew.
-//
-// Where it runs
-//
-// In the asm peephole fixed point, after `branch_thread`. The targets
-// that lose their last branch go in `dead_label_drop`, and the loads
-// they pass over in `redundant_load` and `dead_a_arith`.
-//
 // The labels it adds are numbered across the program, since the sim's
-// assembler rejects one name in two functions. Python's memo of the
-// fixed point doesn't change the result and has no counterpart here.
+// assembler rejects one name in two functions.
 #include "passes/branch_value_thread.h"
 
 #include <cstddef>
@@ -78,7 +22,6 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// How many instructions the simulation from a target may take.
 constexpr int kSteps = 24;
 
 bool is_memory(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
@@ -94,26 +37,17 @@ bool readable(const ir::Type_operand& op) {
   return isa<ir::Imm, ir::Data, ir::ZP>(op);
 }
 
-// What is known of one byte's value, `("eq", v)` or `("ne", v)` in
-// Python.
 struct Fact {
   bool eq = false;
   asdl::Int value = 0;
   bool operator==(const Fact&) const = default;
 };
 
-// The facts known of one memory byte, in the order they were learned.
-// Python keeps them in a set, and `value_of` takes the first equality
-// it meets. Two different equalities can only be known on a path that
-// no run takes, so the order matters only there.
 struct ByteFacts {
   ir::Type_operand op;
   std::vector<Fact> facts;
 };
 
-// What N and Z were set from: `("val", op)` for a load of `op` into A,
-// or `("cmp", op, k)` for a `CMP #k` of A holding `op`. `k` is 0 for a
-// load.
 struct Nz {
   bool cmp = false;
   ir::Type_operand op;
@@ -121,16 +55,11 @@ struct Nz {
   bool operator==(const Nz&) const = default;
 };
 
-// What's known at a point. `a` is the operand A holds (a memory byte
-// or an `Imm`), `nz` what N and Z were set from, and `facts` what's
-// known of each memory byte's value.
 struct State {
   std::optional<ir::Type_operand> a;
   std::optional<Nz> nz;
   std::vector<ByteFacts> facts;
 
-  // Forgets what's known of every byte `written` may write, and A's and
-  // the flags' link to one.
   void forget(const ir::Type_operand& written, const AsmContext& ctx) {
     std::erase_if(facts, [&](const ByteFacts& f) {
       return may_alias(f.op, written, ctx);
@@ -172,7 +101,6 @@ struct State {
     return const_cast<State*>(this)->find(op);
   }
 
-  // Returns `op`'s value when it's known.
   std::optional<asdl::Int> value_of(const ir::Type_operand& op) const {
     if (const auto* imm = as<ir::Imm>(op)) {
       return imm->value;
@@ -189,8 +117,6 @@ struct State {
     return std::nullopt;
   }
 
-  // Returns true if `op` is known not to equal `v`, false if it's
-  // known to equal it, and nothing if neither.
   std::optional<bool> differs_from(const ir::Type_operand& op, asdl::Int v) const {
     if (const auto known = value_of(op)) {
       return (*known & 0xFF) != (v & 0xFF);
@@ -208,8 +134,6 @@ struct State {
   }
 };
 
-// Returns whether a branch on `cond` is taken in `state`, or nothing
-// when that isn't known.
 std::optional<bool> decide(const State& state, const ir::Type_condition& cond) {
   if (!state.nz) {
     return std::nullopt;
@@ -241,8 +165,6 @@ std::optional<bool> decide(const State& state, const ir::Type_condition& cond) {
   return std::nullopt;
 }
 
-// Adds what a branch on `cond`, taken or not, says about the byte N
-// and Z were set from.
 void learn_branch(State& state, const ir::Type_condition& cond, bool taken) {
   if (!state.nz || !isa<ir::EQ, ir::NE>(cond)) {
     return;
@@ -253,9 +175,6 @@ void learn_branch(State& state, const ir::Type_condition& cond, bool taken) {
   state.learn(op, Fact{.eq = equal, .value = k & 0xFF});
 }
 
-// Updates `state` for `ins` in the straight-line scan before a branch.
-// Returns false when the scan must start over (a label, or an
-// instruction it doesn't model).
 bool scan_step(State& state, const ir::Type_instruction& ins,
                const AsmContext& ctx) {
   if (const auto* mov = as<ir::Mov>(ins)) {
@@ -279,7 +198,6 @@ bool scan_step(State& state, const ir::Type_instruction& ins,
     if (is_memory(dst)) {
       state.forget(dst, ctx);
       if (!is_reg(src)) {
-        // A move from memory or a constant is `LDA src; STA dst`.
         if (readable(src) && !mov->is_volatile) {
           state.a = src;
           state.nz = Nz{.cmp = false, .op = src};
@@ -339,15 +257,12 @@ bool scan_step(State& state, const ir::Type_instruction& ins,
   return false;
 }
 
-// Which of A, N/Z, and C the simulated code has written.
 struct Changed {
   bool a = false;
   bool nz = false;
   bool c = false;
 };
 
-// Returns whether arriving at `instrs[i]` in `now` is the same as
-// arriving in `start` for everything read from there on.
 bool equivalent(Instrs instrs, const LabelMap& labels, std::size_t i,
                 const State& start, const State& now, const Changed& changed) {
   if (changed.a) {
@@ -368,8 +283,6 @@ bool equivalent(Instrs instrs, const LabelMap& labels, std::size_t i,
   return true;
 }
 
-// Returns the furthest index the simulation from `instrs[at]` reaches
-// with `start`'s registers and live flags, or nothing.
 std::optional<std::size_t> new_target(Instrs instrs, const LabelMap& labels,
                                       const State& start, std::size_t at) {
   State state = start;
@@ -454,7 +367,6 @@ void rewrite_function(ir::Function& fn, asdl::Int& counter,
         if (branch != nullptr) {
           const auto taken = decide(*edge, branch->cond);
           if (taken && !*taken) {
-            // Never taken, which is another pass's business.
             edge.reset();
           } else {
             learn_branch(*edge, branch->cond, true);
@@ -504,8 +416,6 @@ void rewrite_function(ir::Function& fn, asdl::Int& counter,
       if (auto* br = as<ir::Branch>(instrs[k])) {
         br->target = it->second;
       } else {
-        // Python makes a new `Jump(target=...)`, with no register
-        // arguments.
         instrs[k] = ir::Jump{.target = it->second};
       }
     }

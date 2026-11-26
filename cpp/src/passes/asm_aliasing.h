@@ -1,6 +1,3 @@
-// The port of passes/asm_aliasing.py: whether two asm operands may
-// name the same byte, and the facts about a unit's names and pointers
-// that the aliasing rules and several passes read.
 #pragma once
 
 #include <set>
@@ -14,13 +11,10 @@
 namespace c6502::passes {
 
 // The default range of the asm-level register allocator's pool,
-// `[kDefaultPoolLo, kDefaultPoolHi)`. Bytes there are a function's
-// scratch, and no user pointer can point to them, since a local whose
-// address is taken goes in the frame.
+// `[kDefaultPoolLo, kDefaultPoolHi)`.
 inline constexpr int kDefaultPoolLo = 0x80;
 inline constexpr int kDefaultPoolHi = 0x100;
 
-// The options of `may_alias` that Python passes as keyword arguments.
 struct MayAliasOptions {
   asdl::Int pool_lo = kDefaultPoolLo;
   asdl::Int pool_hi = kDefaultPoolHi;
@@ -57,15 +51,13 @@ FunctionNames function_names(Instrs instrs);
 
 // Returns every operand of `ins`, in field order, including those in a
 // list (a `DecimalArith`'s) and the sources of a `Phi`'s arguments.
-// Python's `_instruction_operands`.
 std::vector<asm_ast::Type_operand> instruction_operands(
     const asm_ast::Type_instruction& ins);
 
 // Returns whether `ins` reads or writes through a `(zp),Y` pointer
 // (`IndirectZp`, `IndirectZpY`) with a byte at one of `slot_addrs`, the
 // addresses of the unit's `__zpabi_*` and `__local_*` slots. Such an
-// instruction can't be moved into another function, since `asm_emit`
-// names the pointer by the slot the function it's in keeps there.
+// instruction can't be moved into another function.
 bool through_slot_pointer(const asm_ast::Type_instruction& ins,
                           const std::set<asdl::Int>& slot_addrs);
 
@@ -77,7 +69,7 @@ std::set<asdl::Int> pointer_byte_addresses(Instrs instrs);
 // `pointer_addrs` (from `pointer_byte_addresses`). A `Data` operand's
 // symbol is resolved through `zp_symbol_addrs`, which may be null, and
 // a compiler slot or runtime byte it doesn't resolve counts as a
-// pointer byte whenever the function has a pointer, since it may be one.
+// pointer byte whenever the function has a pointer.
 bool is_pointer_byte(const asm_ast::Type_operand& op,
                      const std::set<asdl::Int>& pointer_addrs,
                      const SymbolAddrs* zp_symbol_addrs);
@@ -85,7 +77,7 @@ bool is_pointer_byte(const asm_ast::Type_operand& op,
 // Returns whether `name` is a symbol that resolves to a zero-page byte
 // through an EQU line: a runtime symbol (SSP, FP, HARGS, DPTR), a
 // zp_abi parameter slot (`__zpabi_*`), or a body-local slot
-// (`__local_*`). Python's `_is_zp_symbol`.
+// (`__local_*`).
 bool is_zp_symbol(std::string_view name);
 
 // Returns the address of each runtime zero-page symbol in the layout of

@@ -1,4 +1,3 @@
-// The port of passes/branch_through_jump.py.
 #pragma once
 
 #include "asm_ast.h"

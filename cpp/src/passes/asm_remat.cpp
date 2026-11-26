@@ -1,84 +1,3 @@
-// A narrow rematerialization peephole.
-//
-// A common shape after the asm SSA round trip and the byte-granular
-// register allocator stages a value through one of the function's
-// zero-page slots, because A is overwritten between the instruction
-// that makes the value and the one that uses it:
-//
-//     LDA   <recomputable_src>
-//     STA   __local_<fn>__<stage>          ; the stage slot's def
-//     ... (A overwritten by other staging: LDA #c; STA other_arg) ...
-//     LDA   __local_<fn>__<stage>          ; a use of the stage slot
-//     STA   <consumer_dst>
-//
-// When `<recomputable_src>` costs little to compute again at the use
-// (it has no inputs, or only registers and memory that nothing between
-// changes), the round trip through the slot gains nothing. The use can
-// load `<recomputable_src>` itself, and the `STA <local>` is then dead,
-// with no reader left. `byte_dce`, `apply_redundant_store_elimination`,
-// and `apply_asm_dead_store` drop it in the next sweep of the peephole
-// fixed point, which then drops the first `LDA <recomputable_src>`,
-// left with nothing to feed.
-//
-// What it costs against the staging, for a recompute of one
-// instruction:
-//
-//   - `Imm(v)`, `ImmLabelLow`, `ImmLabelHigh`: a 2-byte `LDA #imm` in
-//     place of a 2-byte load from zero page, the same.
-//   - `Data(name, off)`: a load of 2 or 3 bytes (zero page or absolute)
-//     in place of the 2-byte load from zero page, the same or a byte
-//     more.
-//   - `IndexedData(name, off, X|Y)`: a 3-byte `abs,X` / `abs,Y` load in
-//     place of the 2-byte load from zero page, a byte more at the use.
-//
-// The `STA <stage>` that goes (2 bytes and 3 cycles), and the first
-// `LDA <recomputable_src>` when nothing else reads A after it, pay for
-// the extra byte only when the store does go. A read that costs a byte
-// more is rewritten only when every read of the slot in the function
-// is, and when there are at most `kMaxDearerReads` (2) of them
-// (`costs_more`, `store_dies`). Rewriting such a read while another
-// read kept the store cost 1 byte and 1 cycle each time, as in Lode
-// Runner's `fill_hole` and `enable_next_level_ladders` until 19 Nov
-// 2026.
-//
-// Eligibility
-//
-// A def `Mov(<src>, Data(__local_<fn>__*))` is a candidate when `<src>`
-// can be recomputed and nothing between the def and a use makes the
-// recompute give another value.
-//
-//   - `Imm`, `ImmLabelLow`, `ImmLabelHigh` always can, since nothing at
-//     run time changes them.
-//   - `Data(name, off)` can when `name` is the destination of no write
-//     in the function, there's no `Call` between the def and the use
-//     (a call may write through pointers this pass doesn't follow), and
-//     no store between them goes through a pointer or to a raw address,
-//     unless `name` is a static with internal linkage whose address the
-//     program never forms (`collect_private_statics`). No pointer can
-//     point into such a static. Without the last check,
-//     `t = g; *p = 7; return t;` called with `p == &g` returned 7, the
-//     value stored through `p`, where it had to return the value `g`
-//     held when it was read.
-//   - `IndexedData(name, off, reg)` can under the same rules for
-//     `name`, when the index register (X or Y) isn't written between
-//     the def and the use either. A call overwrites X and Y under the
-//     zp_abi convention, so the rule against a call between covers the
-//     write of the register a call makes.
-//
-// A source of another shape (`Frame`, `Stack`, `Indirect*`) isn't
-// handled. Indirect addressing depends on a zero-page pointer pair the
-// code may change, and deriving an address relative to FP again would
-// race with the pushes in between.
-//
-// The walk
-//
-// Within a basic block, the walk stops at any boundary of the block and
-// at any write of the stage slot, which ends the def. It matches the
-// def `Mov(<recomp>, Data(__local_<fn>__*))` and looks forward for the
-// reads `Mov(Data(<same_local>), <any_dst>)`. Each eligible read takes
-// `<recomp>` as its source directly. The dead `STA` and the first `LDA`,
-// left with nothing to feed, go in a later sweep of the fixed point, to
-// the dead-store and dead-code peepholes.
 #include "passes/asm_remat.h"
 
 #include <set>
@@ -99,10 +18,6 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// A recompute that costs a byte more than the read it replaces pays for
-// itself only through the store into the slot, which goes once nothing
-// reads the slot. That store is 2 bytes, so at most this many reads may
-// take the dearer form.
 constexpr std::size_t kMaxDearerReads = 2;
 
 using InstrVec = std::vector<ir::Type_instruction>;
@@ -113,8 +28,6 @@ bool is_reg_a(const ir::Type_operand& op) {
   return r != nullptr && isa<ir::A>(r->reg);
 }
 
-// Returns the operand `instr` writes in place, for the read-modify-write
-// instructions (`Inc`, `Dec`, and the shifts and rotates), or null.
 const ir::Type_operand* rmw_dst(const ir::Type_instruction& instr) {
   using K = ir::Kind_instruction;
   switch (ir::kind(instr)) {
@@ -135,11 +48,6 @@ const ir::Type_operand* rmw_dst(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns every operand `instr` reads. A read-modify-write instruction
-// (`Inc`, `Dec`, a shift) reads and writes one operand, which counts as
-// read here so that the scan for referenced slots stays conservative.
-// An ALU instruction's destination counts as read too. A `Mov` reads
-// its source and only writes its destination.
 std::vector<ir::Type_operand> read_operands(const ir::Type_instruction& instr) {
   std::vector<ir::Type_operand> out;
   switch (ir::kind(instr)) {
@@ -196,8 +104,6 @@ std::vector<ir::Type_operand> read_operands(const ir::Type_instruction& instr) {
   return out;
 }
 
-// Returns every operand `instr` writes, for the set of names written in
-// the function. The reads aren't given.
 std::vector<ir::Type_operand> dsts_of(const ir::Type_instruction& instr) {
   switch (ir::kind(instr)) {
     case ir::Kind_instruction::DecimalArith:
@@ -226,18 +132,12 @@ std::vector<ir::Type_operand> dsts_of(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns whether `instr` ends the linear walk. Control flow into or out
-// of the block means the pass can't tell which instructions ran between
-// the def and the use.
 bool is_block_boundary(const ir::Type_instruction& instr) {
   return isa<ir::Label, ir::Jump, ir::Branch, ir::Call, ir::Ret, ir::Return,
              ir::FunctionPrologue, ir::AllocateStack, ir::LoadAddress,
              ir::DecimalArith>(instr);
 }
 
-// Returns whether `src` is of a shape that may be recomputed. Whether a
-// particular one may (its memory unchanged, its register stable) is
-// `can_remat`'s, where the range from the def to the use is known.
 bool is_recomputable_shape(const ir::Type_operand& src) {
   return isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh, ir::Data, ir::IndexedData>(src);
 }
@@ -247,7 +147,6 @@ bool matches_local(const ir::Type_operand& op, const std::string& name) {
   return d != nullptr && d->name == name && d->offset == 0;
 }
 
-// Returns whether `instr` writes the slot `name`.
 bool writes_local(const ir::Type_instruction& instr, const std::string& name) {
   for (const auto& dst : dsts_of(instr)) {
     if (matches_local(dst, name)) {
@@ -257,9 +156,6 @@ bool writes_local(const ir::Type_instruction& instr, const std::string& name) {
   return false;
 }
 
-// Returns whether `instr` writes A by anything other than a `Mov`, which
-// the caller handles: an ALU operation, shift, or `Pop` into A, or a
-// `DecimalArith`.
 bool writes_a(const ir::Type_instruction& instr) {
   using K = ir::Kind_instruction;
   switch (ir::kind(instr)) {
@@ -279,16 +175,11 @@ bool writes_a(const ir::Type_instruction& instr) {
       return is_reg_a(std::get<ir::Pop>(instr).dst);
     default: {
       const ir::Type_operand* dst = rmw_dst(instr);
-      // An `INC A` or `DEC A` isn't a write of A that this counts.
       return dst != nullptr && !isa<ir::Inc, ir::Dec>(instr) && is_reg_a(*dst);
     }
   }
 }
 
-// Returns whether `instr` writes the register `reg`: a load into it
-// (`LDX`), an `INX` / `DEX`, or a pull into it. An operand lowered with
-// an `LDY #off` setup writes Y. Calls write X and Y too, but the walk
-// stops at a call before this is asked.
 bool writes_reg(const ir::Type_instruction& instr, const ir::Type_reg& reg) {
   if (isa<ir::Y>(reg) && sets_up_y(instr)) {
     return true;
@@ -310,14 +201,6 @@ bool writes_reg(const ir::Type_instruction& instr, const ir::Type_reg& reg) {
   return r != nullptr && r->reg.index() == reg.index();
 }
 
-// Returns the most recent instruction before `i` whose destination is
-// `Reg(A)`, or -1 when a block boundary comes first or A's value comes
-// from an instruction that isn't a clean producer.
-//
-// A `Mov(_, Reg(A))`, a load into A, is the one shape of producer. Any
-// other write of A (`Add`, `Sub`, `And`, `Or`, `Xor`, a shift of A,
-// `Pop(Reg(A))`) stops the search, since A's value at `i` isn't then the
-// result of one load that can be repeated.
 long find_a_producer(const InstrVec& instrs, std::size_t i) {
   for (long k = static_cast<long>(i) - 1; k >= 0; --k) {
     const ir::Type_instruction& instr = instrs[static_cast<std::size_t>(k)];
@@ -330,8 +213,9 @@ long find_a_producer(const InstrVec& instrs, std::size_t i) {
       }
       const auto* src_reg = as<ir::Reg>(mov->src);
       if (src_reg != nullptr || isa<ir::Reg>(mov->dst)) {
-        // `TXA` / `TYA` in front of a soft-stack or indirect store
-        // writes A.
+        // The 6502 has no `STX (zp),Y`, so a store of X or Y to the
+        // soft stack or through a pointer is a `TXA` or `TYA` and an
+        // `STA`, which writes A.
         if (src_reg != nullptr && !isa<ir::A>(src_reg->reg) &&
             !isa<ir::Data, ir::ZP>(mov->dst)) {
           return -1;
@@ -339,13 +223,11 @@ long find_a_producer(const InstrVec& instrs, std::size_t i) {
         continue;
       }
       if (mov->src == mov->dst) {
-        continue;  // a move of a byte to itself emits nothing
+        continue;
       }
-      // A store of a constant or a memory byte, `Mov(#k, M)` or
-      // `Mov(M, N)`, emits as `LDA src; STA dst`, so A ends up holding
-      // `src`. Taking it for an earlier load made `Mov(#$80, l19); STA t`
-      // rematerialize `t` as the `#$FF` loaded before it (fuzz.stmts
-      // seed 25347).
+      // The 6502 has no memory-to-memory move, so `Mov(#k, M)` and
+      // `Mov(M, N)` emit as `LDA src; STA dst`, and A ends up holding
+      // `src`.
       return k;
     }
     if (writes_a(instr)) {
@@ -355,19 +237,6 @@ long find_a_producer(const InstrVec& instrs, std::size_t i) {
   return -1;
 }
 
-// Returns the recomputable source of a staging def at `i`, and the index
-// from which `can_remat` checks the range, or nothing when `instrs[i]`
-// isn't a staging def. There are two shapes.
-//
-//   1. `Mov(<recomputable>, Data(__local_<fn>__*))`, one memory-to-memory
-//      atom. The recompute is its source, and the range starts at `i`.
-//   2. `Mov(Reg(A), Data(__local_<fn>__*))`, the second of two atoms,
-//      whose producer is the `Mov(<recomputable>, Reg(A))` before it
-//      (`find_a_producer`). The two-atom form appears once the asm SSA
-//      round trip has split a memory-to-memory move into the
-//      `LDA src; STA dst` it emits as. The recompute is the producer's
-//      source, and the range starts at the producer, so that it covers
-//      any write of X or Y or call that would change the recompute.
 std::optional<std::pair<ir::Type_operand, std::size_t>> classify_stage_def(
     const InstrVec& instrs, std::size_t i) {
   const auto* defn = as<ir::Mov>(instrs[i]);
@@ -396,7 +265,6 @@ std::optional<std::pair<ir::Type_operand, std::size_t>> classify_stage_def(
   return std::nullopt;
 }
 
-// Returns the name of the `Data` or `IndexedData` operand `op`.
 const std::string& operand_name(const ir::Type_operand& op) {
   if (const auto* d = as<ir::Data>(op)) {
     return d->name;
@@ -442,12 +310,6 @@ class Pass {
   NameSet private_;
 };
 
-// Returns the names of the statics with internal linkage defined in
-// `prog` whose address nothing in `prog` forms. An address is formed by
-// an `ImmLabelLow` / `ImmLabelHigh` operand, by a `LoadAddress` from the
-// static, or by an `AddressInit` in some static's initializer. No
-// pointer can point into such a static, so a store through a pointer
-// leaves it unchanged.
 NameSet Pass::collect_private_statics(const ir::Program& prog) {
   NameSet statics;
   NameSet taken;
@@ -470,8 +332,6 @@ NameSet Pass::collect_private_statics(const ir::Program& prog) {
             taken.insert(d->name);
           }
         }
-        // Every operand-valued field, read or written, including those
-        // in a list. A `Phi`'s arguments aren't operands themselves.
         const auto visit = [&](const ir::Type_operand& op) {
           if (const auto* lo = as<ir::ImmLabelLow>(op)) {
             taken.insert(lo->name);
@@ -496,9 +356,6 @@ NameSet Pass::collect_private_statics(const ir::Program& prog) {
   return out;
 }
 
-// Returns whether `name` is a byte in zero page, which an `LDA` reads in
-// 2 bytes: a slot the unit placed there, one of the runtime's bytes, or
-// a zero-page object.
 bool Pass::is_zero_page_name(const std::string& name) const {
   auto it = slots_.find(name);
   if (it != slots_.end()) {
@@ -525,7 +382,6 @@ bool Pass::costs_more(const ir::Type_operand& recomp, const std::string& local_n
   return is_zero_page_name(local_name);
 }
 
-// Adds to `referenced` the zero-page bytes a read of `op` names.
 void add_referenced_addrs(const ir::Type_operand& op, const SymbolAddrs& slots,
                           AddrSet& referenced) {
   if (isa<ir::Data, ir::IndexedData>(op)) {
@@ -538,8 +394,6 @@ void add_referenced_addrs(const ir::Type_operand& op, const SymbolAddrs& slots,
   } else if (const auto* z = as<ir::ZP>(op)) {
     referenced.insert(static_cast<long long>(z->address + z->offset));
   } else if (const auto* p = as<ir::IndirectZp>(op)) {
-    // The pointer pair at addr and addr+1. IndirectZp's offset is the Y
-    // that indexes from it, which isn't part of the pair's address.
     referenced.insert(static_cast<long long>(p->address));
     referenced.insert(static_cast<long long>(p->address + 1));
   } else if (const auto* q = as<ir::IndirectZpY>(op)) {
@@ -548,23 +402,6 @@ void add_referenced_addrs(const ir::Type_operand& op, const SymbolAddrs& slots,
   }
 }
 
-// Returns the zero-page addresses read anywhere in `instrs`, by any
-// operand shape, resolved to the bytes' addresses, leaving out the
-// instructions `skip` marks. A stage byte can be collapsed only when its
-// address isn't here, since one read of it through a pointer (or of the
-// other byte of the pair, as an indirect access reads both bytes of its
-// pointer) keeps it live.
-//
-//   * `Data(name, off)` and `IndexedData(name, off, _)` read the byte at
-//     `zp_slot_symbols[name] + off` when `name` is a slot symbol, and
-//     nothing in the pool otherwise.
-//   * `ZP(addr, off)` reads the byte at `addr + off`.
-//   * `IndirectZp(addr, off)` and `IndirectZpY(addr)` read the pointer
-//     pair at `addr` and `addr + 1`. `off` is the `LDY #off` that
-//     indexes from it, which `asm_dead_store`'s `ptr_source_reads` reads
-//     the same way.
-//   * The other shapes (`Reg`, `Imm`, `ImmLabel*`, `Frame`, `Stack`,
-//     `Indirect`, `IndirectY`) name nothing in the pool.
 AddrSet Pass::collect_referenced_addrs(const InstrVec& instrs,
                                        const std::vector<bool>* skip) const {
   AddrSet out;
@@ -576,10 +413,8 @@ AddrSet Pass::collect_referenced_addrs(const InstrVec& instrs,
     for (const auto& src : read_operands(instr)) {
       add_referenced_addrs(src, slots_, out);
     }
-    // An indirect-Y destination, as in `STA (ptr),Y`, reads the
-    // pointer's bytes to find the address, though the operand is the
-    // one written, so a slot that holds the pointer isn't taken for
-    // dead. This is what `asm_dead_store`'s `ptr_source_reads` gives.
+    // `STA (ptr),Y` reads the pointer's two bytes to find the address
+    // it writes.
     for (const auto& dst : dsts_of(instr)) {
       if (const auto* p = as<ir::IndirectZp>(dst)) {
         out.insert(static_cast<long long>(p->address));
@@ -588,8 +423,6 @@ AddrSet Pass::collect_referenced_addrs(const InstrVec& instrs,
         out.insert(static_cast<long long>(q->address));
         out.insert(static_cast<long long>(q->address + 1));
       } else if (isa<ir::Indirect, ir::IndirectY>(dst)) {
-        // `(DPTR),Y` reads DPTR and DPTR+1, at their addresses in the
-        // runtime's layout.
         const auto it = runtime_.find("DPTR");
         if (it != runtime_.end()) {
           out.insert(static_cast<long long>(it->second));
@@ -601,9 +434,6 @@ AddrSet Pass::collect_referenced_addrs(const InstrVec& instrs,
   return out;
 }
 
-// Returns the names whose address some instruction of `instrs` builds,
-// as an `ImmLabelLow` / `ImmLabelHigh` operand or a `LoadAddress`
-// source, leaving out the instructions `skip` marks.
 NameSet collect_escaped_names(const InstrVec& instrs, const std::vector<bool>* skip) {
   NameSet out;
   for (std::size_t k = 0; k < instrs.size(); ++k) {
@@ -627,10 +457,6 @@ NameSet collect_escaped_names(const InstrVec& instrs, const std::vector<bool>* s
   return out;
 }
 
-// Returns whether rewriting the reads at `uses` leaves the slot
-// `local_name` with no read anywhere in the function, by name, as a
-// pointer's byte, or through its address, so that the store into it
-// goes, and whether there are few enough of them to pay for it.
 bool Pass::store_dies(const InstrVec& instrs, const std::vector<std::size_t>& uses,
                       const std::string& local_name) const {
   if (uses.size() > kMaxDearerReads) {
@@ -651,19 +477,6 @@ bool Pass::store_dies(const InstrVec& instrs, const std::vector<std::size_t>& us
   return escaped.find(local_name) == escaped.end();
 }
 
-// Returns whether a write to `dst` may change a byte that the `Data` or
-// `IndexedData` operand `recomp` reads.
-//
-// A store through a pointer (`(DPTR),Y` or `(zp),Y`) and an indexed
-// store to a raw address (`IndexedData` with an empty name) can reach
-// any byte whose address the program can form. They can't reach a
-// static among the private ones, since no instruction or initializer in
-// the program builds that static's address, and the static has internal
-// linkage, so no other translation unit builds it either. A store to a
-// named static indexed by X or Y stays inside that static's bytes in a
-// valid program, and the set of names written already counts it. Other
-// memory destinations are compared with `may_alias`, which matches a
-// numeric `ZP` byte against a zero-page global of the same address.
 bool Pass::store_may_reach(const ir::Type_operand& dst,
                            const ir::Type_operand& recomp) const {
   const auto* idx = as<ir::IndexedData>(dst);
@@ -681,16 +494,6 @@ bool Pass::store_may_reach(const ir::Type_operand& dst,
   return may_alias(dst, recomp, ctx_);
 }
 
-// Returns whether recomputing `recomp` at `use_idx`, for the def whose
-// range starts at `def_idx`, gives the byte the def gave.
-//
-// An immediate always does. A `Data` or `IndexedData` operand does when
-// its name is written nowhere in the function, no `Call` comes between
-// (a call may write the named storage through routines this pass
-// doesn't model), and no store between may reach the named storage
-// through a pointer or a raw address (`store_may_reach`). An
-// `IndexedData` needs its index register (X or Y) unwritten between as
-// well.
 bool Pass::can_remat(const ir::Type_operand& recomp, const InstrVec& instrs,
                      std::size_t def_idx, std::size_t use_idx,
                      const NameSet& writable) const {
@@ -730,9 +533,6 @@ bool Pass::can_remat(const ir::Type_operand& recomp, const InstrVec& instrs,
   return true;
 }
 
-// Returns the indexes of the reads of `local_name` after the staging def
-// at `i`, in its block, that can read `recomp` instead. Several reads
-// may each take the same recomputed source.
 std::vector<std::size_t> Pass::eligible_uses(const InstrVec& out, std::size_t i,
                                              const ir::Type_operand& recomp,
                                              std::size_t range_start,
@@ -766,8 +566,6 @@ std::vector<std::size_t> Pass::eligible_uses(const InstrVec& out, std::size_t i,
 }
 
 void Pass::rewrite_uses(InstrVec& out, const NameSet& writable) const {
-  // A rewrite changes only reads after the def, so the walk sees each
-  // def as the earlier rewrites left it.
   for (std::size_t i = 0; i < out.size(); ++i) {
     const auto stage = classify_stage_def(out, i);
     if (!stage) {
@@ -790,24 +588,6 @@ void Pass::rewrite_uses(InstrVec& out, const NameSet& writable) const {
   }
 }
 
-// Turns every `Mov(<src>, Data(__local_<fn>__<...>))` whose stage byte
-// nothing in the function reads any more into `Mov(<src>, Reg(A))`. The
-// memory destination is what kept the atom past `apply_asm_dead_store`,
-// which matches only stores from a register. The atom is then a pure
-// `LDA <src>`, and when A is dead after it, as it usually is after a
-// rematerialization since the next instruction is usually another
-// `LDA #c` of the staging, `apply_dead_a_arith_elimination` or
-// `apply_redundant_load_elimination` drops it in a later sweep.
-//
-// A read through a pointer counts: `IndirectZp(addr, off)` and
-// `IndirectZpY(addr)` read the two bytes of a zero-page pair. A
-// `__local_*` slot that is one byte of a pointer has to stay even when
-// no source operand names it, so the names are resolved through
-// `zp_slot_symbols` and compared by address. A slot whose address the
-// function builds (`LDA #<slot` / `LDA #>slot`, or a `LoadAddress`) can
-// be read through that pointer, which names no byte of it. A struct
-// local read with `c.v` is the usual case, and every byte of such a
-// slot stays.
 InstrVec Pass::drop_dead_stage_dsts(InstrVec instrs) const {
   const AddrSet referenced = collect_referenced_addrs(instrs, nullptr);
   const NameSet escaped = collect_escaped_names(instrs, nullptr);
@@ -822,15 +602,6 @@ InstrVec Pass::drop_dead_stage_dsts(InstrVec instrs) const {
             referenced.count(static_cast<long long>(it->second)) == 0 &&
             escaped.find(d->name) == escaped.end()) {
           if (isa<ir::Reg>(mov->src)) {
-            // From A, the def was the second half of an `LDA <src>;
-            // STA local` pair whose first half is still there, and A
-            // already holds the value, so the store just goes. From X
-            // or Y (`STX local` / `STY local`), the dead store changes
-            // no flag and no A, so it goes too: a `TXA` / `TYA` in its
-            // place would overwrite A and set N/Z, which is wrong when
-            // A holds a live value, such as the low byte of a 2-byte
-            // register return staged in A while its high byte is
-            // stored from X to a slot.
             continue;
           }
           out.push_back(ir::Mov{.src = mov->src, .dst = ir::Reg{.reg = ir::A{}},

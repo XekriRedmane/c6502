@@ -98,8 +98,6 @@ SymbolAddrs addrs_of(const json::Value& v) {
 
 namespace {
 
-// Returns a function's layout in `abi`: a `ZpLayout`'s fields, or
-// nothing for any other class.
 std::optional<ZpLayout> zp_layout(const json::Value& v) {
   const json::Value* cls = v.get("object");
   if (cls == nullptr || cls->string != "passes.abi_selection.ZpLayout") {

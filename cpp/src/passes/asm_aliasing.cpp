@@ -1,40 +1,3 @@
-// Shared operand-aliasing predicate for asm-level peepholes.
-//
-// Several passes (`redundant_load`, `asm_dead_store`, and the many that
-// ask `mem_dead_after`) decide whether a read of operand `A` could read
-// the byte a write to operand `B` just changed. This module keeps the
-// rule in one place, so the passes agree.
-//
-// Operand kinds and their addressing
-//
-// c6502's asm operands cover these memory-shaped kinds.
-//
-//   * `Imm(value)` is a constant in the instruction, which never refers
-//     to memory.
-//   * `ZP(addr, offset)` is the byte at `addr + offset`, in [0, 0xFF].
-//   * `Data(name, offset)` is the byte at the link-time address
-//     `name + offset`. The runtime's symbols (SSP, FP, HARGS, DPTR)
-//     resolve into zero page. A user static resolves to a fixed address
-//     in the data segment, at $0800 or above by default.
-//   * `IndexedData(name, offset, index_reg)` is the byte at
-//     `name + offset + index_reg`, anywhere in the 256 bytes from
-//     `name + offset` at run time.
-//   * `Indirect(off)` / `IndirectY()` is the byte at `(DPTR),Y`. DPTR
-//     holds a pointer whose value is unknown when compiling.
-//     `Indirect(off)` sets Y to `off`, and `IndirectY()` uses whatever Y
-//     holds.
-//   * `IndirectZp(addr, off)` / `IndirectZpY(addr)` is the same through
-//     the pointer in the zero-page pair at `addr`, a pointer variable
-//     kept in zero page. `may_alias` compares the byte accessed and
-//     leaves out the pointer's bytes: a write to `addr` doesn't alias
-//     `(addr),Y`, though it changes where the next one reads. A pass
-//     that remembers a value read through the pointer has to drop it
-//     when the pointer changes, as `asm_dead_store` does with
-//     `ptr_source_reads`.
-//   * `Frame(off)` / `Stack(off)` is the byte at `(FP),Y` / `(SSP),Y`
-//     with an `off` known when compiling. FP and SSP are pointers into
-//     the soft stack that stay put within a function.
-//
 // Aliasing rules
 //
 // Two operands may alias unless they can be proved to name different
@@ -78,11 +41,6 @@
 //   * Indirect / IndirectY and Frame / Stack alias, since the program
 //     may pass `&local`, which points DPTR into the frame.
 //   * Anything else may alias.
-//
-// The pool's range is the default of `passes.optimization.pool.Pool`,
-// which starts at $80. A function compiled with another pool can pass
-// its range in the options, and the default is correct for everything
-// c6502 ships today.
 #include "passes/asm_aliasing.h"
 
 #include <algorithm>
@@ -98,9 +56,7 @@ using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
 // The names of the runtime's zero-page symbols, which match
-// `sim.assembler.DEFAULT_ZP_SYMBOLS`. The rules for the indirect forms
-// tell `Data(runtime symbol)` apart from `Data(user static)` with them,
-// since only a user static could be reached by a user pointer.
+// `sim.assembler.DEFAULT_ZP_SYMBOLS`.
 bool is_runtime_zp_name(std::string_view name) {
   return name == "SSP" || name == "FP" || name == "HARGS" || name == "DPTR";
 }
@@ -117,16 +73,6 @@ bool is_indirect(const ir::Type_operand& op) {
   return isa<ir::Indirect, ir::IndirectY, ir::IndirectZp, ir::IndirectZpY>(op);
 }
 
-// The aliasing decision for `ZP(addr)` against `Data(name, off)`.
-//
-// 1. A user zero-page global is compared by its address.
-// 2. A name that isn't a zero-page symbol (`is_zp_symbol` false) names
-//    a static outside zero page, at $0100 or above, which can't alias a
-//    zero-page byte.
-// 3. A zero-page symbol that the runtime's layout or `zp_slot_symbols`
-//    resolves is compared by its address.
-// 4. A zero-page symbol neither resolves may alias. Callers with the
-//    slot map pass it to get the exact answer.
 bool zp_data_alias(const ir::ZP& zp, const ir::Data& data, const AsmContext& ctx,
                    const SymbolAddrs* zp_slot_symbols) {
   if (const asdl::Int* user = ctx.user_zp_address(data.name)) {
@@ -135,8 +81,6 @@ bool zp_data_alias(const ir::ZP& zp, const ir::Data& data, const AsmContext& ctx
   if (!is_zp_symbol(data.name)) {
     return false;
   }
-  // The runtime's symbols are at the layout's addresses, with no slot
-  // map needed.
   const asdl::Int* base = ctx.layout.addr(data.name);
   if (base == nullptr && zp_slot_symbols != nullptr) {
     const auto it = zp_slot_symbols->find(data.name);
@@ -168,7 +112,6 @@ bool may_alias(const ir::Type_operand& a, const ir::Type_operand& b,
                const AsmContext& ctx, const MayAliasOptions& options) {
   const auto* da = as<ir::Data>(a);
   const auto* db = as<ir::Data>(b);
-  // Data vs Data alias when the name and the offset are equal.
   if (da != nullptr && db != nullptr) {
     return da->name == db->name && da->offset == db->offset;
   }
@@ -182,13 +125,9 @@ bool may_alias(const ir::Type_operand& a, const ir::Type_operand& b,
   const auto* zb = as<ir::ZP>(b);
   const auto* xa = as<ir::IndexedData>(a);
   const auto* xb = as<ir::IndexedData>(b);
-  // ZP vs ZP alias when the addresses are equal.
   if (za != nullptr && zb != nullptr) {
     return za->address + za->offset == zb->address + zb->offset;
   }
-  // ZP vs Data are distinct namespaces by c6502's convention, except
-  // for the slot and runtime symbols, which EQU lines bind to zero-page
-  // addresses.
   if (za != nullptr && db != nullptr) {
     return zp_data_alias(*za, *db, ctx, options.zp_slot_symbols);
   }
@@ -236,18 +175,12 @@ bool may_alias(const ir::Type_operand& a, const ir::Type_operand& b,
       return false;
     }
   }
-  // Frame / Stack vs ZP: FP and SSP point into the soft stack in main
-  // RAM, at $0800 and above, and offsets of 0 to 255 don't reach zero
-  // page.
   if (isa<ir::Frame, ir::Stack>(a) && zb != nullptr) {
     return false;
   }
   if (isa<ir::Frame, ir::Stack>(b) && za != nullptr) {
     return false;
   }
-  // The indirect forms vs a ZP byte in the pool: user pointers don't
-  // point into the register allocator's pool, since a local whose
-  // address is taken goes in the frame.
   if (is_indirect(a) && zb != nullptr &&
       !ctx.is_user_zp_byte(zb->address + zb->offset)) {
     const asdl::Int addr = zb->address + zb->offset;
@@ -262,7 +195,6 @@ bool may_alias(const ir::Type_operand& a, const ir::Type_operand& b,
       return false;
     }
   }
-  // The indirect forms vs a byte the pointer proof puts out of reach.
   if (is_indirect(a) && db != nullptr && ctx.in_pointer_proof(db->name)) {
     return false;
   }
@@ -294,7 +226,6 @@ bool may_alias(const ir::Type_operand& a, const ir::Type_operand& b,
       is_runtime_zp_name(da->name)) {
     return false;
   }
-  // The cases of one kind with an offset.
   if (const auto* fa = as<ir::Frame>(a)) {
     if (const auto* fb = as<ir::Frame>(b)) {
       return fa->offset == fb->offset;
@@ -312,16 +243,12 @@ bool may_alias(const ir::Type_operand& a, const ir::Type_operand& b,
   }
   if (const auto* pa = as<ir::IndirectZp>(a)) {
     if (const auto* pb = as<ir::IndirectZp>(b)) {
-      // With the same base, the pointer is the same, and the offsets
-      // decide. Two pointers can hold the same address, so different
-      // bases may alias.
       if (pa->address != pb->address) {
         return true;
       }
       return pa->offset == pb->offset;
     }
   }
-  // Frame vs Stack are through separate stack pointers.
   if ((isa<ir::Frame>(a) && isa<ir::Stack>(b)) ||
       (isa<ir::Stack>(a) && isa<ir::Frame>(b))) {
     return false;
@@ -393,10 +320,6 @@ NameSet unreachable_by_pointer(const ir::Program& prog) {
       seen.merge(names.seen);
     }
   }
-  // A slot is a function's own when exactly one name of the unit could
-  // own it and that function is defined here. A slot that might belong
-  // to another function, whose name `F`'s prefix also begins (a
-  // function named `F__x`), is left out.
   const auto own_slot = [&](const std::string& name) {
     const std::string* owner = nullptr;
     int owners = 0;

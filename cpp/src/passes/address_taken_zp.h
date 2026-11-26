@@ -1,7 +1,3 @@
-// The port of passes/address_taken_zp.py, which puts each address-taken
-// local of a function with a private pool in pool bytes that the
-// register allocation left free (`compute_address_taken_assignments`),
-// and names the slot symbols of those bytes (`slot_symbols`).
 #pragma once
 
 #include <string>
@@ -16,7 +12,7 @@
 
 namespace c6502::passes {
 
-// The colorings of the asm optimizer, by function, in Python's order.
+// The colorings of the asm optimizer, by function.
 using ColoringsByFunction = OrderedMap<std::string, Coloring>;
 
 // The address of the first byte of each address-taken local, by
@@ -34,9 +30,7 @@ using AddressTakenSymbols = OrderedMap<std::string, OrderedMap<std::string, std:
 // A function without a pool gets an empty map, so its address-taken
 // locals stay on the soft stack. `symbols` and `types` size each local
 // and may be null. Throws `InternalError` when a local of a function
-// whose coloring keeps a value in Y doesn't fit, since the coloring
-// counted the local as a zero-page byte, and an access to its frame slot
-// loads Y.
+// whose coloring keeps a value in Y doesn't fit.
 AddressTakenAssignments compute_address_taken_assignments(const asm_ast::Program& prog,
                                                           const LocalPools& local_pools,
                                                           const ColoringsByFunction& colorings,
@@ -52,8 +46,7 @@ namespace address_taken_zp {
 // one function can have the same source name, as two compound literals
 // or a name declared again in an inner block do, so the second takes
 // `@2` after its name, the third `@3`, and so on, since `@` can't occur
-// in a C identifier. Python names it `slot_symbols`. `symbols` and
-// `types` aren't read, as in Python.
+// in a C identifier.
 OrderedMap<std::string, std::string> slot_symbols(std::string_view fn_name,
                                                   const OrderedMap<std::string, asdl::Int>& assignments,
                                                   const SymbolTable* symbols, const TypeTable* types);

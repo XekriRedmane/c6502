@@ -1,6 +1,3 @@
-// The end of compile.py's `_codegen` in C++: the back end's region, the
-// work between the region and emission, `asm_to_asm2`, and `asm_emit`,
-// in one call, which gives the `-S` text.
 #pragma once
 
 #include <map>
@@ -20,35 +17,29 @@
 
 namespace c6502::passes {
 
-// The values Python computes for the work after the region, besides the
-// region's own arguments.
+// The values the work after the region reads, besides the region's own
+// arguments.
 struct EmitArgs {
-  // What the work reads of the unit's `ZpGlobals`.
   ZpGlobals zp;
-  // `runtime_layout.helper_footprints()`.
   HelperFootprints footprints;
-  // What `sections.items` reads of the symbol of each top-level name of
-  // the program given (`sections.section_info`).
   SectionInfos sections;
-  // Under `-O`, `all_slot_symbols` in its order, which
+  // Under `-O`, the slot symbols of `optimized_front` in order, which
   // `prune_unused_locals` filters for the EQU block.
   OrderedSymbolAddrs slot_symbols;
-  // The symbols the EQU block binds after the slots: `zp.equs()` under
-  // `-O`, and without it `{**pinned_slot_symbols(fixed_abi),
-  // **zp.equs()}`, the whole block.
+  // The symbols the EQU block binds after the slots: the unit's EQU
+  // bindings under `-O`, and without it the whole block, the pinned
+  // parameter slots and then the unit's EQU bindings.
   OrderedSymbolAddrs equs;
   // The link metadata that `build_metadata` (under `-O`) or the
   // `ExternMeta` records (with `-c`) give, without the items, the
   // zero-page records, and the HARGS need, which come from the finished
   // program. Without it the output has no metadata block.
   std::optional<LinkMetadata> meta;
-  // `preferred_symbols(bindings)`, under `-O`.
   std::map<std::string, NameSet, std::less<>> preferred_symbols;
 };
 
 // What a run gives: the text, the functions the region made, and the
-// finished asm and asm2 programs, which Python checks with
-// `ir_check.check_asm` and `check_asm2` under `C6502_CHECK_IR=1`.
+// finished asm and asm2 programs.
 struct EmitResult {
   std::string text;
   std::vector<NewFunction> new_functions;
@@ -75,15 +66,15 @@ OptimizedProgram optimized_program(asm_ast::Program prog, const AsmContext& ctx,
                                    const RegionArgs& region, const ZpGlobals& zp,
                                    const HelperFootprints& footprints);
 
-// Runs the end of `_codegen` under `-O` on `prog`, the program after
+// Runs the rest of code generation under `-O` on `prog`, the program after
 // `synthesize_prologue`: `optimized_program`, then `prune_unused_locals`,
 // `lower_to_asm2`, the link metadata, and `emit_program`.
 EmitResult optimized_text(asm_ast::Program prog, const AsmContext& ctx, const RegionArgs& region,
                           const EmitArgs& args);
 
-// Runs the end of `_codegen` without `-O` on `prog`, the program after
-// `replace_pseudoregisters`: the unoptimized fixed point and long
-// branches (`unoptimized_tail`), `place_zp_globals`, `lower_to_asm2`,
+// Runs the rest of code generation without `-O` on `prog`, the program
+// after `replace_pseudoregisters`: the unoptimized fixed point and long
+// branches (`unoptimized_region`), `place_zp_globals`, `lower_to_asm2`,
 // the link metadata when `args.meta` is given, and `emit_program`.
 EmitResult unoptimized_text(asm_ast::Program prog, const AsmContext& ctx,
                             const SymbolAddrs& zp_addrs, const EmitArgs& args);

@@ -1,82 +1,3 @@
-// Asm-level dead-store elimination over the whole function, and the
-// walk that other passes share through `mem_dead_after`.
-//
-// The pass drops any `Mov(Reg, M)` (an STA, STX, or STY) into a memory
-// operand `M` whose value no instruction reachable from the store
-// reads. The walk goes forward from the store through the function's
-// control flow, and the store is dead when every path either writes
-// `M` again before reading it, or reaches the function's exit with `M`
-// dead there. Within a block that is a write of the same byte before
-// any read, the shape of a cache that is overwritten, and across blocks
-// the walk follows every jump and branch.
-//
-// The case that made the walk cross blocks is the group b=6 of the
-// unrolled body of paint_hud_strip_p1.c, after the register allocator
-// and `redundant_load`:
-//
-//     LDA $A30D,Y         ; A = pixels.6
-//     STA $80             ; caches pixels in zero page (the candidate)
-//     INY
-//     STA $258C,X         ; row 1 (uses A, the same pixels)
-//     ... 6 more STAs to the frame buffer ...
-//     .loop@0_continue:   ; the back edge's target, no LDA $80 anywhere
-//     DEX
-//     BPL .split          ; or falls through to RTS
-//     .ssa_block@0:
-//     RTS
-//     .split:
-//     JMP .loop@0_start
-//
-// No path forward, neither the fall-through to the RTS nor the back
-// edge through the whole unrolled body, reads $80 before writing it
-// again or returning, so the store is dead.
-//
-// A `Mov(<non-Reg src>, <mem dst>)` is emitted as `LDA src; STA dst`.
-// When its store is dead, the load may still be needed for A's new
-// value and the N/Z flags it sets, so the move becomes
-// `Mov(src, Reg(A))`, the load alone. An `INC`, `DEC`, or shift of one
-// of the compiler's `__local_*` slots goes when nothing reads the slot
-// after it and the flags it sets are dead too: N and Z for an `INC` or
-// `DEC`, and C as well for a shift or rotate. The in-place lowering of
-// `w << 1` shifts both bytes of a copy, and `(uint8_t)(w << 1)` reads
-// only the low one. A volatile move is never a candidate, since every
-// store to a volatile byte is observed (C99 §6.7.3.6).
-//
-// Dead at the exit
-//
-// At a `Ret` / `Return`, a byte is dead when its address is in the
-// register allocator's pool ($80 to $FF by default). Bytes there are
-// the function's own. The caller-saved slots $80 to $BF are clobbered
-// across calls anyway, and the late epilogue restores the callee-saved
-// slots $C0 to $FF from the frame, so their values at the body's
-// `Return` are never read. The same holds for DPTR, the runtime's caller-saved pointer
-// scratch, and for each `__local_*` slot.
-//
-// The other zero-page bytes (the runtime's block, $00 to $25 in the
-// classic layout, notably HARGS at $04 to $23, which holds return
-// values wider than an `int`) and `Data` (globals that other functions
-// may read) are live at the exit. The walk can still find such a store
-// dead when every path loops back and writes it before reading it.
-//
-// Aliasing and opaque instructions
-//
-// The walk reads and writes through `may_alias`. A `Call`, a
-// `FunctionPrologue`, and an `AllocateStack` may read any byte, so a
-// path through one makes the byte live. The exceptions are a call that
-// can't reach one of the function's own `__local_*` slots whose address
-// it never takes, and a call that ends the life of a DPTR byte.
-//
-// `Push` / `Pop` aren't opaque. They touch only the hardware stack at
-// $0100-$01FF and A, which no operand the walk follows can name, and
-// counting them as reads would keep every store inside an indirect-Y
-// store's `PHA src; ...; PLA` bracket, which is the shape that
-// `apply_memory_value_propagation`'s cleanup of DPTR staging needs
-// gone. `LoadAddress` isn't opaque either. It writes two bytes at its
-// destination, and a `Frame` source reads FP and FP+1 (`CLC; LDA FP;
-// ADC #off; STA dst.lo; LDA FP+1; ADC #0; STA dst.hi`), while a `Data`
-// source reads no memory (`LDA #<name; STA dst.lo; LDA #>name; STA
-// dst.hi`). Counting it opaque kept a dead `STA DPTR` whenever a
-// `LoadAddress` came before the next write of DPTR.
 #include "passes/asm_dead_store.h"
 
 #include <algorithm>
@@ -93,7 +14,6 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// The register allocator's pool, $80 to $FF.
 constexpr int kPoolLo = 0x80;
 constexpr int kPoolHi = 0x100;
 
@@ -103,8 +23,7 @@ bool starts_with(std::string_view s, std::string_view prefix) {
 
 // Returns each operand in the `src` and `dst` fields of `instr`, or
 // every operand of a `DecimalArith`, for the scan of `ImmLabel*`
-// operands. Python's `_all_operands`, which reads only those two field
-// names.
+// operands.
 std::vector<ir::Type_operand> all_operands(const ir::Type_instruction& instr) {
   if (const auto* d = as<ir::DecimalArith>(instr)) {
     return decimal_arith::operands(*d);
@@ -143,25 +62,11 @@ bool operands_equal_exact(const ir::Type_operand& a, const ir::Type_operand& b) 
 
 }  // namespace
 
-// Returns whether the byte `target` written at `instrs[start]` is read
-// on no path forward: each path writes the same byte before reading it,
-// or reaches an exit where the byte is dead. A path that reads it, or
-// that meets an opaque instruction, makes it live.
-//
-// A direct `Call` is passed over for a `target` the callee can't reach
-// (`call_cannot_touch`): a byte of the function's own private pool
-// whose address the function never takes. The allocator gives that
-// pool bytes apart from every callee's, so no callee can name the byte.
-// The `icall` trampoline is excluded, since its eventual target is
-// unknown.
 bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
                  const AsmContext& ctx, const SymbolAddrs* zp_slot_symbols,
                  std::string_view local_prefix,
                  const NameSet& address_taken_names,
                  const ir::Type_operand& target) {
-  // A byte in this function's private pool whose address is never
-  // taken can't be reached through a pointer, so an indirect access
-  // reads only its pointer's bytes as far as `target` goes.
   const bool is_private =
       call_cannot_touch(target, local_prefix, address_taken_names);
   const auto* target_data = as<ir::Data>(target);
@@ -181,13 +86,6 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
       }
       continue;
     }
-    // DPTR is caller-saved scratch. No callee reads its incoming value,
-    // and no pass assumes it survives a call, so a direct call ends a
-    // stored DPTR byte's life. The exception is the `icall` trampoline,
-    // the JSR target of an indirect call, whose `JMP (DPTR)` reads both
-    // bytes. A pointer staged in DPTR before a call, as in a loop that
-    // prints through `(ptr),Y` and calls a routine per character, is
-    // dead.
     if (call != nullptr && call->name != "icall" && target_data != nullptr &&
         target_data->name == "DPTR") {
       continue;
@@ -195,12 +93,6 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
     if (is_opaque(next)) {
       return false;
     }
-    // A tail call, a `Jump` to a label outside the function, leaves for
-    // a callee that may read `target`, notably a `__zpabi_<callee>__*`
-    // slot just written as an argument. The allocator gives
-    // `__local_<fn>__*` slots addresses apart from every callee's, so
-    // such a slot dies at the tail call, while the other bytes of the
-    // pool don't.
     if (const auto* jump = as<ir::Jump>(next)) {
       if (!labels.contains(jump->target)) {
         if (!is_dead_at_tail_call(target, &address_taken_names)) {
@@ -218,8 +110,6 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
     if (reads(next, target, ctx, zp_slot_symbols, is_private)) {
       return false;
     }
-    // A write of exactly the same byte ends the path. A write that only
-    // may alias doesn't, since it may write another byte.
     if (writes_same(next, target)) {
       continue;
     }
@@ -230,7 +120,6 @@ bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
   return true;
 }
 
-
 bool is_opaque(const ir::Type_instruction& instr) {
   return isa<ir::Call, ir::FunctionPrologue, ir::AllocateStack>(instr);
 }
@@ -238,10 +127,6 @@ bool is_opaque(const ir::Type_instruction& instr) {
 NameSet collect_address_taken_names(Instrs instrs) {
   NameSet out;
   for (const auto& instr : instrs) {
-    // `LoadAddress(src = Data(name), ...)` takes the address of `name`
-    // in one atom, before its bytes are split into the
-    // `Mov(ImmLabelLow(name), ...)` / `Mov(ImmLabelHigh(name), ...)`
-    // pair that the scan below catches.
     if (const auto* la = as<ir::LoadAddress>(instr)) {
       if (const auto* d = as<ir::Data>(la->src)) {
         out.insert(d->name);
@@ -298,9 +183,6 @@ bool is_dead_at_exit(const ir::Type_operand& target,
     if (d->name == "DPTR") {
       return true;
     }
-    // A body-local slot belongs to the function whose code names it,
-    // and dies when that function returns, whether the slot is in zero
-    // page or spilled to memory above it.
     if (starts_with(d->name, "__local_")) {
       return true;
     }
@@ -317,11 +199,6 @@ bool is_dead_at_exit(const ir::Type_operand& target,
 
 bool is_dead_at_tail_call(const ir::Type_operand& target,
                           const NameSet* address_taken_names) {
-  // The callee may read its own `__zpabi_<callee>__*` argument slots,
-  // which are in the pool, so the pool's bytes aren't dead here as they
-  // are at a return. A local whose address the function takes may have
-  // been given to the callee, as `sum((int[]){1, 2, 3, 4}, 4)` gives
-  // `sum` a compound literal's.
   if (const auto* d = as<ir::Data>(target)) {
     return starts_with(d->name, "__local_") &&
            (address_taken_names == nullptr ||
@@ -358,17 +235,12 @@ bool reads(const ir::Type_instruction& instr, const ir::Type_operand& target,
   const MayAliasOptions options{.zp_slot_symbols = zp_slot_symbols};
   for (const auto& op : read_operands(instr)) {
     if (isa<ir::Indirect, ir::IndirectY, ir::IndirectZp, ir::IndirectZpY>(op)) {
-      // An access through a pointer reads the pointer's bytes, which
-      // `may_alias` doesn't count: it compares the bytes the access
-      // reaches, and a pointer can't reach the zero-page pool its own
-      // bytes may be in.
       for (const auto& p : ptr_source_reads(op)) {
         if (may_alias(p, target, ctx, options)) {
           return true;
         }
       }
       if (is_private) {
-        // Only the pointer's bytes can be `target`.
         continue;
       }
     }
@@ -381,8 +253,6 @@ bool reads(const ir::Type_instruction& instr, const ir::Type_operand& target,
 
 bool writes_same(const ir::Type_instruction& instr, const ir::Type_operand& target) {
   if (const auto* d = as<ir::DecimalArith>(instr)) {
-    // `reads` is asked first, so a chain that reads `target` before
-    // writing it has already counted as a read.
     for (const auto& op : d->dst) {
       if (operands_equal_exact(op, target)) {
         return true;
@@ -395,12 +265,6 @@ bool writes_same(const ir::Type_instruction& instr, const ir::Type_operand& targ
 }
 
 std::optional<ir::Type_operand> write_operand(const ir::Type_instruction& instr) {
-  // Any `Mov` with a destination that isn't a register writes that
-  // byte, including a move from memory to memory, which `asm_emit`
-  // writes as `LDA src; STA dst`. A `Pop` into memory is the defensive
-  // case, since the IR's pops go into A. A `LoadAddress` writes two
-  // bytes, and the low one is given, so a store to that byte counts as
-  // overwritten. The walk goes past the high byte, which is sound.
   const ir::Type_operand* dst = nullptr;
   if (const auto* m = as<ir::Mov>(instr)) {
     dst = &m->dst;
@@ -441,9 +305,6 @@ std::vector<ir::Type_operand> read_operands(const ir::Type_instruction& instr) {
       break;
     }
     case ir::Kind_instruction::Mov: {
-      // A store through an indirect-Y mode reads the pointer (DPTR, FP,
-      // SSP, or a zero-page base) to find the byte, so the walk doesn't
-      // drop a pointer still being staged.
       const auto& m = std::get<ir::Mov>(instr);
       add(m.src);
       add_ptr(m.dst);
@@ -473,7 +334,6 @@ std::vector<ir::Type_operand> read_operands(const ir::Type_instruction& instr) {
       add(c.right);
       break;
     }
-    // INC, DEC, and the shifts read their destination.
     case ir::Kind_instruction::Inc:
       add(std::get<ir::Inc>(instr).dst);
       add_ptr(std::get<ir::Inc>(instr).dst);
@@ -499,20 +359,15 @@ std::vector<ir::Type_operand> read_operands(const ir::Type_instruction& instr) {
       add_ptr(std::get<ir::RotateRight>(instr).dst);
       break;
     case ir::Kind_instruction::Push:
-      // The write to the hardware stack isn't a byte the walk follows.
       add(std::get<ir::Push>(instr).src);
       break;
     case ir::Kind_instruction::LoadAddress:
-      // A `Data` source is an immediate address. A `Frame` source adds
-      // FP and FP+1 to the offset.
       if (isa<ir::Frame>(std::get<ir::LoadAddress>(instr).src)) {
         out.push_back(ir::Data{.name = "FP", .offset = 0});
         out.push_back(ir::Data{.name = "FP", .offset = 1});
       }
       break;
     default:
-      // A `Pop` reads nothing the walk follows, and its write is in
-      // `write_operand`.
       break;
   }
   return out;
@@ -551,9 +406,8 @@ enum class Candidate {
   // `Mov(<not a Reg>, <ZP or Data>)`, emitted as `LDA src; STA dst`,
   // whose store half goes, keeping the load.
   kMemToMem,
-  // An `INC`, `DEC`, or shift of a `__local_*` slot, which the
-  // compiler's slots never make volatile. It goes when it is dead and
-  // the flags it sets are dead too.
+  // An `INC`, `DEC`, or shift of a `__local_*` slot. It goes when it is
+  // dead and the flags it sets are dead too.
   kDeadRmw,
 };
 
@@ -593,8 +447,6 @@ Candidate candidate_kind(const ir::Type_instruction& instr) {
   return isa<ir::Reg>(mov->src) ? Candidate::kPureStore : Candidate::kMemToMem;
 }
 
-// Drops or shortens each store of the function whose value no
-// instruction reachable from it reads.
 void rewrite_function(ir::Function& fn, const AsmContext& ctx,
                       const SymbolAddrs* zp_slot_symbols) {
   const Instrs instrs = fn.instructions;
@@ -604,8 +456,6 @@ void rewrite_function(ir::Function& fn, const AsmContext& ctx,
     return;
   }
   const LabelMap labels(instrs);
-  // The names whose address the function builds, which decide whether a
-  // `Call` can reach one of the function's `__local_<fn>__*` slots.
   const NameSet address_taken_names = asm_dead_store::collect_address_taken_names(instrs);
   const std::string local_prefix = "__local_" + fn.name + "__";
   std::vector<ir::Type_instruction> out;
@@ -630,9 +480,6 @@ void rewrite_function(ir::Function& fn, const AsmContext& ctx,
         changed = true;
         break;
       case Candidate::kDeadRmw: {
-        // The new value isn't read. The flags it sets have to be dead
-        // too: N and Z for INC / DEC, and C as well for a shift or
-        // rotate.
         const bool flags_dead = isa<ir::Inc, ir::Dec>(instr)
                                     ? flags_dead_at(instrs, labels, i + 1)
                                     : all_flags_dead_at(instrs, labels, i + 1);
@@ -644,7 +491,6 @@ void rewrite_function(ir::Function& fn, const AsmContext& ctx,
         break;
       }
       case Candidate::kMemToMem:
-        // The load half stays, as a move into A.
         out.push_back(ir::Mov{.src = std::get<ir::Mov>(instr).src,
                               .dst = ir::Reg{.reg = ir::A{}}});
         changed = true;

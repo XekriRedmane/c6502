@@ -1,81 +1,3 @@
-// Folds constant arithmetic at the asm level, such as an `LDA #imm`
-// followed by an `AND` or `ORA` of another immediate.
-//
-// The case that called for it
-//
-// When a `uchar` value is tested against a small literal in C, the
-// integer promotions lift both sides to `int` (C99 §6.3.1.1.2). The
-// high byte of the bitwise result then has the shape `0 & 0`, `0 | 0`,
-// and so on, a constant that is zero or unchanged. `tac_to_asm` emits a
-// literal `LDA #$00; AND #$00; STA <high>` for each such high byte. This
-// pass folds the pair to `LDA #$00; STA <high>`, which saves 2 bytes and
-// 2 cycles each time.
-//
-// The pattern and why the result is the same
-//
-//     Mov(Imm(c1), A)        // LDA #c1, so A = c1 and the flags are c1's
-//     <BinOp>(Imm(c2), A)    // AND/ORA #c2, so A = c1 OP c2 and the flags are its
-//
-// becomes
-//
-//     Mov(Imm(c1 OP c2), A)  // LDA #(c1 OP c2)
-//
-// The replacement leaves A's value and N/Z as they were. `LDA #k` sets
-// N to bit 7 of k and Z to whether k is 0, which is what the two
-// instructions left behind. So the rewrite is sound even when a later
-// instruction reads A or the flags, and no liveness check is needed.
-//
-// An identity operation after a write of A
-//
-// A second pattern drops an `Or(Imm(0), A)` or `And(Imm(0xFF), A)`
-// right after an instruction that wrote A:
-//
-//     <writes A, sets N/Z from A's new value>   // `LDA M`, `AND #x`, ...
-//     Or(Imm(0), A)                              // A | 0 = A
-// or  And(Imm(0xFF), A)                          // A & $FF = A
-//
-// A's value doesn't change, and the N/Z flags that the write set match
-// what the identity operation would leave, since both come from A's
-// value. AND and ORA leave C and V alone, so those are the same in both
-// forms too. The test for a write of A takes every instruction whose
-// destination is `Reg(A)`: a `Mov` (LDA, TXA, TYA) and the arithmetic
-// on A (`Add`, `Sub`, `And`, `Or`, `Xor`).
-//
-// A label's high byte plus a constant
-//
-// `LDA #>(name+o); CLC; ADC #k` becomes `LDA #>(name+o+256k)`, and
-// `SEC; SBC #k` subtracts `256k`, when C and V are dead after. The
-// assembler computes the sum. A pointer `page_tables + 0x100`, whose
-// low byte is the label's own, leaves this on its high byte. An offset
-// that would come out negative is left alone.
-//
-// Shifting in a 1
-//
-// `ASL A; CLC; ADC #1` becomes `SEC; ROL A` when C and V are dead
-// after. The add sets the bit 0 that the shift cleared, as rotating a
-// set C in does, and A, N, and Z come out the same.
-//
-// Adding 0 with the carry known
-//
-// `CLC; ADC #$00` and `SEC; SBC #$00` leave A and C as they were, so
-// the `ADC` / `SBC` goes when V is dead after and N and Z are either
-// dead or already set from A by the instruction before the `CLC`. An
-// add of 2 bytes of a value whose low byte is 0, such as `p + (n <<
-// 8)`, leaves this on its low byte.
-//
-// Scope and order
-//
-// The constant folds take only `Reg(A)` as the destination and `Imm` as
-// both sources, the shape `tac_to_asm` emits. A lone `Add` or `Sub`
-// after a load is left out on purpose, since it reads the carry, which a
-// load doesn't set, so its result depends on what came before. `Xor` is
-// left out because its IR shape (`src1`, `src2`, `dst`) differs from the
-// `src` / `dst` of `And` and `Or`.
-//
-// The pass runs in the asm peephole fixed point, after
-// `replace_pseudoregisters` has made the operands concrete. Each fold
-// turns two atoms into one, or three into one or two, so the code only
-// shrinks.
 #include "passes/const_arith_fold.h"
 
 #include <cstddef>
@@ -95,7 +17,6 @@ using ::c6502::asdl::isa;
 
 using InstrList = std::vector<ir::Type_instruction>;
 
-// Returns the immediate's value when `op` is an `Imm`, as a byte.
 std::optional<asdl::Int> imm_byte(const ir::Type_operand& op) {
   if (const auto* imm = as<ir::Imm>(op)) {
     return imm->value & 0xFF;
@@ -107,10 +28,6 @@ ir::Mov load_a(ir::Type_operand src, const ir::Type_operand& dst) {
   return ir::Mov{.src = std::move(src), .dst = dst, .is_volatile = false};
 }
 
-// Returns `Mov(Imm(0), A)` for `And(Imm(0), A)`, and `Mov(Imm(0xFF), A)`
-// for `Or(Imm(0xFF), A)`, whose result doesn't depend on A. Each sets N
-// and Z as the load does. The byte of `(w & 0xFF00) | b` that keeps
-// nothing of `w` is one.
 std::optional<ir::Type_instruction> constant_result(const ir::Type_instruction& a) {
   if (const auto* x = as<ir::And>(a)) {
     if (is_reg_a(x->dst) && imm_byte(x->src) == asdl::Int(0)) {
@@ -124,13 +41,6 @@ std::optional<ir::Type_instruction> constant_result(const ir::Type_instruction& 
   return std::nullopt;
 }
 
-// Returns `ImmLabelHigh(name, offset + 256 * k)` for `LDA
-// #>(name+offset); CLC; ADC #k` (or `LDA #k; CLC; ADC #>(name+offset)`),
-// and with `-256 * k` for `SEC; SBC #k` after the label's half. Adding
-// `k` to the high byte of an address adds `256 * k` to the address,
-// which dasm and the linker compute, so `page_tables + 0x100` in Zork's
-// `main`, whose low byte is the label's, loads its high byte with one
-// `LDA`.
 std::optional<ir::Type_operand> label_high_sum(const ir::Type_instruction& a,
                                                const ir::Type_instruction& flag,
                                                const ir::Type_instruction& op) {
@@ -166,19 +76,12 @@ std::optional<ir::Type_operand> label_high_sum(const ir::Type_instruction& a,
     return std::nullopt;
   }
   const asdl::Int offset = label->offset + asdl::Int(sign) * 256 * k;
-  // `asm_emit` writes an offset as `name+offset`, so a negative one
-  // would read `name+-256`.
   if (offset < 0) {
     return std::nullopt;
   }
   return ir::ImmLabelHigh{.name = label->name, .offset = offset};
 }
 
-// Returns `Mov(Imm(k1 + k2), A)` for `LDA #k1; CLC; ADC #k2` at
-// `instrs[i]`, and `Mov(Imm(k1 - k2), A)` for `LDA #k1; SEC; SBC #k2`,
-// when C and V are dead after. N and Z come out as the add left them.
-// `if (w & 0x8000) pages += 0x100;` on a `pages` whose high byte is 0
-// adds 1 to 0 this way.
 std::optional<ir::Type_instruction> try_fold_add(const InstrList& instrs, const LabelMap& labels,
                                                  std::size_t i) {
   if (i + 2 >= instrs.size()) {
@@ -220,15 +123,8 @@ std::optional<ir::Type_instruction> try_fold_add(const InstrList& instrs, const 
   return load_a(ir::Imm{.value = value}, load->dst);
 }
 
-// Returns one `ADC #k` for `ADC #k1; CLC; ADC #k2` at `instrs[i]`, with
-// `k = k1 + k2`, when C and V are dead after. The first add's carry in
-// comes through, so A is `A + k1 + C + k2` either way, and N and Z are
-// set from it. An `SBC` in either place, after a `SEC` for the second,
-// subtracts its constant from `k`, and the result is an `SBC` when the
-// first was one: `SBC #k1; CLC; ADC #k2` is `A - k1 - (1 - C) + k2`,
-// which is `SBC #(k1 - k2)`. Only the C and V of the second differ.
-// After a byte divided by a constant, `a % 21 + 1` is the loop's `ADC
-// #$15` and then `CLC; ADC #$01`.
+// The 6502's SBC subtracts the borrow 1 - C, so `SBC #k1; CLC; ADC #k2`
+// is `A - k1 - (1 - C) + k2`, which is `SBC #(k1 - k2)`.
 std::optional<ir::Type_instruction> try_fold_add_add(const InstrList& instrs,
                                                      const LabelMap& labels, std::size_t i) {
   if (i + 2 >= instrs.size()) {
@@ -268,12 +164,6 @@ std::optional<ir::Type_instruction> try_fold_add_add(const InstrList& instrs,
   return ir::Sub{.src = ir::Imm{.value = value}, .dst = *dst1};
 }
 
-// Returns `SEC; ROL A` for `ASL A; CLC; ADC #1` at `instrs[i]`, when C
-// and V are dead after. The `ASL` leaves bit 0 clear, so adding 1 sets
-// it with no carry, which is what rotating a set C in does. A, N, and Z
-// come out the same, and only C and V differ: the add leaves both clear,
-// and the `ROL` puts the old bit 7 in C. `(uint8_t)(props[0] << 1) + 1`
-// in Zork's `get_property_ptr` is the case.
 std::optional<std::vector<ir::Type_instruction>> shift_in_one(const InstrList& instrs,
                                                               const LabelMap& labels,
                                                               std::size_t i) {
@@ -292,13 +182,6 @@ std::optional<std::vector<ir::Type_instruction>> shift_in_one(const InstrList& i
   return std::vector<ir::Type_instruction>{ir::SetCarry{}, ir::RotateLeft{.dst = shift->dst}};
 }
 
-// Returns whether `instrs[i]` starts `CLC; ADC #0` or `SEC; SBC #0`,
-// whose `ADC` / `SBC` leaves A and C as they were. It writes V (0) and
-// N and Z from A, so V must be dead after, and N and Z dead too unless
-// the instruction before the `CLC` set them from A. `Z_HEADER_ADDR +
-// (sector << 8)` adds the shift's low byte, a 0, this way: `LDA
-// Z_HEADER_ADDR; CLC; ADC #$00; STA lo; LDA Z_HEADER_ADDR+1; ADC
-// sector`.
 bool is_carry_free_zero_add(const InstrList& instrs, const LabelMap& labels, std::size_t i) {
   if (i + 1 >= instrs.size()) {
     return false;
@@ -341,8 +224,6 @@ bool is_carry_free_zero_add(const InstrList& instrs, const LabelMap& labels, std
   return false;
 }
 
-// Returns `Mov(Imm(c1 OP c2), A)` when `a; b` is `Mov(Imm, A);
-// <And|Or>(Imm, A)`.
 std::optional<ir::Type_instruction> try_fold(const ir::Type_instruction& a,
                                              const ir::Type_instruction& b) {
   const auto* load = as<ir::Mov>(a);
@@ -359,9 +240,6 @@ std::optional<ir::Type_instruction> try_fold(const ir::Type_instruction& a,
   return std::nullopt;
 }
 
-// Returns whether `b` is an identity `Or(Imm(0), A)` or `And(Imm(0xFF),
-// A)` and `a` wrote A and left A's N/Z in the flags: `a`'s destination
-// is `Reg(A)` and it is a `Mov`, `And`, `Or`, `Add`, `Sub`, or `Xor`.
 bool is_identity_after_a_write(const ir::Type_instruction& a, const ir::Type_instruction& b) {
   if (const auto* x = as<ir::Or>(b)) {
     if (!(isa<ir::Imm>(x->src) && is_reg_a(x->dst) && *imm_byte(x->src) == 0)) {
@@ -383,9 +261,6 @@ bool is_identity_after_a_write(const ir::Type_instruction& a, const ir::Type_ins
   return false;
 }
 
-// Returns `Mov(M, A)` for `Mov(Imm(0), A); Or(M, A)` and for
-// `Mov(Imm(0xFF), A); And(M, A)`. Both leave A = M with the flags from
-// M, as a plain `LDA M` does.
 std::optional<ir::Type_instruction> try_absorb_zero_load(const ir::Type_instruction& a,
                                                          const ir::Type_instruction& b) {
   const auto* load = as<ir::Mov>(a);
@@ -424,7 +299,6 @@ void rewrite_function(ir::Function& fn) {
       continue;
     }
     if (is_carry_free_zero_add(instrs, labels, i)) {
-      // Keeps the CLC / SEC and drops the ADC #0 / SBC #0.
       out.push_back(a);
       i += 2;
       continue;
@@ -444,7 +318,6 @@ void rewrite_function(ir::Function& fn) {
       continue;
     }
     if (is_identity_after_a_write(a, b)) {
-      // Drops `b`, the identity operation, and keeps `a`.
       out.push_back(a);
       i += 2;
       continue;

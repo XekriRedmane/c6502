@@ -1,59 +1,3 @@
-// Drops a shift whose only use is to set C to what C already holds.
-//
-// The pattern
-//
-// `load_packed_address` in `examples/zork/pages.c` sets the 24-bit
-// `Z_PC2` to twice `SCRATCH2`:
-//
-//     Z_PC2.lo = SCRATCH2 << 1;
-//     Z_PC2.hi = (uint8_t)(SCRATCH2 >> 15);
-//
-// `tac_to_asm` lowers `x >> 15` as the bit shifted out of `x << 1`, so
-// the second statement starts by putting the bit shifted out of the
-// byte below into C again:
-//
-//     LDA   SCRATCH2
-//     ASL
-//     STA   Z_PC2
-//     LDA   SCRATCH2+1
-//     ROL                     ; C = bit 7 of SCRATCH2+1
-//     STA   Z_PC2+1
-//     LDA   SCRATCH2+1        ; C = bit 7 of SCRATCH2+1, again
-//     ASL
-//     LDA   #$00
-//     ROL
-//     STA   Z_PC2+2
-//
-// (`x >> 7` is likewise the high byte of `x << 1`, so taking the three
-// bytes in three statements computed C twice more.) The pass tracks
-// what C holds: bit 7 of a byte `M` after `LDA M` and `ASL A` or `ROL
-// A`, and bit 0 after `LSR A` or `ROR A`. A later `LDA M; ASL A` (or
-// `ROL A`, `LSR A`, `ROR A`) that would set C the same way, with A and
-// N/Z dead after it, goes, which leaves Zork's own chain:
-//
-//     LDA   SCRATCH2
-//     ASL
-//     STA   Z_PC2
-//     LDA   SCRATCH2+1
-//     ROL
-//     STA   Z_PC2+1
-//     LDA   #$00
-//     ROL
-//     STA   Z_PC2+2
-//
-// What it tracks
-//
-// Within a basic block, since a label forgets everything, the pass
-// tracks the byte A was last loaded from, while it is unchanged, and
-// what C holds. A write to that byte, or to anything that might be it
-// (a store through a pointer, or a `Data` byte for a `ZP` one), forgets
-// the fact, and so does an instruction that writes C (`ADC`, `SBC`, a
-// compare, a shift of memory, `SEC`, `CLC`, a call). A volatile load
-// sets nothing.
-//
-// Where it runs
-//
-// In the asm peephole fixed point, which both pipelines run.
 #include "passes/carry_recompute.h"
 
 #include <concepts>
@@ -76,7 +20,6 @@ using ::c6502::asdl::isa;
 
 enum class Kind { kNone, kHi, kLo };
 
-// What C holds: bit 7 (`kHi`) or bit 0 (`kLo`) of `byte`.
 struct Fact {
   Kind kind = Kind::kNone;
   ir::Type_operand byte;
@@ -84,14 +27,10 @@ struct Fact {
 
 bool is_mem(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
 
-// Returns whether `a` and `b` are of one kind of operand and differ,
-// which for `Data` and `ZP` bytes means they are different bytes.
 bool distinct(const ir::Type_operand& a, const ir::Type_operand& b) {
   return a.index() == b.index() && a != b;
 }
 
-// The memory `ins` writes: nothing, an operand, or memory it doesn't
-// name (`kUnknown`).
 struct Written {
   enum { kNothing, kOperand, kUnknown } what = kNothing;
   ir::Type_operand op;
@@ -144,8 +83,6 @@ Kind shift_kind(const ir::Type_instruction& ins) {
   return Kind::kNone;
 }
 
-// Returns whether `ins` leaves C alone. A `Mov` to memory may still
-// change the byte a fact is about, which is checked separately.
 bool keeps_c(const ir::Type_instruction& ins) {
   return isa<ir::Mov, ir::Inc, ir::Dec, ir::And, ir::Or, ir::Xor, ir::Push,
              ir::Pop, ir::BitTest, ir::Branch>(ins);
@@ -153,8 +90,6 @@ bool keeps_c(const ir::Type_instruction& ins) {
 
 bool writes_a(const ir::Type_instruction& ins) {
   if (const auto* m = as<ir::Mov>(ins)) {
-    // A store from anything but a register (`Mov(M, D)`, `Mov(#k, D)`)
-    // is emitted as `LDA; STA` through A.
     return !isa<ir::Reg>(m->src);
   }
   if (const auto* x = as<ir::Add>(ins)) return is_reg_a(x->dst);
@@ -177,7 +112,6 @@ void rewrite_function(ir::Function& fn) {
   std::size_t i = 0;
   while (i < instrs.size()) {
     const ir::Type_instruction& ins = instrs[i];
-    // A load and shift that would set C to what it holds.
     if (const auto* m = as<ir::Mov>(ins);
         m != nullptr && is_reg_a(m->dst) && !m->is_volatile && is_mem(m->src) &&
         i + 1 < instrs.size()) {
@@ -206,7 +140,6 @@ void rewrite_function(ir::Function& fn) {
       }
       const Written written = writes(ins);
       if (written.what != Written::kNothing) {
-        // The two bytes held, as they were before this instruction.
         std::optional<ir::Type_operand> held_list[2];
         if (fact) {
           held_list[0] = fact->byte;

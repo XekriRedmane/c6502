@@ -1,6 +1,5 @@
-// Decodes the tagged JSON of a captured call's arguments
-// (tools/capture_passes.py describes the encoding) into the values the
-// C++ passes take, for the entries of registry.cpp.
+// Decodes the tagged JSON of a captured call's arguments into the
+// values the C++ passes take.
 #pragma once
 
 #include <optional>

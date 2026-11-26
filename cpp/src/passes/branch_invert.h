@@ -1,4 +1,3 @@
-// The port of passes/branch_invert.py.
 #pragma once
 
 #include "asm_ast.h"

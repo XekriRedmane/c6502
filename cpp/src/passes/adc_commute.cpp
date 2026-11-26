@@ -1,100 +1,3 @@
-// Drops the spill of `STA temp; LDA mem; ADC temp; STA mem` when the
-// commutativity of ADC lets the addition read mem directly.
-//
-// The shape
-//
-// A compound assignment `mem += V` where `V` was just computed into A.
-// The plain lowering spills A:
-//
-//     Mov(Reg(A), temp)            ; STA temp, the spill of V
-//     [operations that keep A and temp]
-//     Mov(mem, Reg(A))             ; LDA mem
-//     ClearCarry                   ; CLC (optional, for ADC)
-//     Add(temp, Reg(A))            ; ADC temp, so A = mem + V
-//     Mov(Reg(A), mem)             ; STA mem
-//
-// ADC is commutative, `mem + V == V + mem`, so if A still holds V at
-// the ADC, with nothing between that writes A, the spill folds out:
-//
-//     [operations between]
-//     ClearCarry
-//     Add(mem, Reg(A))             ; ADC mem, so A = V + mem
-//     Mov(Reg(A), mem)             ; STA mem
-//
-// The same shape works for `And` and `Or`, which are commutative and
-// set the flags the same way. `Sub` isn't commutative, and `Xor` has
-// the IR's form with three operands, a different shape.
-//
-// The final `STA mem` is optional. Without it the result in A is the
-// same, and the rewrite still drops the load. `print_zstring`'s
-// `get_alphabet() + z` (examples/zork/zstring.c) was `STA t; LDA z;
-// CLC; ADC t` and becomes `CLC; ADC z`.
-//
-// What the rewrite does
-//
-//   - It drops the `LDA mem`, since A already holds V.
-//   - It rewrites the `ADC temp` (or `AND temp` / `ORA temp`) to read
-//     `mem`.
-//   - It leaves the `STA temp` in place. If `temp` is dead afterward,
-//     `asm_dead_store` removes it in the next sweep, and if `temp` is
-//     still read for some other reason, the STA stays sound.
-//
-// So the leftover `STA temp` is no obligation of this pass's
-// soundness. It's work for the dead store pass, which keeps the
-// matching simple, with no analysis of what is dead across blocks,
-// while it still takes two instructions off the hot path at each
-// occurrence.
-//
-// The conditions
-//
-// A window of five positions with a flexible band between:
-//
-//   [i]      `Mov(Reg(A), temp)` with temp a ZP or Data byte, not
-//            volatile.
-//   [i+1..j-1]  operations between, each of which
-//              - is a Mov, Inc, Dec, ClearCarry, SetCarry, Compare, or
-//                BitTest,
-//              - doesn't write `Reg(A)`, and
-//              - doesn't read or write any byte that may be `temp`.
-//   [j]      `Mov(mem, Reg(A))` with mem a ZP, Data, IndexedData,
-//            IndirectZp, or IndirectZpY operand, not volatile.
-//   [j+1]    an optional `ClearCarry` / `SetCarry`.
-//   [k]      `Add(temp, Reg(A))`, `And(temp, Reg(A))`, or `Or(temp,
-//            Reg(A))`, whose operand is the STA's destination, field
-//            for field.
-//   [k+1]    an optional `Mov(Reg(A), mem)` whose operand is the LDA's
-//            source, field for field, not volatile.
-//
-// The band between is what relaxes a peephole of adjacent
-// instructions. It takes the LDX/LDY of an index register that
-// typically sits between a spill of A and the matching load of mem.
-// Every kind in the band is named, and any other kind ends the match.
-//
-// Soundness
-//
-// Let V be A's value entering [i]. The original leaves A = V and
-// temp = V through the band. [j] sets A to mem's value and N/Z from
-// it, the CLC/SEC sets C, [k] sets A to op(mem, V, C) and N/Z/C/V from
-// the result, and [k+1] stores A in mem. The rewrite leaves A = V
-// through the band and past the dropped [j], with the flags the band
-// left, the CLC/SEC sets C, the rewritten [k] sets A to op(V, mem, C)
-// and N/Z/C/V from the result, and [k+1] stores A in mem.
-//
-// Both leave the same A after [k+1], since op is commutative in V and
-// mem's value, and the same flags, since op overwrites N/Z/C/V. No
-// instruction between [j] and [k+1] reads N/Z, so the flags of the
-// dropped [j] aren't observed. C comes from the optional CLC/SEC and
-// never from [j]. The index register an IndexedData mem uses is set
-// before [j] and unchanged up to [k+1], so the rewritten `ADC mem` and
-// the `STA mem` kept address the same byte.
-//
-// Where it runs
-//
-// Inside the peephole fixed point, with the other simplifications of
-// read-modify-writes. It composes with the TAC-level sinkers that
-// expose the STA-then-CLC-ADC pattern of a `+= V` on memory, and on its
-// own it fires wherever the compiler emits the spill, reload, and add
-// for a read-modify-write of one byte.
 #include "passes/adc_commute.h"
 
 #include <cstddef>
@@ -119,9 +22,7 @@ using ::c6502::asdl::isa;
 using Instructions = std::vector<ir::Type_instruction>;
 
 // Returns whether `instr` is `Mov(Reg(A), <ZP|Data>)` and isn't
-// volatile. Keeping the spill's destination a ZP or Data byte (no
-// IndexedData) keeps the spill slot one fixed byte, the only shape the
-// aliasing check handles cleanly.
+// volatile.
 bool is_sta(const ir::Type_instruction& instr) {
   const auto* m = as<ir::Mov>(instr);
   return m != nullptr && !m->is_volatile && is_reg_a(m->src) &&
@@ -130,10 +31,7 @@ bool is_sta(const ir::Type_instruction& instr) {
 
 // Returns whether `op` is one of the operands `mem` may be: a byte with
 // a fixed address, an indexed byte, or a byte through a zero-page
-// pointer (`(zp),Y`), which `ADC`, `AND`, `ORA`, and `STA` all take. The
-// `LDY #k` an `IndirectZp` operand begins with moves from the dropped
-// load to the operation, with only a `CLC` or `SEC` between, so Y ends
-// the same.
+// pointer (`(zp),Y`), which `ADC`, `AND`, `ORA`, and `STA` all take.
 bool is_mem_kind(const ir::Type_operand& op) {
   return isa<ir::ZP, ir::Data, ir::IndexedData, ir::IndirectZp, ir::IndirectZpY>(op);
 }
@@ -208,23 +106,16 @@ bool is_comm_op_with_temp(const ir::Type_instruction& instr,
   return src != nullptr && operands_equal(*src, temp);
 }
 
-// Returns whether `op` names memory. `may_alias` is defined only for
-// these kinds, and a register or an immediate would fall through to
-// its answer of true, which would reject an LDX or LDY in the band.
 bool is_memory_kind(const ir::Type_operand& op) {
   return isa<ir::ZP, ir::Data, ir::IndexedData, ir::Stack, ir::Frame, ir::Indirect,
              ir::IndirectY, ir::IndirectZp, ir::IndirectZpY>(op);
 }
 
-// Returns whether `op` names memory that may be `temp`. Register,
-// immediate, and label operands touch no memory.
 bool maybe_aliases(const ir::Type_operand& op, const ir::Type_operand& temp,
                    const AsmContext& ctx) {
   return is_memory_kind(op) && may_alias(op, temp, ctx);
 }
 
-// Returns whether any operand of `instr` that names memory may be
-// `temp`.
 bool accesses_alias(const ir::Type_instruction& instr, const ir::Type_operand& temp,
                     const AsmContext& ctx) {
   if (const auto* m = as<ir::Mov>(instr)) {
@@ -250,9 +141,7 @@ bool accesses_alias(const ir::Type_instruction& instr, const ir::Type_operand& t
 // register, which is emitted as `LDA src; STA dst`, and a transfer
 // between X and Y, which goes through A (`TXA; TAY`). An operand on the
 // soft stack or behind a pointer counts too, since its expansion can go
-// through A and loads Y. Without the case of a destination in memory,
-// `other = 7;` between the spill and the add made the add use 7 in
-// place of the spilled value.
+// through A and loads Y.
 bool writes_a(const ir::Type_instruction& instr) {
   bool expanding = false;
   for_each_operand<false>(instr, [&](const ir::Type_operand& op) {
@@ -281,17 +170,6 @@ bool writes_a(const ir::Type_instruction& instr) {
 // load: it is one of the kinds named (Mov, Inc, Dec, ClearCarry,
 // SetCarry, Compare, BitTest), doesn't write Reg(A), and doesn't read
 // or write `temp`.
-//
-// A `Mov` covers LDX, LDY, STX, STY, TXA, TYA, TAX, TAY, and so on, and
-// `writes_a` rejects those that write A. An `Inc` or `Dec` changes
-// memory or an index register, and `accesses_alias` rejects one that
-// touches `temp`. `ClearCarry` and `SetCarry` change only flags, which
-// nothing between the spill and the dropped load reads. `Compare` reads
-// its operands and sets flags, and `BitTest` reads memory and sets
-// N/V/Z, and neither writes A. Push, Pop, Call, FunctionPrologue,
-// AllocateStack, Return, Ret, LoadAddress, the read-modify-writes of
-// memory that could write A through the indirect-Y expansion, and all
-// control flow are left out.
 bool is_preserving(const ir::Type_instruction& instr, const ir::Type_operand& temp,
                    const AsmContext& ctx) {
   if (!isa<ir::Mov, ir::Inc, ir::Dec, ir::ClearCarry, ir::SetCarry, ir::Compare,
@@ -319,8 +197,6 @@ std::optional<Match> try_match(const Instructions& instrs, std::size_t i,
     return std::nullopt;
   }
   const ir::Type_operand& temp = std::get<ir::Mov>(instrs[i]).dst;
-  // Walks forward until a load that fits or an instruction the band
-  // can't hold.
   std::size_t j = i + 1;
   while (true) {
     if (j >= n) {
@@ -335,7 +211,6 @@ std::optional<Match> try_match(const Instructions& instrs, std::size_t i,
     ++j;
   }
   const ir::Type_operand& mem = std::get<ir::Mov>(instrs[j]).src;
-  // An optional ClearCarry / SetCarry between the LDA and the operation.
   std::size_t k = j + 1;
   if (k >= n) {
     return std::nullopt;
@@ -346,13 +221,9 @@ std::optional<Match> try_match(const Instructions& instrs, std::size_t i,
       return std::nullopt;
     }
   }
-  // The commutative operation reading the spill into A.
   if (!is_comm_op_with_temp(instrs[k], temp)) {
     return std::nullopt;
   }
-  // A store of the result back to `mem`, as `mem += v` makes, ends the
-  // window when it's there. The result is the same without it, as in
-  // `print_zstring`'s `get_alphabet() + z`.
   std::size_t sta_mem_idx = k;
   if (k + 1 < n && is_sta_compat(instrs[k + 1]) &&
       operands_equal(std::get<ir::Mov>(instrs[k + 1]).dst, mem)) {
@@ -361,7 +232,6 @@ std::optional<Match> try_match(const Instructions& instrs, std::size_t i,
   return Match{j, k, sta_mem_idx, mem};
 }
 
-// Returns the operation `op` with its source replaced by `new_src`.
 ir::Type_instruction replace_src(const ir::Type_instruction& op,
                                  const ir::Type_operand& new_src) {
   if (const auto* i = as<ir::Add>(op)) {
@@ -394,10 +264,6 @@ void rewrite_function(ir::Function& fn, const AsmContext& ctx) {
     }
     drop.insert(match->lda_idx);
     rewrite[match->op_idx] = replace_src(instrs[match->op_idx], match->mem);
-    // Skips past the window matched. The `STA mem` at its end is kept
-    // and could be the spill of a later match, but that structure would
-    // have to come from new code, not from this rewrite, and moving on
-    // keeps the pass from matching its own rewrite again.
     i = match->sta_mem_idx + 1;
   }
   if (drop.empty() && rewrite.empty()) {
@@ -414,8 +280,6 @@ void rewrite_function(ir::Function& fn, const AsmContext& ctx) {
   }
   fn.instructions = std::move(out);
 }
-
-// The second stage: a constant plus a byte that X or Y still holds.
 
 // Returns 'X' or 'Y' when `op` is that register, and 0 otherwise.
 char index_reg(const ir::Type_operand& op) {
@@ -448,7 +312,6 @@ bool writes_reg(const ir::Type_instruction& instr, char reg) {
   return false;
 }
 
-// Returns whether `instr` may write a byte that `mem` names.
 bool writes_memory_alias(const ir::Type_instruction& instr, const ir::Type_operand& mem,
                          const AsmContext& ctx) {
   const ir::Type_operand* dst = nullptr;

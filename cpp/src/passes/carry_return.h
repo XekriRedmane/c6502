@@ -1,5 +1,3 @@
-// The port of passes/carry_return.py: the peepholes for the carry-flag
-// return of `[[c6502::return_bool_in_carry]]`.
 #pragma once
 
 #include "asm_ast.h"

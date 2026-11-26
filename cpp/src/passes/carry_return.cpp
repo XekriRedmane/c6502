@@ -1,62 +1,3 @@
-// Peepholes for the carry-flag return of `return_bool_in_carry`.
-//
-// A function declared `[[c6502::return_bool_in_carry]]` returns its
-// truth value in the carry flag. `tac_to_asm` lowers both sides of that
-// convention plainly,
-//
-//     callee:  LDA value ; CMP #1 ; RTS     C = (value >= 1)
-//     caller:  JSR f ; LDA #0 ; ROL A       A = C, so 0 or 1
-//
-// and these rewrites tidy up what the rest of the pipeline leaves.
-//
-// `apply_carry_return_tails` copies a `CMP #c; RTS` return tail into
-// each `LDA #k; JMP tail` that reaches it, and in front of the tail's
-// label when the code falling into it ends in `LDA #k`. A comparison or
-// a `return true;` inside a loop reaches the shared tail that way, with
-// a constant in A. The copy puts the constant next to the compare, where
-// `apply_carry_const_fold` can fold it.
-//
-// `apply_carry_const_fold` turns `LDA #k; CMP #c` into `SEC` (when k >=
-// c, unsigned) or `CLC`, when A and N/Z are dead after it. Only C reaches
-// the next reader, and C is known at compile time. It does the same for
-// a compare of A, X, or Y with a constant when the register holds a
-// constant from earlier in the block, such as the `CPY #1` that `return
-// false;` becomes after an `LDY #0`, when `redundant_load` has loaded the
-// 0 with `TYA` and `cpx_cpy_peephole` has folded `TYA; CMP #1`. The
-// register keeps its value, so only N/Z must be dead.
-//
-// `apply_carry_branch_fold` reads the caller's captured carry directly:
-//
-//     LDA #0 ; ROL A ; BEQ L    becomes    BCC L
-//     LDA #0 ; ROL A ; BNE L    becomes    BCS L
-//
-// when A, N, Z, and C are dead on both sides of the branch. After `ROL
-// A`, A is the old C and Z is set if and only if A is 0, so BEQ is taken
-// if and only if C was clear. The rewrite leaves C as the callee set it
-// and N/Z as they were, where the original leaves C = 0, N = 0, and Z =
-// !C, which is why those have to be dead. It also drops
-//
-//     LDA #0 ; ROL A ; CMP #1
-//
-// when A and N/Z are dead after it, since `CMP #1` on the 0 or 1 in A
-// sets C back to the value `ROL` read. That's `return g();` in one
-// carry-flag function calling another.
-//
-// A caller that uses the value of a returned struct before testing its
-// flag stores the capture and loads it back for the test:
-//
-//     JSR f ; STA v ; LDA #0 ; ROL A ; STA flag
-//     LDA v ; STA out                    nothing here touches C
-//     LDA flag ; BNE L
-//
-// `ROL A` clears C, so the load can't simply become `BCS`. Instead the
-// capture and its store go, which leaves C holding the callee's flag up
-// to the test, and `LDA flag ; BNE L` becomes `BCS L` (`BEQ` becomes
-// `BCC`). That needs the instructions in between not to touch C or
-// `flag`, A and N/Z dead after the store (they held the capture), A,
-// N/Z, and C dead on both sides of the branch, and `flag` dead after the
-// load. Zork's `if (found.not_found)` right after `PAGE_TABLE_INDEX2 =
-// found.slot;` has this shape.
 #include "passes/carry_return.h"
 
 #include <concepts>
@@ -94,18 +35,14 @@ bool is_cmp_a_imm(const ir::Type_instruction& instr) {
   return c != nullptr && c->left == kA && isa<ir::Imm>(c->right);
 }
 
-// Returns the byte of the immediate source of an `is_imm_to_a` move.
 asdl::Int imm_src_byte(const ir::Type_instruction& instr) {
   return std::get<ir::Imm>(std::get<ir::Mov>(instr).src).value & 0xFF;
 }
 
-// Returns the byte of the immediate of an `is_cmp_a_imm` compare.
 asdl::Int cmp_right_byte(const ir::Type_instruction& instr) {
   return std::get<ir::Imm>(std::get<ir::Compare>(instr).right).value & 0xFF;
 }
 
-// Replaces the instructions of each function for which `fn` returns new
-// ones, and leaves the others as they are.
 template <class Fn>
 asm_ast::Program map_functions(asm_ast::Program prog, Fn&& fn) {
   for (auto& tl : prog.top_level) {
@@ -118,12 +55,6 @@ asm_ast::Program map_functions(asm_ast::Program prog, Fn&& fn) {
   return prog;
 }
 
-// --- Tail copies ---
-
-// Returns the `[Compare, Return]` carry-flag tail at `instrs[i]`,
-// skipping labels. Only a bare `Return` that carries nothing but C
-// qualifies, since copying a `Ret` would copy its frame teardown, and
-// the fold needs A to be dead at the return.
 std::optional<std::pair<std::size_t, std::size_t>> tail_after(const InstrList& instrs,
                                                               std::size_t i) {
   while (i < instrs.size() && isa<ir::Label>(instrs[i])) {
@@ -164,8 +95,6 @@ std::optional<InstrList> copy_tails(const InstrList& instrs) {
     }
     if (prev_imm && isa<ir::Label>(instr)) {
       if (const auto tail = tail_after(instrs, i)) {
-        // The fall-through path gets its own copy. The label and the
-        // tail after it stay for the other paths.
         out.push_back(instrs[tail->first]);
         out.push_back(instrs[tail->second]);
         changed = true;
@@ -179,10 +108,6 @@ std::optional<InstrList> copy_tails(const InstrList& instrs) {
   return out;
 }
 
-// --- Constant compare ---
-
-// Returns the constant `reg` holds at `instrs[i]`, from an immediate
-// load earlier in the block (through register transfers).
 std::optional<asdl::Int> known_constant(const InstrList& instrs, std::size_t i,
                                         ir::Type_operand reg) {
   for (std::size_t k = i; k-- > 0;) {
@@ -270,9 +195,6 @@ std::optional<InstrList> fold_const_compares(const InstrList& instrs) {
   return out;
 }
 
-// --- Caller-side capture ---
-
-// Returns whether `instrs[i]` starts `LDA #0; ROL A`.
 bool is_capture(const InstrList& instrs, std::size_t i) {
   if (i + 1 >= instrs.size()) {
     return false;
@@ -284,21 +206,14 @@ bool is_capture(const InstrList& instrs, std::size_t i) {
   return rol != nullptr && rol->dst == kA;
 }
 
-// Returns whether `instr` can sit between a stored capture and its
-// test: none of these reads or writes C. `Mov` covers loads, stores,
-// and transfers, and a move from memory to memory goes through A, which
-// is dead there.
 bool leaves_c(const ir::Type_instruction& instr) {
   return isa<ir::Mov, ir::Inc, ir::Dec, ir::And, ir::Or, ir::Xor, ir::BitTest>(instr);
 }
 
-// Returns whether A, N/Z, and C are all dead at `instrs[idx]`.
 bool dead_after_branch(const InstrList& instrs, std::size_t idx) {
   return a_dead_at(instrs, idx) && flags_dead_at(instrs, idx) && c_dead_at(instrs, idx);
 }
 
-// Returns the branch condition that tests C as `cond` tested the
-// captured flag: BCC for BEQ, and BCS for BNE.
 ir::Type_condition carry_condition(const ir::Type_condition& cond) {
   if (isa<ir::EQ>(cond)) {
     return ir::CC{};
@@ -348,8 +263,6 @@ std::optional<InstrList> fold_captures(const InstrList& instrs) {
   return out;
 }
 
-// Returns the operands of `instr` among its `src`, `dst`, `src1`, and
-// `src2` fields.
 std::vector<ir::Type_operand> operands(const ir::Type_instruction& instr) {
   std::vector<ir::Type_operand> out;
   std::visit(
@@ -385,8 +298,6 @@ bool is_flag_reload(const ir::Type_instruction& instr, const ir::Type_operand& f
   return m != nullptr && m->src == flag && m->dst == kA && !m->is_volatile;
 }
 
-// Rewrites `LDA #0; ROL A; STA flag; ...; LDA flag; Bxx L`, with nothing
-// in between touching C or `flag`, into `...; BCx L`.
 std::optional<InstrList> fold_stored_captures(const InstrList& instrs, const std::string& fn_name,
                                            const AsmContext& ctx,
                                            const SymbolAddrs* zp_slot_symbols) {
@@ -426,9 +337,6 @@ std::optional<InstrList> fold_stored_captures(const InstrList& instrs, const std
       ++i;
       continue;
     }
-    // `LDA flag; CMP #1` turns the flag straight back into C, as in
-    // `bool failed = f(); ...; return failed;`. C still holds it, so the
-    // reload and the compare go too.
     if (is_cmp_a_imm(out[k + 1]) && cmp_right_byte(out[k + 1]) == 1 &&
         a_dead_at(out, i + 3) && flags_dead_at(out, i + 3) && a_dead_at(out, k + 2) &&
         flags_dead_at(out, k + 2) &&

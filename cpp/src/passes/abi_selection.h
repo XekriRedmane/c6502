@@ -1,7 +1,3 @@
-// The port of passes/abi_selection.py: the calling conventions it
-// chooses for each function, which the code generation passes and the
-// back end read, and `select_abi` and `fixed_address_layouts`, which
-// choose them.
 #pragma once
 
 #include <optional>
@@ -21,21 +17,20 @@ namespace c6502::passes {
 
 // The soft-stack convention, in which each parameter byte sits in the
 // callee's frame at `Frame(M + 3 + j_offset + k)` and the caller pushes
-// the arguments (Python's `SoftStackLayout`).
+// the arguments.
 struct SoftStackLayout {
   bool operator==(const SoftStackLayout&) const = default;
 };
 
-// The zero-page convention (Python's `ZpLayout`, whose docstring this
-// follows). `slot_symbols[i]` names the slot of the i-th parameter
-// byte, low byte of the first parameter first. `addrs[i]` is the
-// address `zp_slot_allocation` gives that slot, or none for a slot no
-// instruction uses, and the list is empty before the allocator runs.
-// `param_registers[i]` is the register the byte arrives in at the call
-// ("A", "X", or "Y"), or none for a byte that arrives in its slot.
-// `pinned[i]` is the address `[[c6502::zeropage(addr)]]` fixes the byte
-// at, or none. An empty `param_registers` or `pinned` means that no
-// byte has one.
+// The zero-page convention. `slot_symbols[i]` names the slot of the
+// i-th parameter byte, low byte of the first parameter first.
+// `addrs[i]` is the address `zp_slot_allocation` gives that slot, or
+// none for a slot no instruction uses, and the list is empty before the
+// allocator runs. `param_registers[i]` is the register the byte arrives
+// in at the call ("A", "X", or "Y"), or none for a byte that arrives in
+// its slot. `pinned[i]` is the address `[[c6502::zeropage(addr)]]`
+// fixes the byte at, or none. An empty `param_registers` or `pinned`
+// means that no byte has one.
 struct ZpLayout {
   std::vector<std::string> slot_symbols;
   std::vector<std::optional<asdl::Int>> addrs;
@@ -46,15 +41,16 @@ struct ZpLayout {
 
 using ParamLayout = std::variant<SoftStackLayout, ZpLayout>;
 
-// Each function's convention, in the order of Python's `abi` dict,
-// which the allocators and `tac_to_asm` walk.
+// Each function's convention, by name, in the order the allocators
+// and `tac_to_asm` walk.
 using Abi = OrderedMap<std::string, ParamLayout>;
 
 // Returns each function's calling convention for every function in
-// `prog`, plus one for each zp_abi extern (see the .cpp's comment). An
-// annotated `[[c6502::zp_abi]]` function that can't have the convention
-// is an error, `CompileError("AbiSelectionError", ...)`, and an
-// unannotated one falls back to the soft stack. `types` is the type
+// `prog`, plus one for each zp_abi extern. An extern that can't have the
+// convention gets no entry, and a call to a name without one uses the
+// soft stack. An annotated `[[c6502::zp_abi]]` function that can't have
+// the convention is an error, `CompileError("AbiSelectionError", ...)`,
+// and an unannotated one falls back to the soft stack. `types` is the type
 // table, for the sizes of aggregate parameters, and may be null.
 // `pool` defaults to the standard caller-saved range, $80-$BF.
 Abi select_abi(const tac_ast::Program& prog, const c99_ast::Program& c99_prog,
@@ -96,19 +92,18 @@ namespace abi_selection {
 NameSet address_taken(const tac_ast::Program& prog, const NameSet& declared = {});
 
 // Returns one declaration per function name, preferring the one with a
-// body, since the types and the parameters agree across them (Python's
-// `_function_decls_by_name`). The pointers are into `c99_prog`.
+// body, since the types and the parameters agree across them. The
+// pointers are into `c99_prog`.
 OrderedMap<std::string, const c99_ast::Type_function_decl*> function_decls_by_name(
     const c99_ast::Program& c99_prog);
 
 // Returns whether a `register` local is declared anywhere in the body of
-// `fn_decl` (Python's `_has_register_local` of the body), which is
-// false for a declaration without a body.
+// `fn_decl`, which is false for a declaration without a body.
 bool has_register_local(const c99_ast::Type_function_decl& fn_decl);
 
 // Returns whether `fn_decl` gives a 6502 register to any parameter or
 // body local (the `register` keyword), or a zero-page address for a
-// parameter (`zeropage(addr)`), Python's `_has_register_request`.
+// parameter (`zeropage(addr)`).
 bool has_register_request(const c99_ast::Type_function_decl& fn_decl);
 
 }  // namespace abi_selection

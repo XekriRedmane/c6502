@@ -1,5 +1,3 @@
-// The port of passes/call_edges.py: which direct calls of a TAC
-// function are edges of the call graph.
 #pragma once
 
 #include <vector>

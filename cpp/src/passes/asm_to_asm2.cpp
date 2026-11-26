@@ -1,31 +1,7 @@
-// Lowers an asm program to the asm2 IR.
-//
-// The asm2 IR is the asm IR with every node one logical 6502
-// instruction. The three compound nodes that `asm_emit` once expanded
-// as it wrote the text, `AllocateStack`, `FunctionPrologue`, and `Ret`,
-// don't exist in asm2. This pass rewrites each into the atoms it
-// stands for, laid out in the IR where `asm_emit` used to spell them
-// out. Every other instruction is copied at the asm2 type. `LoadAddress`
-// stays one asm2 node, since its expansion is short enough to be one
-// logical step that computes an address into two bytes, as it is in the
-// asm IR.
-//
-// In Python the operands, the static initializers, the registers, and
-// the conditions are distinct classes in the two modules and have to be
-// rebuilt at the asm2 type. The C++ IR classes are distinct types for
-// the same reason, and the walk below is as mechanical.
-//
-// The expansion is naive. The lowerings of the compound nodes leave out
-// the `INY`, `TAX`, and `STX` tricks that the old expansions in
-// `asm_emit` used to save bytes. Each `Mov(Reg(A), Stack(off))` loads Y
-// again, and the path that restores FP moves the low byte through X
-// with `TXA; STA` where a direct `STX` would do. The result is a byte
-// longer per `FunctionPrologue` and two bytes longer per `Ret` with a
-// frame than the old output, and in return the asm2 IR has a much
-// smaller set of atoms and one shape for every operand.
-// `sim.assembler._prologue_size`, `_ret_size`, `_emit_prologue`, and
-// `_emit_ret` follow the same lowering, so that `instruction_size` and
-// `assemble` stay byte for byte with what `asm_emit` writes.
+// `_prologue_size`, `_ret_size`, `_emit_prologue`, and `_emit_ret` in
+// sim/assembler.py expand the compound nodes the same way, so that its
+// `instruction_size` and `assemble` stay byte for byte with what
+// `asm_emit` writes.
 #include "passes/asm_to_asm2.h"
 
 #include <algorithm>
@@ -45,15 +21,9 @@ namespace out = ::c6502::asm2_ast;
 
 using Instrs = std::vector<out::Type_instruction>;
 
-// The runtime's zero-page symbols that the prologue and epilogue do
-// their SSP and FP arithmetic on. The runtime header binds each with an
-// `EQU`.
 constexpr const char* kSsp = "SSP";
 constexpr const char* kFp = "FP";
 
-// A function's frame is too large for `LDY #offset` to reach. The
-// message is FrameSizeError's, and the driver reports it as a compile
-// error, since it is a limit of the program being compiled.
 class FrameSize {
  public:
   explicit FrameSize(std::string message) : message(std::move(message)) {}
@@ -179,11 +149,6 @@ out::Type_static_init static_init(const in::Type_static_init& it) {
   throw InternalError("unexpected static_init");
 }
 
-// The compound-node expansions. Each returns a list of asm2 atoms. The
-// shapes are those `asm_emit._emit_function_prologue`, `_emit_ret`, and
-// `_emit_ssp_sub` once wrote, without the `INY`, `TAX`, and `STX`
-// tricks, which give way to two self-contained `Mov` atoms per word.
-
 out::Reg reg_a() { return out::Reg{.reg = out::A{}}; }
 out::Reg reg_x() { return out::Reg{.reg = out::X{}}; }
 out::Data data(const char* name, asdl::Int offset) {
@@ -191,8 +156,6 @@ out::Data data(const char* name, asdl::Int offset) {
 }
 out::Imm imm(asdl::Int value) { return out::Imm{.value = value}; }
 
-// Returns `SSP -= amt` as a 16-bit subtract: nothing when `amt` is 0,
-// and otherwise `SEC` and an `LDA`, `SBC`, `STA` for each byte.
 void ssp_sub(asdl::Int amt, Instrs& outs) {
   if (amt == 0) {
     return;
@@ -212,7 +175,6 @@ void ssp_sub(asdl::Int amt, Instrs& outs) {
   outs.push_back(out::Mov{.src = reg_a(), .dst = data(kSsp, 1)});
 }
 
-// Returns `FP = SSP` (16-bit).
 void set_fp_to_ssp(Instrs& outs) {
   outs.push_back(out::Mov{.src = data(kSsp, 0), .dst = reg_a()});
   outs.push_back(out::Mov{.src = reg_a(), .dst = data(kFp, 0)});
@@ -220,14 +182,12 @@ void set_fp_to_ssp(Instrs& outs) {
   outs.push_back(out::Mov{.src = reg_a(), .dst = data(kFp, 1)});
 }
 
-// Returns `SSP = FP + amt` (16-bit).
 void set_ssp_to_fp_plus(asdl::Int amt, Instrs& outs) {
   if (!(0 <= amt && amt <= 0xFFFF)) {
     throw CompileError("ValueError",
                        "epilogue rewind " + pyrepr::integer(amt) + " out of range 0..65535");
   }
   if (amt == 0) {
-    // The shape of `FP = SSP`, with the source and destination swapped.
     outs.push_back(out::Mov{.src = data(kFp, 0), .dst = reg_a()});
     outs.push_back(out::Mov{.src = reg_a(), .dst = data(kSsp, 0)});
     outs.push_back(out::Mov{.src = data(kFp, 1), .dst = reg_a()});
@@ -259,13 +219,7 @@ void check_local_bytes(asdl::Int m) {
 }
 
 // Checks that a frame access's offset is in reach of the `LDY #offset`
-// before its `(FP),Y`. The arguments sit above the locals and the saved
-// FP, and a function whose locals fit in 253 bytes may still read an
-// argument byte past Frame(255). Only the accesses count: an argument
-// that's never read through the frame, such as a struct copied out by
-// address, may sit past Frame(255) without harm. Without this check
-// `asm_emit` met such an access and raised a ValueError with no
-// function named (`fuzz.exprs` seed 43 without -O).
+// before its `(FP),Y`.
 void check_frame_offset(asdl::Int offset) {
   if (offset > 0xFF) {
     const std::string n = pyrepr::integer(offset);
@@ -284,10 +238,6 @@ void check_byte(const char* label, asdl::Int v) {
   }
 }
 
-// Writes the current FP into Stack(m+1) and Stack(m+2). Each
-// `Mov(Reg(A), Stack(off))` loads Y again, which is a byte more than
-// the `INY` form `_emit_function_prologue` used to write, and keeps
-// every atom self-contained.
 void save_fp_into_slot(asdl::Int m, Instrs& outs) {
   check_local_bytes(m);
   outs.push_back(out::Mov{.src = data(kFp, 0), .dst = reg_a()});
@@ -296,11 +246,8 @@ void save_fp_into_slot(asdl::Int m, Instrs& outs) {
   outs.push_back(out::Mov{.src = reg_a(), .dst = out::Stack{.offset = m + 2}});
 }
 
-// Restores FP from Frame(m+1) and Frame(m+2). The low byte goes through
-// X (`TAX`, `TXA`) so that it survives the read and the store of the
-// high byte. X is free to change, since no return convention holds data
-// there. That is two bytes more than the `INY` and `STX` of the old
-// `_emit_ret`.
+// The low byte of FP waits in X, since storing it into FP before the
+// high byte is read would move the base of that `(FP),Y` read.
 void restore_fp_from_slot(asdl::Int m, Instrs& outs) {
   check_local_bytes(m);
   outs.push_back(out::Mov{.src = out::Frame{.offset = m + 1}, .dst = reg_a()});
@@ -311,16 +258,12 @@ void restore_fp_from_slot(asdl::Int m, Instrs& outs) {
   outs.push_back(out::Mov{.src = reg_a(), .dst = data(kFp, 0)});
 }
 
-// Saves the byte at `$zp_addr` into the frame slot at
-// `FP+frame_offset`, for the prologue's callee-saved bytes.
 void save_zp_byte_to_frame(asdl::Int zp_addr, asdl::Int frame_offset, Instrs& outs) {
   check_byte("callee-saved address", zp_addr);
   outs.push_back(out::Mov{.src = out::ZP{.address = zp_addr, .offset = 0}, .dst = reg_a()});
   outs.push_back(out::Mov{.src = reg_a(), .dst = out::Frame{.offset = frame_offset}});
 }
 
-// Restores the byte at `$zp_addr` from `FP+frame_offset`, for the
-// epilogue's callee-saved bytes.
 void restore_zp_byte_from_frame(asdl::Int zp_addr, asdl::Int frame_offset, Instrs& outs) {
   check_byte("callee-saved address", zp_addr);
   outs.push_back(out::Mov{.src = out::Frame{.offset = frame_offset}, .dst = reg_a()});
@@ -329,9 +272,6 @@ void restore_zp_byte_from_frame(asdl::Int zp_addr, asdl::Int frame_offset, Instr
 
 void function_prologue(const in::FunctionPrologue& p, Instrs& outs) {
   if (p.arg_bytes + p.local_bytes == 0) {
-    // No arguments were pushed and no locals need room, so there is no
-    // frame to set up. Callee-saved bytes would have nowhere to go
-    // without a frame, so the saves are part of the frame's setup.
     return;
   }
   std::string note = "prologue: " + pyrepr::integer(p.arg_bytes) + " arg bytes, " +
@@ -352,22 +292,13 @@ void function_prologue(const in::FunctionPrologue& p, Instrs& outs) {
 
 void ret(const in::Ret& r, Instrs& outs) {
   if (r.arg_bytes + r.local_bytes == 0) {
-    // No frame to tear down, so the return is a bare `RTS`, which
-    // leaves A and X as they are.
     outs.push_back(out::Return{});
     return;
   }
   const asdl::Int rewind = r.arg_bytes + r.local_bytes + 2;
   outs.push_back(out::Blank{});
   outs.push_back(out::Comment{.text = "epilogue"});
-  // The return bytes wait on the hardware stack through the whole
-  // epilogue. Restoring the callee-saved bytes uses A as scratch, and
-  // the SSP and FP teardown uses A for its 16-bit add and X for FP's low
-  // byte in `restore_fp_from_slot`, so either would destroy them. A
-  // 2-byte register return has its low byte in A and its high byte in X,
-  // and a 1-byte return only A. They are saved before the restore.
   if (r.save_x) {
-    // The low byte (A) goes first, then the high byte through A.
     outs.push_back(out::Push{.src = reg_a()});
     outs.push_back(out::Mov{.src = reg_x(), .dst = reg_a()});
     outs.push_back(out::Push{.src = reg_a()});
@@ -392,8 +323,6 @@ void ret(const in::Ret& r, Instrs& outs) {
     outs.push_back(out::PullStatus{});
   }
   if (r.save_x) {
-    // The high byte goes to X, then the low byte to A, which is the
-    // convention (A low, X high) for the `RTS`.
     outs.push_back(out::Pop{.dst = reg_a()});
     outs.push_back(out::Mov{.src = reg_a(), .dst = reg_x()});
     outs.push_back(out::Pop{.dst = reg_a()});
@@ -403,9 +332,6 @@ void ret(const in::Ret& r, Instrs& outs) {
   outs.push_back(out::Return{});
 }
 
-// Appends the asm2 atoms of one asm instruction to `outs`. Most
-// instructions become one atom, and the three compound nodes
-// (`AllocateStack`, `FunctionPrologue`, `Ret`) become several.
 void instruction(const in::Type_instruction& instr, Instrs& outs) {
   switch (in::kind(instr)) {
     case in::Kind_instruction::Mov: {
@@ -533,15 +459,9 @@ void instruction(const in::Type_instruction& instr, Instrs& outs) {
       ret(std::get<in::Ret>(instr), outs);
       return;
     case in::Kind_instruction::Return:
-      // A bare exit, just `RTS`, with no SSP or FP teardown. By the time
-      // the program reaches asm2, `synthesize_prologue` has chosen
-      // between this and a `Ret` with a frame, so the `save_a` the node
-      // carries is dropped.
       outs.push_back(out::Return{});
       return;
     case in::Kind_instruction::Phi:
-      // A Phi is an SSA node, which SSA destruction lowers to copies
-      // long before this pass sees the program.
       throw CompileError("TypeError", "asm_to_asm2: Phi node leaked past SSA destruction");
   }
   throw InternalError("unexpected instruction");
@@ -551,10 +471,6 @@ void instruction(const in::Type_instruction& instr, Instrs& outs) {
 
 std::vector<asm2_ast::Type_instruction> expand_decimal_arith(
     const asm_ast::DecimalArith& instr) {
-  // The decimal flag is set for the ADC or SBC of each byte and for
-  // nothing else. A soft-stack operand's `LDY #off` is part of its
-  // access. The IR check (`ir_check.check_asm2`) reads the result back
-  // to confirm the shape.
   Instrs outs;
   outs.push_back(out::SetDecimal{});
   if (instr.subtract) {
@@ -603,8 +519,6 @@ asm2_ast::Program lower_to_asm2(const asm_ast::Program& prog) {
       result.top_level.emplace_back(std::move(s));
     }
   }
-  // With the IR checks on, the decimal flag must be set only across a
-  // packed BCD chain (src/passes/ir_check.h).
   ir_check::check_asm2(result, "asm_to_asm2");
   return result;
 }

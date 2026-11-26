@@ -1,6 +1,3 @@
-// The port of passes/asm_liveness.py: whether A, X, Y, and the flags
-// are dead at a point of a function's instructions, and what each
-// instruction reads and writes of them.
 #pragma once
 
 #include <cstddef>
@@ -15,16 +12,11 @@
 
 namespace c6502::passes {
 
-// A function's instructions, or a run of them, as the helpers take
-// them.
 using Instrs = std::span<const asm_ast::Type_instruction>;
 
 // The index of each `Label` in a list of instructions, by name, the
-// last one where a name repeats (Python's `label_map`). Every walk
-// below finds its jump targets here. Each walk builds one when it isn't
-// given one, and a pass that asks many questions of one list of
-// instructions builds the map once and passes it, which stands in for
-// the Python module's cache of the last eight maps.
+// last one where a name repeats. Every walk below finds its jump
+// targets here, and builds one when it isn't given one.
 class LabelMap {
  public:
   LabelMap() = default;
@@ -41,7 +33,6 @@ class LabelMap {
   std::unordered_map<std::string, long> index_;
 };
 
-// Returns the label map of `instrs`.
 LabelMap label_map(Instrs instrs);
 
 bool is_reg_a(const asm_ast::Type_operand& op);
@@ -95,15 +86,12 @@ bool kills_y(const asm_ast::Type_instruction& instr);
 
 // Returns whether `instr` is a call to a routine declared to leave
 // `reg` ("X" or "Y") unchanged (`[[c6502::preserves_x]]` /
-// `preserves_y`). Every pass that keeps a value in X or Y across a call
-// has to agree on this, so they all ask here.
+// `preserves_y`).
 bool call_preserves(const asm_ast::Type_instruction& instr, std::string_view reg);
 
 // Returns whether any operand of `instr` is lowered with an `LDY #off`
 // setup (`Indirect`, `IndirectZp`, `Frame`, `Stack`), so the
-// instruction writes Y whatever it does otherwise. For a pass that has
-// to know every write to Y, such as one that reuses an `abs,Y` load at a
-// later point.
+// instruction writes Y whatever it does otherwise.
 bool sets_up_y(const asm_ast::Type_instruction& instr);
 
 // Returns whether `instr` is a return from a `return_bool_in_carry`

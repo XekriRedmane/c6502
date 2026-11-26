@@ -1,77 +1,3 @@
-// Fuses `LDA M; CMP N; B<cond> L; Label L2; SEC; SBC N` (one N) by
-// moving the `SEC; SBC` ahead of the branch and dropping the `CMP`.
-//
-// The pattern
-//
-// Six consecutive instructions, or five without the label, and without
-// the `SEC` after a `BCC`, whose fall-through has C set, as
-// `carry_known` leaves it:
-//
-//     [a]   Mov(<X>, Reg(A))      // LDA M, or any other load of A
-//     [a+1] Compare(Reg(A), N)    // CMP N
-//     [a+2] Branch(<cond>, L1)    // B<cond>, cond one of CC CS EQ NE MI PL
-//     [a+3] Label(L2)             // reached only by falling through
-//     [a+4] SetCarry()            // SEC
-//     [a+5] Sub(N, Reg(A))        // SBC N, the N of the CMP
-//
-// becomes
-//
-//     Mov(<X>, Reg(A))
-//     SetCarry()
-//     Sub(N, Reg(A))
-//     Branch(<cond>, L1)
-//     Label(L2)
-//
-// Why this is sound
-//
-// `CMP N` sets C, Z, and N from `A - N`: C = 1 if and only if A >= N,
-// Z = 1 if and only if A == N, and N = bit7(A - N). `SEC; SBC N`, with
-// A unchanged since the load, sets the same C, Z, and N, because SBC
-// reads a carry in of 1 and computes `A - N - (1 - C_in) = A - N`. It
-// also writes A and sets V. V couldn't be read before, since CMP
-// doesn't set V on the 6502, and the branch conditions allowed don't
-// read V. So the `CMP` is redundant once the SBC's flags reach the
-// branch, and the pass drops the CMP and moves the SBC up.
-//
-// The conditions
-//
-//   * The branch condition is CC, CS, EQ, NE, MI, or PL, which read C,
-//     Z, and N. BVC and BVS are left out, since SBC sets V and CMP
-//     doesn't, so V at the branch would differ.
-//   * No `Branch` or `Jump` elsewhere in the function targets
-//     `Label(L2)`. Another path could otherwise reach L2 with another
-//     value in A, and the reordering would corrupt it for those paths.
-//   * The CMP's right operand and the SBC's source are the same
-//     `Data`, `ZP`, or `Imm` operand, field for field.
-//   * The first instruction writes `Reg(A)` and sets N/Z from A's new
-//     value. Any `Mov` to A or any of the operations on A qualify, as
-//     with the writer of A in `const_arith_fold`.
-//   * A and V are dead at the branch target L1, which must be a label
-//     of the function. The rewrite runs the SBC on the taken path too,
-//     so A there holds M - N where it held M, and V holds the SBC's
-//     overflow where it held its earlier value.
-//
-// Where it runs
-//
-// Inside the peephole fixed point. Earlier passes (mem_const_prop, and
-// redundant_load with its tracking across a fall-through into the next
-// block) have to have run first to leave the six-instruction shape.
-// The raw output of `tac_to_asm` has extra STA/LDA round trips that
-// hide it.
-//
-// The case that called for it
-//
-// `if (a >= b) { x = a - b; ... }` is
-//
-//     LDA a
-//     CMP b
-//     BCC .end           ; skip when a < b
-//     .ssa_block:
-//     SEC
-//     SBC b
-//     STA x
-//
-// and the fusion saves 5 bytes and 6 cycles at each occurrence.
 #include "passes/cmp_sbc_fusion.h"
 
 #include <set>
@@ -89,11 +15,6 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::isa;
 
-// Returns whether A and V are dead at the branch target. On the taken
-// path the original leaves A holding M and V untouched, while the
-// rewrite has already run the `SBC`, so A holds M - N and V is the
-// subtraction's overflow. The fall-through path runs the `SBC` either
-// way. A target that isn't a label of this function counts as live.
 bool taken_path_safe(Instrs instrs, const LabelMap& labels,
                      const std::string& target) {
   const long idx = labels.find(target);
@@ -135,14 +56,11 @@ bool writes_a_with_flag_effect(const ir::Type_instruction& instr) {
   }
 }
 
-// Returns the compare when `instr` is `Compare(Reg(A), <op>)`, or null.
-// The caller checks that the right operand matches the SBC's source.
 const ir::Compare* as_cmp_against(const ir::Type_instruction& instr) {
   const auto* c = as<ir::Compare>(instr);
   return c != nullptr && is_reg_a(c->left) ? c : nullptr;
 }
 
-// Returns the subtraction when `instr` is `Sub(<op>, Reg(A))`, or null.
 const ir::Sub* as_sub_against(const ir::Type_instruction& instr) {
   const auto* s = as<ir::Sub>(instr);
   return s != nullptr && is_reg_a(s->dst) ? s : nullptr;
@@ -157,8 +75,6 @@ const ir::Branch* as_eligible_branch(const ir::Type_instruction& instr) {
   return nullptr;
 }
 
-// Returns whether two memory or immediate operands are the same, field
-// for field.
 bool operands_equal(const ir::Type_operand& a, const ir::Type_operand& b) {
   if (const auto* da = as<ir::Data>(a)) {
     const auto* db = as<ir::Data>(b);
@@ -184,7 +100,6 @@ void rewrite_function(ir::Function& fn) {
   bool changed = false;
   std::size_t i = 0;
   while (i < n) {
-    // The fall-through label is optional.
     std::size_t j = i + 3;
     if (j < n) {
       if (const auto* l = as<ir::Label>(instrs[j]);
@@ -192,8 +107,6 @@ void rewrite_function(ir::Function& fn) {
         ++j;
       }
     }
-    // After `BCC`, C is set on the fall-through, so `carry_known` may
-    // have dropped the SEC, and the SBC moved up needs it back.
     const bool sec = j < n && isa<ir::SetCarry>(instrs[j]);
     if (!sec) {
       const ir::Branch* b = i + 2 < n ? as<ir::Branch>(instrs[i + 2]) : nullptr;
@@ -209,7 +122,6 @@ void rewrite_function(ir::Function& fn) {
       if (cmp != nullptr && branch != nullptr && sbc != nullptr &&
           operands_equal(cmp->right, sbc->src) &&
           taken_path_safe(instrs, labels, branch->target)) {
-        // Emits the load, SEC, SBC, the branch, and the label.
         out.push_back(instrs[i]);
         out.push_back(ir::SetCarry{});
         out.push_back(instrs[sub]);

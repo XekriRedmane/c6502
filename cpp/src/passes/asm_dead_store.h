@@ -1,6 +1,3 @@
-// The port of passes/asm_dead_store.py: the pass, and the helpers that
-// other passes import, the walk that decides whether a byte's value is
-// read again (`mem_dead_after`) and the pieces it is made of.
 #pragma once
 
 #include <cstddef>
@@ -16,8 +13,7 @@
 namespace c6502::passes::asm_dead_store {
 
 // Returns whether `instr` is one of the instructions the walk takes to
-// read any byte (`Call`, `FunctionPrologue`, `AllocateStack`), Python's
-// `_OPAQUE_TYPES`.
+// read any byte (`Call`, `FunctionPrologue`, `AllocateStack`).
 bool is_opaque(const asm_ast::Type_instruction& instr);
 
 // Returns the names that an `ImmLabelLow` / `ImmLabelHigh` operand of
@@ -44,9 +40,8 @@ bool is_dead_at_tail_call(const asm_ast::Type_operand& target,
 
 // Returns whether the value of the byte `target` after `instrs[idx]` is
 // read on no path forward, by the walk that decides whether a store is
-// dead. For a pass that removes the last reader of a temporary and
-// asks whether the temporary's store can go too. `fn_name` is the name
-// of the function the instructions are from.
+// dead. `fn_name` is the name of the function the instructions are
+// from.
 bool mem_dead_after(Instrs instrs, std::size_t idx,
                     const asm_ast::Type_operand& target, const AsmContext& ctx,
                     std::string_view fn_name,
@@ -59,8 +54,7 @@ bool mem_dead_after(Instrs instrs, const LabelMap& labels, std::size_t idx,
 // Returns whether the byte `target` written at `instrs[start]` is read
 // on no path forward, by the walk of `mem_dead_after`, with the
 // function's `__local_<fn>__` prefix (`local_prefix`) and the names
-// whose address it takes (`collect_address_taken_names`) given, so a
-// pass that asks about many stores of one function finds them once.
+// whose address it takes (`collect_address_taken_names`) given.
 bool is_dead_cfg(Instrs instrs, std::size_t start, const LabelMap& labels,
                  const AsmContext& ctx, const SymbolAddrs* zp_slot_symbols,
                  std::string_view local_prefix,
@@ -112,9 +106,10 @@ namespace c6502::passes {
 // Drops each store of a register into a `ZP` or `Data` byte that no
 // instruction reachable from it reads, shortens a memory-to-memory move
 // whose store is dead to its load, and drops a dead `INC`, `DEC`, or
-// shift of a `__local_*` slot whose flags are dead too. The comment at
-// the top of asm_dead_store.cpp gives the rules. `zp_slot_symbols`,
-// which may be null, gives the zero-page address of each slot symbol.
+// shift of a `__local_*` slot whose flags are dead too.
+// docs/optimizations/asm_dead_store.md gives the rules.
+// `zp_slot_symbols`, which may be null, gives the zero-page address of
+// each slot symbol.
 asm_ast::Program apply_asm_dead_store(asm_ast::Program prog, const AsmContext& ctx,
                                       const SymbolAddrs* zp_slot_symbols = nullptr);
 

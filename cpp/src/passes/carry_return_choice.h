@@ -1,6 +1,3 @@
-// The port of passes/carry_return_choice.py, which gives a `bool`
-// function the carry-flag return of `[[c6502::return_bool_in_carry]]`
-// without the annotation, when every call to it gains by it.
 #pragma once
 
 #include "passes/abi_selection.h"

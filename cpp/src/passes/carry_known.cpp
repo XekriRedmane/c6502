@@ -1,52 +1,3 @@
-// Drops a `SEC` or `CLC` where the carry already has that value.
-//
-// What it does
-//
-// A forward dataflow over the function finds, before each instruction,
-// whether C is known set, known clear, or unknown. `SEC` and `CLC` set
-// it, `BCS` and `BCC` tell each of their two edges which way it went,
-// and an instruction that writes C (`ADC`, `SBC`, a compare, a shift or
-// rotate, a call, and anything else not known to leave C alone) makes it
-// unknown. Then:
-//
-//   * An `ADC #0` where C is known clear, or an `SBC #0` where it's known
-//     set, goes when V is dead after it and N/Z are dead or were set from
-//     A by the instruction before. It leaves A and C as they were. `P =
-//     &LOCS[0]` on an array at a fixed address had kept `LDA #>LOCS; ADC
-//     #0` after the low byte's `CLC`.
-//   * A `SEC` where C is known set, or a `CLC` where it's known clear,
-//     goes, and so does one whose carry nothing reads (`c_dead_at`), as
-//     when dead-code elimination has removed the add it was for.
-//   * A `SEC` (or `CLC`) that starts a block, after its labels, moves in
-//     front of those labels when every path into the block other than
-//     the one falling into it already has C that way. Only the
-//     fall-through path, the way into a loop, then runs it.
-//
-// The second is the shape of `do_rwts_on_sector`'s loop
-// (`examples/zork/disk.c`) once its high byte is in X:
-//
-//     LDX   SCRATCH1+1
-//     .loop@0_continue:
-//     SEC
-//     SBC   SECTORS_PER_TRACK
-//     BCS   .thread@0
-//     CPX   #$01
-//     DEX
-//     BCC   .loop@0_break
-//     .thread@0:
-//     INC   iob+4
-//     JMP   .loop@0_continue
-//
-// Both ways to `.thread@0` have C set, so the `JMP` back does too, and
-// the `SEC` moves in front of `.loop@0_continue`, as in Zork's code.
-// That saves 2 cycles a pass.
-//
-// Where it runs
-//
-// Once, after the third peephole fixed point (`compile.optimized_asm`).
-// Several peepholes match a SEC or CLC: `transfer_pm1_store` turns
-// `TXA; CLC; ADC #1; STA M` into `INX; STX M`, and run inside the fixed
-// point this pass dropped the CLC first, which left `TXA; ADC #1`.
 #include "passes/carry_known.h"
 
 #include <cstddef>
@@ -67,26 +18,19 @@ using ::c6502::asdl::isa;
 
 using InstrList = std::vector<ir::Type_instruction>;
 
-// The state of C before an instruction: known clear (0), known set
-// (1), unknown, or not reached by the walk yet.
 constexpr int kUnknown = -1;
 constexpr int kUnseen = -2;
 
-// An edge into an instruction: the instruction it comes from, and the C
-// it brings.
 struct Edge {
   std::size_t from = 0;
   int c = kUnknown;
 };
 
-// Returns whether `instr` leaves C alone. Anything else is taken to
-// change it.
 bool keeps_c(const ir::Type_instruction& instr) {
   return isa<ir::Mov, ir::Inc, ir::Dec, ir::And, ir::Or, ir::Xor, ir::Push, ir::Pop,
              ir::BitTest, ir::Label, ir::Branch, ir::Jump>(instr);
 }
 
-// Returns C after `instr` falls through, given C before it.
 int after(const ir::Type_instruction& instr, int c) {
   if (isa<ir::SetCarry>(instr)) {
     return 1;
@@ -97,8 +41,6 @@ int after(const ir::Type_instruction& instr, int c) {
   return keeps_c(instr) ? c : kUnknown;
 }
 
-// Returns `(successor, C on that edge)` for each way out of `instrs[i]`,
-// given C before it.
 std::vector<std::pair<std::size_t, int>> edges(const InstrList& instrs, const LabelMap& labels,
                                                std::size_t i, int c) {
   const auto& ins = instrs[i];
@@ -138,8 +80,6 @@ std::vector<std::pair<std::size_t, int>> edges(const InstrList& instrs, const La
   return {{i + 1, after(ins, c)}};
 }
 
-// C before each instruction, and the edges into each instruction with
-// the C each brings, in the order of the instructions they come from.
 struct CarryStates {
   std::vector<int> before;
   std::vector<std::vector<Edge>> incoming;
@@ -180,8 +120,6 @@ CarryStates carry_states(const InstrList& instrs) {
   return s;
 }
 
-// Returns the value a `SEC` (1) or `CLC` (0) gives C, or -1 for any
-// other instruction.
 int setter_value(const ir::Type_instruction& ins) {
   if (isa<ir::SetCarry>(ins)) {
     return 1;
@@ -192,9 +130,6 @@ int setter_value(const ir::Type_instruction& ins) {
   return -1;
 }
 
-// Returns `instrs` without the `ADC #0` where C is known clear and the
-// `SBC #0` where it's known set, when V is dead after and N/Z are dead
-// or already set from A.
 InstrList drop_zero_adds(InstrList instrs) {
   const CarryStates s = carry_states(instrs);
   const LabelMap labels(instrs);
@@ -224,8 +159,6 @@ InstrList drop_zero_adds(InstrList instrs) {
   return out;
 }
 
-// Returns `instrs` without the SEC / CLC where C is known to have that
-// value.
 InstrList drop_known(InstrList instrs) {
   const CarryStates s = carry_states(instrs);
   InstrList out;
@@ -239,13 +172,10 @@ InstrList drop_known(InstrList instrs) {
   return out;
 }
 
-// Returns `instrs` with each SEC / CLC that starts a block moved in front
-// of its labels when every edge in but the fall-through already has C
-// that way.
 InstrList move_into_loops(InstrList instrs) {
   const CarryStates s = carry_states(instrs);
   std::set<std::size_t> drop;
-  std::map<std::size_t, std::size_t> move;  // where a setter goes -> the setter
+  std::map<std::size_t, std::size_t> move;
   for (std::size_t i = 0; i < instrs.size(); ++i) {
     const int want = setter_value(instrs[i]);
     if (want < 0 || s.before[i] == kUnseen) {
@@ -261,8 +191,6 @@ InstrList move_into_loops(InstrList instrs) {
     if (isa<ir::Jump, ir::Return, ir::Ret>(instrs[p - 1])) {
       continue;
     }
-    // The edges into the run of labels and the setter, less those from
-    // one label to the next.
     std::size_t falls = 0;
     std::size_t others = 0;
     bool others_agree = true;
@@ -300,13 +228,6 @@ InstrList move_into_loops(InstrList instrs) {
   return out;
 }
 
-// Runs four steps, each on the result of the one before, since each
-// changes what the next sees: dropping the adds and subtracts of 0 that
-// leave C as it is, dropping the setters C already matches (which
-// changes no value of C), moving setters in front of loops, and dropping
-// the setters nothing reads. Done in one step, `CLC; LDA x; CLC; ADC y`
-// lost both: the first as dead, since the second overwrites C, and the
-// second as redundant after the first.
 void rewrite_function(ir::Function& fn) {
   InstrList instrs = drop_zero_adds(fn.instructions);
   instrs = drop_known(std::move(instrs));

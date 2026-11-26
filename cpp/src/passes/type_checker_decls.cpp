@@ -120,17 +120,12 @@ void TypeChecker::check_program(ir::Program& prog) {
   }
   for (const std::string& name : library) {
     Symbol* sym = symbols.find(name);
-    if (sym == nullptr) {
-      throw InternalError("AttributeError: 'NoneType' object has no attribute 'attrs'");
+    auto* f = sym != nullptr ? std::get_if<FunAttr>(&sym->attrs) : nullptr;
+    if (f == nullptr) {
+      throw InternalError("check_program: the <stdbit.h> definition of " + name +
+                          " has no function in the symbol table");
     }
-    if (auto* f = std::get_if<FunAttr>(&sym->attrs)) {
-      f->is_global = false;
-    } else if (auto* s = std::get_if<StaticAttr>(&sym->attrs)) {
-      s->is_global = false;
-    } else {
-      throw InternalError("TypeError: LocalAttr.__init__() got an unexpected keyword argument "
-                          "'is_global'");
-    }
+    f->is_global = false;
   }
 }
 
@@ -644,7 +639,7 @@ Type TypeChecker::check_builtin_call(ir::FunctionCall& exp) {
   namespace bf = ::c6502::builtin_functions;
   const std::optional<int> want = bf::builtin_arity(exp.name);
   if (!want) {
-    throw InternalError("KeyError: " + pyrepr::string(exp.name));
+    throw InternalError("check_builtin_call: " + pyrepr::string(exp.name) + " isn't a builtin");
   }
   if (static_cast<int>(exp.args.size()) != *want) {
     fail(exp.name + " takes " + std::to_string(*want) + " arguments, got " +
@@ -745,7 +740,8 @@ Type TypeChecker::check_bcd_call(ir::FunctionCall& exp) {
       case K::ULongLong:
         return 4;
       default:
-        throw InternalError("ValueError: " + asdl::py_repr(t) + " is not in tuple");
+        throw InternalError("not an unsigned integer type a packed BCD operand takes: " +
+                            asdl::py_repr(t));
     }
   };
   struct Kind {
@@ -816,7 +812,7 @@ Type TypeChecker::check_bcd_call(ir::FunctionCall& exp) {
       }
     }
     if (!result) {
-      throw InternalError("StopIteration");
+      throw InternalError("no unsigned integer type holds the packed BCD result");
     }
   }
   const Type result_t = *result;
@@ -881,7 +877,7 @@ ir::FunType TypeChecker::check_callee(ir::IndirectCall& exp) {
   exp.callee = std::move(callee);
   const auto* p = std::get_if<ir::Pointer>(&*t);
   if (p == nullptr) {
-    throw InternalError("AttributeError: the callee's pointer type is qualified");
+    throw InternalError("check_callee: the callee's pointer type is still qualified");
   }
   return get_fun(*p->referenced_type);
 }

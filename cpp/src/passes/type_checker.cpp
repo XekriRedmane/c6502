@@ -162,7 +162,7 @@ Type stdbit_parameter_type(std::string_view suffix) {
   if (suffix == "ull") {
     return ir::ULongLong{};
   }
-  throw InternalError("KeyError: " + pyrepr::string(suffix));
+  throw InternalError("stdbit_parameter_type: no <stdbit.h> suffix " + pyrepr::string(suffix));
 }
 
 bool types_equal(const Type& a, const Type& b) { return a == b; }
@@ -803,7 +803,7 @@ ir::Type_const const_for_value(Int value, const Type& type) {
     case K::ULongLong:
       return ir::ConstULongLong{.value = value & Int(0xFFFFFFFFFFFFFFFFULL)};
     default:
-      throw InternalError("_const_for_value: not an integer type: " + asdl::py_repr(t));
+      throw InternalError("const_for_value: not an integer type: " + asdl::py_repr(t));
   }
 }
 

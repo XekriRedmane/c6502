@@ -152,7 +152,7 @@ int int_width(const Type& t) {
     case K::ULongLong:
       return 8;
     default:
-      throw InternalError("_int_width: not an integer object type: " + asdl::py_repr(s));
+      throw InternalError("int_width: not an integer object type: " + asdl::py_repr(s));
   }
 }
 
@@ -186,7 +186,7 @@ std::pair<int, int> rank(const Type& t) {
     case K::ULongLong:
       return {64, 5};
     default:
-      throw InternalError("_rank: not a promoted integer type: " + asdl::py_repr(t));
+      throw InternalError("rank: not a promoted integer type: " + asdl::py_repr(t));
   }
 }
 
@@ -206,7 +206,7 @@ Type unsigned_counterpart(const Type& t) {
     case K::ULongLong:
       return ir::ULongLong{};
     default:
-      throw InternalError("_unsigned_counterpart: not a promoted integer type: " +
+      throw InternalError("unsigned_counterpart: not a promoted integer type: " +
                           asdl::py_repr(t));
   }
 }

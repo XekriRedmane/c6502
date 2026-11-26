@@ -114,7 +114,8 @@ ValueTree coerce_tree(const ValueTree& value, const Type& source_type, const Typ
     return tree_int(1);
   }
   if (is_floating_type(target) || is_integer_type(target) || is_floating_type(source)) {
-    throw InternalError("TypeError: int() of a value tree that isn't an integer");
+    throw InternalError("coerce_tree: an arithmetic conversion of a value tree that isn't an "
+                        "integer");
   }
   return value;
 }
@@ -138,11 +139,12 @@ class AddressConstant {
 
   Int pointee_size(const std::optional<Type>& t) const {
     if (!t) {
-      throw InternalError("AttributeError: 'NoneType' object has no attribute 'referenced_type'");
+      throw InternalError("the pointer of an address constant has no type");
     }
     const auto* p = std::get_if<ir::Pointer>(&strip_quals(*t));
     if (p == nullptr) {
-      throw InternalError("AttributeError: no attribute 'referenced_type' on " + asdl::py_repr(*t));
+      throw InternalError("the pointer of an address constant isn't a pointer: " +
+                          asdl::py_repr(*t));
     }
     return sizeof_type(*p->referenced_type, types_);
   }
@@ -150,7 +152,7 @@ class AddressConstant {
   Int member_offset(const Type& type, const std::string& member) const {
     const Type& t = strip_quals(type);
     if (!asdl::isa<ir::Structure, ir::Union>(t)) {
-      throw InternalError("AttributeError: no attribute 'tag' on " + asdl::py_repr(t));
+      throw InternalError("member_offset: not a struct or union: " + asdl::py_repr(t));
     }
     const StructLayout* layout = types_ != nullptr ? types_->find(tag_of(t)) : nullptr;
     if (layout == nullptr) {
@@ -197,7 +199,7 @@ class AddressConstant {
         const AddressInit base = lvalue(*d.operand);
         const std::optional<Type>& t = data_type_of(*d.operand);
         if (!t) {
-          throw InternalError("AttributeError: 'NoneType' object has no attribute 'tag'");
+          throw InternalError("the operand of `.` in an address constant has no type");
         }
         return AddressInit{.name = base.name, .offset = base.offset + member_offset(*t, d.member)};
       }
@@ -207,7 +209,7 @@ class AddressConstant {
         const std::optional<Type>& t = data_type_of(*a.operand);
         const auto* p = t ? std::get_if<ir::Pointer>(&strip_quals(*t)) : nullptr;
         if (p == nullptr) {
-          throw InternalError("AttributeError: no attribute 'referenced_type'");
+          throw InternalError("the operand of `->` in an address constant isn't a pointer");
         }
         return AddressInit{.name = base.name,
                            .offset = base.offset + member_offset(*p->referenced_type, a.member)};
@@ -308,11 +310,12 @@ class NullBasedOffset {
 
   static std::optional<Type> pointee(const std::optional<Type>& t) {
     if (!t) {
-      throw InternalError("AttributeError: 'NoneType' object has no attribute 'referenced_type'");
+      throw InternalError("the pointer of an address constant has no type");
     }
     const auto* p = std::get_if<ir::Pointer>(&strip_quals(*t));
     if (p == nullptr) {
-      throw InternalError("AttributeError: no attribute 'referenced_type' on " + asdl::py_repr(*t));
+      throw InternalError("the pointer of an address constant isn't a pointer: " +
+                          asdl::py_repr(*t));
     }
     return *p->referenced_type;
   }
@@ -445,12 +448,12 @@ Int parse_decimal(std::string_view digits) {
     i = 1;
   }
   if (i >= digits.size()) {
-    throw InternalError("ValueError: invalid literal for int(): " + pyrepr::string(digits));
+    throw InternalError("parse_decimal: not a decimal integer: " + pyrepr::string(digits));
   }
   for (; i < digits.size(); ++i) {
     const char c = digits[i];
     if (c < '0' || c > '9') {
-      throw InternalError("ValueError: invalid literal for int(): " + pyrepr::string(digits));
+      throw InternalError("parse_decimal: not a decimal integer: " + pyrepr::string(digits));
     }
     v = v * Int(10) + Int(c - '0');
   }
@@ -608,7 +611,7 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
       const bool single = asdl::isa<ir::Float>(fp_t);
       const ValueTree bits = const_init_value(*u->exp, fp_t, name, symbols, types);
       if (bits.kind != ValueTree::Kind::kInt) {
-        throw InternalError("TypeError: unsupported operand type for ^");
+        throw InternalError("a negated floating initializer whose value tree isn't an integer");
       }
       const Int flipped = bits.integer ^ (Int(1) << (single ? 31 : 63));
       return tree_int(coerce_init_value(flipped, fp_t, target_type));
@@ -621,7 +624,7 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
         const ValueTree a = const_init_value(*b->left, fp_t, name, symbols, types);
         const ValueTree c = const_init_value(*b->right, fp_t, name, symbols, types);
         if (a.kind != ValueTree::Kind::kInt || c.kind != ValueTree::Kind::kInt) {
-          throw InternalError("TypeError: a floating fold of a value that isn't an integer");
+          throw InternalError("a floating fold of a value tree that isn't an integer");
         }
         const FpFold fold = folds[asdl::isa<ir::Float>(fp_t) ? 0 : 1];
         return tree_int(coerce_init_value(fold(a.integer, c.integer), fp_t, target_type));
@@ -1130,7 +1133,7 @@ std::optional<NamedConstant> TypeChecker::named_constant(const Exp& exp) {
       continue;
     }
     if (value.kind != ValueTree::Kind::kTuple) {
-      throw InternalError("TypeError: len() of a value tree that isn't a tuple");
+      throw InternalError("a member of a constant structure whose value tree isn't a tuple");
     }
     if (i >= value.items.size()) {
       throw ce::ConstantExpressionError(
@@ -1436,7 +1439,7 @@ void TypeChecker::check_struct_init_list(ir::InitList& init, const Type& struct_
   }
   for (std::size_t i = 0; i < init.items.size(); ++i) {
     if (i >= members.size()) {
-      throw InternalError("IndexError: list index out of range");
+      throw InternalError("check_struct_init_list: more items than members");
     }
     const MemberInfo& m = members[i];
     const Type& elem_type = m.type;

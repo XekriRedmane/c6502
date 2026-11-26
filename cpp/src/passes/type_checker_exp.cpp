@@ -62,7 +62,7 @@ bool opt_struct_or_union(const std::optional<Type>& t) { return t && is_struct_o
 
 const Type& need(const std::optional<Type>& t, const char* where) {
   if (!t) {
-    throw InternalError(std::string("AttributeError: no type in ") + where);
+    throw InternalError(std::string("no type on the ") + where);
   }
   return *t;
 }
@@ -148,7 +148,8 @@ std::string unary_spelling(const ir::Type_unary_operator& op) {
     case ir::Kind_unary_operator::Plus:
       return "+";
     default:
-      throw InternalError("KeyError: " + asdl::py_repr(op));
+      throw InternalError("check_unary: an operator of no kind the type checker knows: " +
+                          asdl::py_repr(op));
   }
 }
 

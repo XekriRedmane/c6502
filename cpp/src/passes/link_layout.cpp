@@ -57,7 +57,6 @@ value past 64 bits, which the layout keeps them in.
 #include "errors.h"
 #include "fnmatch.h"
 #include "lark_lexer.h"
-#include "pcpp_text.h"
 #include "pyrepr.h"
 
 namespace c6502::passes::link_layout {
@@ -94,28 +93,27 @@ std::int64_t to_i64(asdl::Int v) {
   return static_cast<std::int64_t>(v);
 }
 
-std::string repr(std::string_view s) { return pcpp::py_repr(s); }
-
-std::string expr_repr(const Expr& e) {
+// Returns `e` as a linker script spells it, with each binary operation
+// in parentheses.
+std::string expr_text(const Expr& e) {
   switch (e.kind) {
     case Expr::Kind::Num:
-      return "Num(value=" + pyrepr::integer(e.value) + ")";
+      return pyrepr::integer(e.value);
     case Expr::Kind::Sym:
-      return "Sym(name=" + repr(e.name) + ")";
+      return e.name;
     case Expr::Kind::Dot:
-      return "Dot()";
+      return ".";
     case Expr::Kind::Unary:
-      return "Unary(op=" + repr(e.op) + ", operand=" + expr_repr(e.args[0]) + ")";
+      return e.op + expr_text(e.args[0]);
     case Expr::Kind::Binary:
-      return "Binary(op=" + repr(e.op) + ", left=" + expr_repr(e.args[0]) +
-             ", right=" + expr_repr(e.args[1]) + ")";
+      return "(" + expr_text(e.args[0]) + " " + e.op + " " + expr_text(e.args[1]) + ")";
     case Expr::Kind::Call: {
-      std::string out = "Call(fn=" + repr(e.fn) + ", args=[";
+      std::string out = e.fn + "(";
       for (std::size_t i = 0; i < e.args.size(); ++i) {
         if (i > 0) out += ", ";
-        out += expr_repr(e.args[i]);
+        out += expr_text(e.args[i]);
       }
-      return out + "])";
+      return out + ")";
     }
   }
   return "?";
@@ -186,7 +184,7 @@ class Evaluator {
       case Expr::Kind::Call:
         return call(e, dot);
     }
-    layout_error("can't use " + expr_repr(e) + " in a linker script expression");
+    layout_error("can't use `" + expr_text(e) + "` in a linker script expression");
   }
 
  private:
@@ -224,7 +222,7 @@ class Evaluator {
       }
       return *v;
     }
-    layout_error("can't use " + expr_repr(e) + " in a linker script expression");
+    layout_error("can't use `" + expr_text(e) + "` in a linker script expression");
   }
 
   const ls::Script& script_;

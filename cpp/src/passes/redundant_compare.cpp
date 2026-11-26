@@ -82,19 +82,13 @@ LabelRefs label_refs(Instrs instrs) {
     } else if (const auto* j = as<ir::Jump>(ins)) {
       out.refs[j->target].push_back(static_cast<long>(i));
     }
-    auto visit = [&](const ir::Type_operand& op) {
+    for_each_operand<true>(ins, [&](const ir::Type_operand& op) {
       if (const auto* lo = as<ir::ImmLabelLow>(op)) {
         out.refs[lo->name].push_back(-1);
       } else if (const auto* hi = as<ir::ImmLabelHigh>(op)) {
         out.refs[hi->name].push_back(-1);
       }
-    };
-    for_each_operand<false>(ins, visit);
-    if (const auto* d = as<ir::DecimalArith>(ins)) {
-      for (const auto& op : d->left) visit(op);
-      for (const auto& op : d->right) visit(op);
-      for (const auto& op : d->dst) visit(op);
-    }
+    });
   }
   return out;
 }

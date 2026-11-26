@@ -1,5 +1,6 @@
 // The tests of tests/test_redundant_compare.py, ported.
 #include <string>
+#include <vector>
 
 #include "asm_text.h"
 #include "doctest.h"
@@ -154,4 +155,29 @@ TEST_CASE("redundant_compare takes the carry of an add for a compare with its op
     const std::string text = instrs("ZP(144 0)", branch("EQ", ".m") + label(".m"), false);
     CHECK(run(text) == expect(text));
   }
+}
+
+TEST_CASE("redundant_compare's label_refs counts the branches, jumps, and label operands") {
+  namespace ir = c6502::asm_ast;
+  const std::vector<ir::Type_instruction> instrs = {
+      ir::Branch{.cond = ir::NE{}, .target = ".a"},
+      ir::Jump{.target = ".a", .reg_args = {}},
+      ir::Mov{.src = ir::ImmLabelLow{.name = ".b", .offset = 0},
+              .dst = ir::Reg{.reg = ir::A{}},
+              .is_volatile = false},
+      ir::DecimalArith{.subtract = false,
+                       .left = {ir::ZP{.address = 128, .offset = 0}},
+                       .right = {ir::ImmLabelHigh{.name = ".c", .offset = 0}},
+                       .dst = {ir::ZP{.address = 130, .offset = 0}}},
+      ir::Label{.name = ".a"},
+  };
+  const auto refs = c6502::passes::redundant_compare::label_refs(instrs);
+  REQUIRE(refs.get(".a") != nullptr);
+  CHECK(*refs.get(".a") == std::vector<long>{0, 1});
+  REQUIRE(refs.get(".b") != nullptr);
+  CHECK(*refs.get(".b") == std::vector<long>{-1});
+  REQUIRE(refs.get(".c") != nullptr);
+  CHECK(*refs.get(".c") == std::vector<long>{-1});
+  CHECK(refs.get(".d") == nullptr);
+  CHECK(refs.table_targets.empty());
 }

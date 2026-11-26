@@ -214,7 +214,7 @@ These parts are missing.
    `git clone https://github.com/XekriRedmane/c6502.git`, and `cd`
    into it.
 3. Run `uv sync`. It creates a virtual environment in `.venv` and
-   installs the dependencies, py65 for the simulator and numpy, and
+   installs the dependencies, py65 for the simulator, and
    the development dependencies pytest and pytest-xdist.
 4. Build the compiler, from the repository's directory. On Windows:
 

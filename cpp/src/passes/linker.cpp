@@ -53,7 +53,7 @@ using asdl::Int;
 
 CompileError link_error(const std::string& message) { return CompileError("LinkError", message); }
 
-constexpr Int kSpillBase = 0xF000;
+constexpr Int kSpillStandIn = 0xF000;
 constexpr const char* kSpill = "__spill";
 
 bool is_runtime_name(const std::string& name) {
@@ -183,7 +183,7 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
   for (Int b : runtime_bytes(layout)) options.reserved.insert(b);
   options.shares = merged.shares;
   if (script) {
-    options.spill_start = kSpillBase;
+    options.spill_start = kSpillStandIn;
     options.spill_end = 0x10000;
   }
   const auto [abi, zp_sym_to_addr] =
@@ -209,7 +209,7 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
   SymbolAddrs spilled;
   if (script) {
     for (const auto& [name, addr] : placed_names) {
-      if (addr >= kSpillBase) spilled.insert_or_assign(name, addr - kSpillBase);
+      if (addr >= kSpillStandIn) spilled.insert_or_assign(name, addr - kSpillStandIn);
     }
   }
   for (const auto& [name, _] : spilled) placed_names.erase(name);

@@ -624,10 +624,9 @@ Type check_subscript(TypeChecker& tc, ir::Subscript& e) {
   decay_in_place(e.index);
   const std::optional<Type> ta = checked_type(*e.array);
   const std::optional<Type> ti = checked_type(*e.index);
-  if (opt_pointer(ta) && opt_integer(ti)) {
-  } else if (opt_pointer(ti) && opt_integer(ta)) {
+  if (opt_pointer(ti) && opt_integer(ta)) {
     std::swap(*e.array, *e.index);
-  } else {
+  } else if (!(opt_pointer(ta) && opt_integer(ti))) {
     fail("subscript needs a pointer/array operand and an integer operand; got " +
          repr_or_none(ta) + " and " + repr_or_none(ti));
   }

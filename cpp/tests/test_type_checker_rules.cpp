@@ -125,3 +125,16 @@ TEST_CASE("type checker: the usual arithmetic conversions of two integer types")
   CHECK(common(ir::Int{}, ir::Double{}) == "Double()");
   CHECK(common(ir::Float{}, ir::ULongLong{}) == "Float()");
 }
+
+TEST_CASE("type checker: a subscript takes the pointer on either side") {
+  CHECK(error_of("int a[3]; int g(int i) { return a[i]; }") == "no error");
+  CHECK(error_of("int a[3]; int g(int i) { return i[a]; }") == "no error");
+  CHECK(checked("int a[3]; int g(int i) { return i[a]; }") ==
+        checked("int a[3]; int g(int i) { return a[i]; }"));
+  CHECK(error_of("int a[3]; int *p; int g(void) { return a[p]; }") ==
+        "TypeCheckError: subscript needs a pointer/array operand and an integer operand; got "
+        "Pointer(referenced_type=Int()) and Pointer(referenced_type=Int())");
+  CHECK(error_of("int g(int i, int j) { return i[j]; }") ==
+        "TypeCheckError: subscript needs a pointer/array operand and an integer operand; got "
+        "Int() and Int()");
+}

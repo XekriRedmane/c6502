@@ -45,7 +45,7 @@ class TestLoopCounterToXSim(unittest.TestCase):
 @needs_c6502cpp
 class TestPointerHighByteSim(unittest.TestCase):
     """`msg = msg + msg[0] + 1` steps the pointer's high byte with one
-    `INC`, after `SEC; ADC (msg),Y` (passes/carry_in_add.py). The pass
+    `INC`, after `SEC; ADC (msg),Y` (cpp/src/passes/carry_in_add.h). The pass
     once took that byte for a loop counter and stepped it in X, while
     the reads through `(msg),Y` still found the old high byte in
     memory, so a step across a page read the byte 256 below."""

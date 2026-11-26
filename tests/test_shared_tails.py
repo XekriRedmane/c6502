@@ -1,4 +1,4 @@
-"""passes/shared_tails.py: code that two functions of a unit end with
+"""cpp/src/passes/shared_tails.h: code that two functions of a unit end with
 alike goes in a function of its own, which each jumps to.
 
 `TestPass` runs the pass on hand-written asm. `TestPrograms` compiles

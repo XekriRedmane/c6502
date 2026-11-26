@@ -1,4 +1,4 @@
-"""passes/optimization/inline_functions.py: the calls of small `static`
+"""cpp/src/passes/optimization/inline_functions.h: the calls of small `static`
 functions are replaced by copies of their bodies under `-O`.
 
 `TestRewrite` translates small programs to TAC, inlines them, and

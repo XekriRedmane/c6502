@@ -1,4 +1,4 @@
-"""Tests for `passes.branch_through_jump`: a branch or `JMP` to a label
+"""Tests for cpp/src/passes/branch_through_jump.h: a branch or `JMP` to a label
 that holds only a `JMP` goes straight to that `JMP`'s target.
 
 The tests that called the Python functions directly are doctest cases of

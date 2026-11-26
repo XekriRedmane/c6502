@@ -57,7 +57,7 @@ class TestCoalescingEndToEnd(unittest.TestCase):
         # bottom test branches back to, to `.loop@0_break:`) should
         # contain a single `INC` for `i++`, not the
         # LDA-CLC-ADC-STA-LDA-STA chain. The test is known to pass on
-        # entry, so passes/rotate_loop_test.py leaves no `JMP` to it.
+        # entry, so cpp/src/passes/rotate_loop_test.h leaves no `JMP` to it.
         start_idx = asm.find(".main@rot@0:")
         self.assertNotEqual(start_idx, -1)
         rest = asm[start_idx:]

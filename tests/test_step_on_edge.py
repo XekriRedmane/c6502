@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.step_on_edge`, which moves a step
+"""Tests for cpp/src/passes/optimization/step_on_edge.h, which moves a step
 whose result is copied on one edge alone onto that edge, and runs of
 the loops it rewrites in both pipelines."""
 

@@ -1,5 +1,5 @@
 """Tests for `[[c6502::address(addr)]]` on functions and
-`extern` objects (`passes/zp_globals.py`, "Fixed addresses outside
+`extern` objects (`cpp/src/passes/zp_globals.h`, "Fixed addresses outside
 zero page").
 
 Covers parsing in each position, the rules the type checker

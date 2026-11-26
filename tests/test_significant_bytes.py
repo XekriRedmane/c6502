@@ -1,4 +1,4 @@
-"""Tests for `passes.significant_bytes` and the shift of a value with
+"""Tests for cpp/src/passes/significant_bytes.h and the shift of a value with
 one significant byte (`tac_to_asm._inline_left_shift_byte`), the
 closed form of the loop in Zork's `please_insert_save_diskette`, and
 `==` / `!=` comparing only significant bytes

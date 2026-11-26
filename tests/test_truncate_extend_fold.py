@@ -1,4 +1,4 @@
-"""Unit tests for `passes.optimization.truncate_extend_fold`.
+"""Unit tests for cpp/src/passes/optimization/truncate_extend_fold.h.
 
 Covers the `Truncate(Extend(x), u)` → `Copy(x, u)` / narrower-
 Truncate folds, plus the soundness gate that excludes non-SSA-

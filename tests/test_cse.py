@@ -1,5 +1,5 @@
 """Tests for common-subexpression elimination
-(`passes/optimization/cse.py`).
+(`cpp/src/passes/optimization/cse.h`).
 
 The unit tests build SSA-form functions directly and check which
 instructions become Copies. The sim tests compile C whose repeated

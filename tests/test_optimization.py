@@ -1,4 +1,4 @@
-"""End-to-end tests of the TAC-level optimizer (`passes.optimization`)
+"""End-to-end tests of the TAC-level optimizer (cpp/src/passes/optimization/optimizer.h)
 through the command line: `-O` doesn't break --tac / -S.
 
 The tests of the driver on synthetic functions (the per-pass entry

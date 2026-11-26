@@ -1,4 +1,4 @@
-"""Behavioral tests for `passes.zp_local_allocation`.
+"""Behavioral tests for cpp/src/passes/zp_local_allocation.h.
 
 Coverage:
   - Single eligible function → gets a private pool sized to

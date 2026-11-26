@@ -1,4 +1,4 @@
-"""Tests for `passes/carry_halve.py`: a halved 9-bit sum takes bit 8
+"""Tests for `cpp/src/passes/carry_halve.h`: a halved 9-bit sum takes bit 8
 from the carry of its low byte's add.
 
 The tests that called the Python functions directly are doctest cases of

@@ -1,4 +1,4 @@
-"""Tests for `passes.rotate_loop_test`, which moves a loop's test from
+"""Tests for cpp/src/passes/rotate_loop_test.h, which moves a loop's test from
 its top to its bottom, and drops the entry `JMP` when the test is
 known to pass on entry.
 

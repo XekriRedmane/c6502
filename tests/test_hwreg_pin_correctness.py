@@ -3,7 +3,7 @@ regalloc.
 
 When the asm-level optimizer pins a Pseudo P to `Reg(X)` / `Reg(Y)`,
 P's value must remain in that register across P's entire live range.
-The hwreg-eligibility pass (`passes.optimization_asm.hwreg_eligibility`)
+The hwreg-eligibility pass (cpp/src/passes/optimization_asm/hwreg_eligibility.h)
 checks the per-operand-position SHAPE of every use/def of P, but it
 doesn't run a liveness check against OTHER instructions in P's live
 range that write to the candidate hardware register. Those clobbers

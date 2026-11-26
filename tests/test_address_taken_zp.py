@@ -1,4 +1,4 @@
-"""Unit tests for `passes.address_taken_zp.compute_address_taken_assignments`.
+"""Unit tests for `compute_address_taken_assignments` (cpp/src/passes/address_taken_zp.h).
 
 Covers the per-function allocation of address-taken locals into the
 private ZP pool: identifies candidates from `LoadAddress.src=Pseudo`,

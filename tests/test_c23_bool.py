@@ -35,7 +35,7 @@ from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
-# The warning at each `_Bool` (preprocessor.py's `ALT_BOOL_WARNING`).
+# The warning at each `_Bool` (`kAltBoolWarning` in cpp/src/preprocessor.cpp).
 ALT_BOOL_WARNING = (
     "`_Bool` is deprecated: C23 makes it an obsolescent spelling "
     "of the keyword `bool` (C23 §6.4.1). Use `bool` instead."

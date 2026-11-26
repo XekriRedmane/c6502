@@ -1,4 +1,4 @@
-"""Unit tests for `passes.optimization.narrow_widened_arith`.
+"""Unit tests for cpp/src/passes/optimization/narrow_widened_arith.h.
 
 Covers the `Truncate(Binary(safe_op, Extend(a), Extend(b) | Const),
 u_n)` → `Binary(safe_op, a, b | narrowed_Const, u_n)` rewrite for

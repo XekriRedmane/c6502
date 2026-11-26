@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.divmod_hoist`, which computes a divide
+"""Tests for cpp/src/passes/optimization/divmod_hoist.h, which computes a divide
 and a remainder of the same operands next to each other, and runs of
 the functions it rewrites in both pipelines."""
 

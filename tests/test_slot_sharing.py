@@ -1,5 +1,5 @@
 """Values kept in a callee's parameter bytes across calls
-(passes/slot_sharing.py), parameters at a fixed zero-page address
+(cpp/src/passes/slot_sharing.h), parameters at a fixed zero-page address
 (`zeropage(addr)` on a parameter),
 and register parameters, which get no slot.
 

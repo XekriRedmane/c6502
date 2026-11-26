@@ -1,5 +1,5 @@
 """Tests for zero-page globals (`[[c6502::zeropage]]`,
-`passes/zp_globals.py`).
+`cpp/src/passes/zp_globals.h`).
 
 Covers parsing of both forms in both positions, the static-storage
 rule, placement (fixed and automatic, overlaps, ranges, `extern`),

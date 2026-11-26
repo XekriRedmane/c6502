@@ -3,7 +3,7 @@
 A function with the attribute returns `e != 0` in the carry flag.
 The callee ends in `CMP #1` (or `SEC` / `CLC` once the value is
 known), and the caller reads C with `BCC` / `BCS`, or captures it
-with `LDA #0; ROL A`. The peepholes are in `passes/carry_return.py`.
+with `LDA #0; ROL A`. The peepholes are in `cpp/src/passes/carry_return.h`.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from

@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.known_compare_thread`: a jump whose
+"""Tests for cpp/src/passes/optimization/known_compare_thread.h: a jump whose
 target tests what the jump's own path decided goes past the test, a
 conditional jump that the code before it decided becomes a `Jump` or
 goes, and a conditional jump's target block is placed right after the

@@ -1,7 +1,7 @@
 """Tests for the bundled `<limits.h>`.
 
 The header lives at `include/limits.h` next to `compile.py`;
-`preprocessor.py` adds that directory to pcpp's search path after
+cpp/src/preprocessor.h adds that directory to pcpp's search path after
 any user `-I` flags so `#include <limits.h>` resolves out-of-the-
 box. Tests:
 

@@ -1,4 +1,4 @@
-"""Behavioral tests for `passes.optimization_asm.regalloc`.
+"""Behavioral tests for cpp/src/passes/optimization_asm/regalloc.h.
 
 Coverage:
   - Coloring assigns ZP addresses to byte-granular SSA names.

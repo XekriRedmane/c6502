@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.three_way_compare`: a 2-byte unsigned
+"""Tests for cpp/src/passes/optimization/three_way_compare.h: a 2-byte unsigned
 ordering compare and an equality compare of the same two values
 split into a compare of the high bytes and then the low ones."""
 

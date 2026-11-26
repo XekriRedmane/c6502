@@ -1,6 +1,6 @@
 """Tests for moving a constant out of an address offset
-(`passes/optimization/reassoc_offset.py`) and for hoisting loop-
-invariant extends (`passes/optimization/licm.py`)."""
+(`cpp/src/passes/optimization/reassoc_offset.h`) and for hoisting loop-
+invariant extends (`cpp/src/passes/optimization/licm.h`)."""
 from __future__ import annotations
 
 import unittest

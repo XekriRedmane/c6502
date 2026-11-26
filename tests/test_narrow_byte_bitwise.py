@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.narrow_byte_bitwise`."""
+"""Tests for cpp/src/passes/optimization/narrow_byte_bitwise.h."""
 
 from __future__ import annotations
 

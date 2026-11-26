@@ -1,4 +1,4 @@
-"""Tests for the runtime library (passes/runtime_library.py), the
+"""Tests for the runtime library (cpp/src/passes/runtime_library.h), the
 6502 helpers the linker adds to a program that calls them.
 
 Each helper is reached from C the way the compiler reaches it (`*`,

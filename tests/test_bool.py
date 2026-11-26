@@ -48,7 +48,7 @@ class TestLowering(unittest.TestCase):
     @needs_c6502cpp
     def test_conversion_is_a_zero_test(self) -> None:
         # Static, so that they return in A: main keeps their results
-        # as values (passes/carry_return_choice.py). `x` arrives in A
+        # as values (cpp/src/passes/carry_return_choice.h). `x` arrives in A
         # (and X), so f tests A with `ORA #$00`, and g stores the low
         # byte and ORs the high byte into it.
         asm = _codegen(

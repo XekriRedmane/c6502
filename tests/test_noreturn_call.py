@@ -1,7 +1,7 @@
 """`[[noreturn]]` on a function (C23 §6.7.13.7): the parser records it
 on the declaration, the type checker on the function's `FunAttr` from
 any declaration, and under `-O` nothing runs after a call to
-the function (`passes/optimization/noreturn_call.py`)."""
+the function (`cpp/src/passes/optimization/noreturn_call.h`)."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ class TestRuns(unittest.TestCase):
 
 
 # The call graph and a call that abandons its caller
-# (passes/call_edges.py).
+# (cpp/src/passes/call_edges.h).
 
 
 def _codegen(src: str) -> str:

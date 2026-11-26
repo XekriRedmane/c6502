@@ -20,7 +20,7 @@ standard `STX M / ... / LDX M` wrap). `DEX` updates X but never
 refreshes M, so the call-site sequence `Mov(M, __zpabi_<callee>__slot)`
 (emitted as `LDA M; STA __zpabi_<callee>__slot`) passed the STALE
 slot value to the callee — slot 0's iteration called the leaf
-functions with slot=1. Fixed by `passes/x_save_slot_load.py`,
+functions with slot=1. Fixed by `cpp/src/passes/x_save_slot_load.h`,
 which rewrites reads of M to reads of X when M is used as an
 X-save slot.
 

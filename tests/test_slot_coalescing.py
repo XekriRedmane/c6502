@@ -1,4 +1,4 @@
-"""Tests for `passes/slot_coalescing.py`: a zero-page local holding a
+"""Tests for `cpp/src/passes/slot_coalescing.h`: a zero-page local holding a
 copy of a parameter takes the parameter's own slot.
 
 The tests that called the Python functions directly are doctest cases of

@@ -1,4 +1,4 @@
-"""Tests for `passes/optimization/direct_member_access.py`, which turns
+"""Tests for `cpp/src/passes/optimization/direct_member_access.h`, which turns
 an access through `&obj + k` into a direct access to byte `k` of
 `obj`: struct members, and array elements at a constant index, of
 statics and of automatic aggregates.

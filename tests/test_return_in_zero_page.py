@@ -1,4 +1,4 @@
-"""passes/return_in_zero_page.py: a `static` function returning a
+"""cpp/src/passes/return_in_zero_page.h: a `static` function returning a
 pointer returns it in a zero-page object of its own, `F@ret`.
 
 `TestRewrite` checks which functions the TAC rewrite chooses and the

@@ -1,4 +1,4 @@
-"""Tests for passes/optimization/row_address_tables.py, which looks up
+"""Tests for cpp/src/passes/optimization/row_address_tables.h, which looks up
 the address of a row of a 2-D array in a table of row addresses."""
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 """Tests for computing a member of a static object in its own bytes
-(`passes/in_place_member_update.py`, applied by `tac_to_asm`)."""
+(`cpp/src/passes/in_place_member_update.h`, applied by `tac_to_asm`)."""
 
 from __future__ import annotations
 

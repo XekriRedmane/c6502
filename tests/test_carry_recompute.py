@@ -1,4 +1,4 @@
-"""Tests for `passes.carry_recompute`: a shift that only sets C to what
+"""Tests for cpp/src/passes/carry_recompute.h: a shift that only sets C to what
 C already holds goes, and for the lowering of adds and subtracts of a
 constant whose low bytes are zero (`tac_to_asm._translate_add_sub`).
 

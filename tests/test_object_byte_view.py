@@ -7,7 +7,7 @@ static array: `IndexedLoad(S, i)` or `IndexedSymbolStore(S, i, v)`,
 which the backend emits as `LDA S,X` / `STA S,X`, and `S+k` for a
 constant index. Reading a `uint32_t` a byte at a time this way is the
 access C99 §6.5.7 allows for any object. See `_object_view` and
-`_try_indexed_load_subscript` in `c99_to_tac.py`.
+`try_indexed_load_subscript` in cpp/src/c99_to_tac_exp.cpp.
 
 The simulator runs check each pipeline. The ones that write a byte
 and then read the whole object in the same function check that the

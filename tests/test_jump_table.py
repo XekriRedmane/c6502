@@ -1,4 +1,4 @@
-"""Tests for `passes.jump_table.apply_jump_tables`: a chain of compares
+"""Tests for `apply_jump_tables` (cpp/src/passes/jump_table.h): a chain of compares
 of A with constants becomes a dispatch through a table of the cases'
 addresses.
 

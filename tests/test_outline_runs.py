@@ -1,4 +1,4 @@
-"""passes/outline_runs.py: a run of instructions repeated in a unit goes
+"""cpp/src/passes/outline_runs.h: a run of instructions repeated in a unit goes
 in a function of its own, which each place calls.
 
 `TestPass` runs the pass on hand-written asm. `TestPrograms` compiles a

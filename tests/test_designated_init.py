@@ -6,7 +6,7 @@ Coverage:
     chain of them, folds an array designator's index (an enumeration
     constant, a `constexpr` object, or an expression of them), and
     rejects a negative index or one that isn't a constant.
-  * passes/designators.py rewrites a list with designations into the
+  * cpp/src/passes/designators.h rewrites a list with designations into the
     positional form, with `{}` for each subobject nothing initializes:
     a positional item after a designation, a later initializer that
     overrides an earlier one (whole, or the part a chain names), an

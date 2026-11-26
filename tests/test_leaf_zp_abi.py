@@ -214,7 +214,7 @@ class TestLeafZpAbi(unittest.TestCase):
     def test_zp_abi_caller_callee_get_disjoint_slots(self) -> None:
         # A zp_abi caller and its direct zp_abi callee must be
         # assigned disjoint slot ranges by
-        # `passes.zp_slot_allocation`: otherwise the callee's
+        # cpp/src/passes/zp_slot_allocation.h: otherwise the callee's
         # arg-write would clobber the caller's still-live params.
         # Verified end-to-end via the simulator (correctness) and
         # by inspecting the EQU directives in the emitted asm

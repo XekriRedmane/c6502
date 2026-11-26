@@ -93,7 +93,7 @@ class TestCode(unittest.TestCase):
         # Under -O the object is in the function's pool and the loop
         # indexes it with Y: 40 bytes, counted down. The 0 is loaded
         # before the loop, and the BNE reads the flags DEY sets
-        # (passes/loop_constant_a.py).
+        # (cpp/src/passes/loop_constant_a.h).
         asm = _compile(src, "-O")
         self.assertIn(
             "   LDY   #$28\n   LDA   #$00\n.clear@0:\n   DEY\n"

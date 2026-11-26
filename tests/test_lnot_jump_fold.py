@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.lnot_jump_fold`.
+"""Tests for cpp/src/passes/optimization/lnot_jump_fold.h.
 
 The pass rewrites `Unary(LogicalNot, src, %t); JumpIf{True,False}(%t, t)`
 — where `%t` is single-use and the JumpIf is immediately adjacent —

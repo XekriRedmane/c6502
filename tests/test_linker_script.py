@@ -1,10 +1,10 @@
 """Tests for linker scripts (`compile.py -T`) and
 `[[c6502::section("name")]]`.
 
-Covers the script parser (passes/link_script.py), the attribute in the
+Covers the script parser (cpp/src/passes/link_script.h), the attribute in the
 parser and type checker, each item's default section
-(passes/sections.py), renaming internal names two units share, and
-linked programs laid out by a script (passes/link_layout.py): run
+(cpp/src/passes/sections.h), renaming internal names two units share, and
+linked programs laid out by a script (cpp/src/passes/link_layout.h): run
 in the simulator, with `.data` copied from ROM, a NOLOAD `.bss`
 cleared, a section at a fixed address, page alignment, and a link
 that fails on a region that overflows or a section outside the

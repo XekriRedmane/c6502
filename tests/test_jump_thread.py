@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.jump_thread`.
+"""Tests for cpp/src/passes/optimization/jump_thread.h.
 
 The pass sends an edge into a join of a `Phi` and a test of it straight
 to the successor the test picks for the constant that the edge brings.

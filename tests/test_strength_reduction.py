@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.strength_reduction`.
+"""Tests for cpp/src/passes/optimization/strength_reduction.h.
 
 Coverage:
   * Multiply by 2^k → LeftShift by k (signed and unsigned).

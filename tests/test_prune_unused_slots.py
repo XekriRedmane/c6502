@@ -1,4 +1,4 @@
-"""Tests for `passes.prune_unused_slots.prune_unused_locals`.
+"""Tests for `prune_unused_locals` (cpp/src/passes/prune_unused_slots.h).
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from

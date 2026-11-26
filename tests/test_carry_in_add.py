@@ -1,4 +1,4 @@
-"""Tests for `passes/carry_in_add.py`: `p + b + 1` as one add with the
+"""Tests for `cpp/src/passes/carry_in_add.h`: `p + b + 1` as one add with the
 carry set.
 
 The tests that called the Python functions directly are doctest cases of

@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.count_down`, which counts a loop down
+"""Tests for cpp/src/passes/optimization/count_down.h, which counts a loop down
 to 0 when its counter is read only by its own test and step, and runs
 of such loops in both pipelines."""
 

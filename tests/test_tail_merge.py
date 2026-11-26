@@ -1,4 +1,4 @@
-"""Tests for the return-tail merge (`passes/tail_merge.py`).
+"""Tests for the return-tail merge (`cpp/src/passes/tail_merge.h`).
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from

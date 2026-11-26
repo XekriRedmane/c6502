@@ -1,4 +1,4 @@
-"""Tests for `passes.carry_return_choice`, which returns a `static`
+"""Tests for cpp/src/passes/carry_return_choice.h, which returns a `static`
 function's `bool` in the carry flag, without the annotation, when
 every call to it suits the carry."""
 

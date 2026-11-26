@@ -1,4 +1,4 @@
-"""Tests for `passes.index_inc_cmp_y.apply_index_inc_cmp_y`.
+"""Tests for `apply_index_inc_cmp_y` (cpp/src/passes/index_inc_cmp_y.h).
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from

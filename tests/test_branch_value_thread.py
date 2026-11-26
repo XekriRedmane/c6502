@@ -1,4 +1,4 @@
-"""Tests for `passes.branch_value_thread.apply_branch_value_thread`: a
+"""Tests for `apply_branch_value_thread` (cpp/src/passes/branch_value_thread.h): a
 branch goes past the loads, compares, and branches at its target that
 its path has already decided.
 

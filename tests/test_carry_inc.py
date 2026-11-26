@@ -1,4 +1,4 @@
-"""Tests for the carry-INC peephole (`passes/carry_inc.py`) and the
+"""Tests for the carry-INC peephole (`cpp/src/passes/carry_inc.h`) and the
 carry-byte pairs in move coalescing that set it up.
 
 The peephole rewrites an in-place carry byte `LDA M; ADC #0; STA M`

@@ -144,7 +144,7 @@ class TestInlineShiftDirectMemoryEmit(unittest.TestCase):
     def test_shift_into_another_byte_runs_in_a(self):
         # A parameter shifted into a local isn't in place, so each
         # byte goes through A: `LDA x; ASL; STA t`, not `LDA x; STA
-        # t; ASL t` (passes/shift_in_a.py). `f` takes an unused `d`
+        # t; ASL t` (cpp/src/passes/shift_in_a.h). `f` takes an unused `d`
         # in A, so that `x` arrives in its slot.
         src = (
             "int f(unsigned char d [[c6502::in_a]], int x) {\n"

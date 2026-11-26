@@ -1,5 +1,5 @@
-"""Tests for `passes.optimization.value_range`,
-`passes.optimization.narrow_byte_range`, strength reduction's rule for
+"""Tests for cpp/src/passes/optimization/value_range.h,
+cpp/src/passes/optimization/narrow_byte_range.h, strength reduction's rule for
 a nonnegative signed dividend, and the `tac_to_asm` lowerings they
 lead to (`_inline_byte_divide`, `_shift_loop`, `_inline_byte_product`,
 and the pairing of a divide with a remainder)."""

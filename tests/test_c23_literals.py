@@ -1,5 +1,5 @@
 """Tests for C23's binary constants and digit separators (C23 §6.4.4.2,
-§6.4.4.3, §6.4.8; pp_numbers.py).
+§6.4.4.3, §6.4.8; cpp/src/pp_numbers.h).
 
 Coverage:
 

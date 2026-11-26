@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.read_stored_global`, which reads a
+"""Tests for cpp/src/passes/optimization/read_stored_global.h, which reads a
 global just stored from a temporary in place of the temporary, and runs
 of `*++P` in both pipelines."""
 

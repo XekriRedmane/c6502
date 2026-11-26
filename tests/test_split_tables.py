@@ -1,4 +1,4 @@
-"""Tests for passes/optimization/split_tables.py, which stores a table
+"""Tests for cpp/src/passes/optimization/split_tables.h, which stores a table
 of 2-byte (or wider) elements read by a byte index as its low bytes
 and then its high bytes."""
 

@@ -2,20 +2,20 @@
 
 Coverage:
 
-  * `passes/pointer_restage.py`: which wide stores through a pointer
+  * `cpp/src/passes/pointer_restage.h`: which wide stores through a pointer
     read the pointer again for each byte (`scalar_at`,
     `restage_store`), and that `P->g = v` and `r->g` then go through
     `(P),Y` and `(r),Y` for both bytes with no copy into DPTR, while
     `N->next = q` on a `struct node *N` keeps the copy.
-  * `passes/pointer_self_store.py`: a store through a pointer of the
+  * `cpp/src/passes/pointer_self_store.h`: a store through a pointer of the
     byte read from the same place goes, and a slot holding such a
     byte is read through the pointer again where that removes the
     copy. Each rewrite is checked on asm IR, with the facts that stop
     it.
   * `c99_to_tac._calls_first`: `E->level |= h(x)` calls `h` first.
-  * `passes/optimization/phi_offset.py`: `c ? &E->a : &E->b` chooses
+  * `cpp/src/passes/optimization/phi_offset.h`: `c ? &E->a : &E->b` chooses
     the offset in Y.
-  * `passes/optimization/distribute_constant.py`: `&p->options[n -
+  * `cpp/src/passes/optimization/distribute_constant.h`: `&p->options[n -
     1]` multiplies the byte `n`.
   * Each program runs in the simulator in both pipelines, with edge
     cases, including a node that holds its own address.

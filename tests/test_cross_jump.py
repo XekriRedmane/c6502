@@ -1,4 +1,4 @@
-"""Tests for `passes.cross_jump.apply_cross_jump`: of two blocks that
+"""Tests for `apply_cross_jump` (cpp/src/passes/cross_jump.h): of two blocks that
 end in the same instructions and a jump to the same place, the later
 jumps into the earlier one's copy.
 

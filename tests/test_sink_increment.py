@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.sink_increment`, which moves `Y = X
+"""Tests for cpp/src/passes/optimization/sink_increment.h, which moves `Y = X
 + c` past the last read of `X` in its block."""
 
 from __future__ import annotations

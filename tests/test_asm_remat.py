@@ -1,4 +1,4 @@
-"""Unit tests for `passes.asm_remat.apply_remat`.
+"""Unit tests for `apply_remat` (cpp/src/passes/asm_remat.h).
 
 Covers the single-atom mem-to-mem staging shape, the two-atom
 `Mov(<recomp>, Reg(A)); Mov(Reg(A), Data(local))` shape (post-

@@ -1,4 +1,4 @@
-"""Tests for `passes.counter_to_index_reg`.
+"""Tests for cpp/src/passes/counter_to_index_reg.h.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from

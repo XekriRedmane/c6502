@@ -1,5 +1,5 @@
 """A compare and a subtract of the same operands become one subtract
-(`passes/optimization/compare_subtract.py`, and
+(`cpp/src/passes/optimization/compare_subtract.h`, and
 `tac_to_asm.Translator._fused_subtract`).
 
 Each case runs in both pipelines, with values that make the compare

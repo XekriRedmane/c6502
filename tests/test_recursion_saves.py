@@ -1,7 +1,7 @@
 """Tests for `[[c6502::save_hardware_stack]]`: a recursive
 function whose recursive calls are marked gets a private zero-page
 pool, and saves what's live across each marked call on the hardware
-stack (`passes/recursion_saves.py`).
+stack (`cpp/src/passes/recursion_saves.h`).
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from

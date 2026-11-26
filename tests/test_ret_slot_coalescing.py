@@ -1,4 +1,4 @@
-"""Tests for `passes/ret_slot_coalescing.py`: a local pair holding a
+"""Tests for `cpp/src/passes/ret_slot_coalescing.h`: a local pair holding a
 copy of `F@ret` becomes `F@ret`.
 
 The tests that called the Python functions directly are doctest cases of

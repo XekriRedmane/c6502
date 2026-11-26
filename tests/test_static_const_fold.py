@@ -3,16 +3,16 @@ const-array-subscript fold + Add reassociation.
 
 Three composable optimizations:
 
-  1. `passes/optimization/static_const_fold.py` replaces
+  1. `cpp/src/passes/optimization/static_const_fold.h` replaces
      `Var(static_const_scalar)` USE positions with
      `Constant(value)` so downstream constant folding can collapse
      the resulting arithmetic.
-  2. `_fold_indexed_load` in `passes/optimization/constant_folding.py`
+  2. `_fold_indexed_load` in `cpp/src/passes/optimization/constant_folding.h`
      folds `IndexedLoad(static_const_array, Constant(byte_idx))` to
      a single Constant (the array element's value) when the index
      is element-aligned and the array's element type is const-
      qualified.
-  3. `passes/optimization/reassoc_const.py` collapses
+  3. `cpp/src/passes/optimization/reassoc_const.h` collapses
      `Constant(C1) + (Constant(C2) + V)` into `Constant(C1+C2) + V`
      so two nested 16-bit Adds become one.
 

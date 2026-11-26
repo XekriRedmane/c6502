@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.short_circuit_jump_fold`.
+"""Tests for cpp/src/passes/optimization/short_circuit_jump_fold.h.
 
 The pass rewrites the canonical 5-instruction short-circuit tail
 (`Copy(C_ft,%t); Jump(end); Label(branch); Copy(C_sc,%t); Label(end)`)

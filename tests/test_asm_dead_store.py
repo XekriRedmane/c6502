@@ -1,4 +1,4 @@
-"""Tests for `passes.asm_dead_store.apply_asm_dead_store`.
+"""Tests for `apply_asm_dead_store` (cpp/src/passes/asm_dead_store.h).
 
 The pass drops or morphs Mov-into-memory atoms whose written byte
 isn't observed by any subsequent instruction reachable in the CFG.

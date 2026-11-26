@@ -1,4 +1,4 @@
-"""passes/constant_store_order.py: a run of stores grouped by the value
+"""cpp/src/passes/constant_store_order.h: a run of stores grouped by the value
 stored, constant or loaded from memory, so each value is loaded once.
 
 The tests that called the Python functions directly are doctest cases of

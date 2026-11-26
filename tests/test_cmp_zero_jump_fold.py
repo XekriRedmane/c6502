@@ -1,4 +1,4 @@
-"""Tests for `passes.optimization.cmp_zero_jump_fold`.
+"""Tests for cpp/src/passes/optimization/cmp_zero_jump_fold.h.
 
 The pass rewrites `Binary(==/!=, x, 0, cond); JumpIf(cond, t)` —
 where `cond` is single-use — as a direct `JumpIf(x, t)` with the
@@ -205,9 +205,9 @@ class TestNarrowOrderingAsmShape(unittest.TestCase):
         # The loop test in `for (uint8_t i = 0; i < 105; i++)` should
         # compile to a 1-byte unsigned compare-and-branch:
         #     LDA <i>; CMP #105; BCC <body>
-        # at the bottom of the loop (passes/rotate_loop_test.py). The
+        # at the bottom of the loop (cpp/src/passes/rotate_loop_test.h). The
         # body reads `i`, or the loop would count down to 0
-        # (passes/optimization/count_down.py) and have no compare.
+        # (cpp/src/passes/optimization/count_down.h) and have no compare.
         src = (
             "#include <stdint.h>\n"
             "int main(void) {\n"

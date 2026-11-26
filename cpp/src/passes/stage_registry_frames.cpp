@@ -26,10 +26,6 @@ using SlotNames = DictOf<Str, ListOf<Str>>;
 using ByteNames = DictOf<Str, DictOf<IntC, Str>>;
 using Dims = DictOf<Str, FrameDimsC>;
 
-// Returns the argument at position `index` when the call gave that many
-// positional arguments, else the keyword argument `name`, or null when
-// the call gave neither or gave None, which is each parameter's Python
-// default here.
 const json::Value* param(const json::Value& args, std::size_t index, const json::Value& kwargs,
                          std::string_view name) {
   const json::Value* v = nullptr;
@@ -41,7 +37,6 @@ const json::Value* param(const json::Value& args, std::size_t index, const json:
   return v != nullptr && v->kind != json::Value::Kind::kNull ? v : nullptr;
 }
 
-// Decodes the value `v` points to with `C`, or gives none for null.
 template <class C>
 std::optional<typename C::type> decode_opt(const json::Value* v) {
   if (v == nullptr) {
@@ -112,8 +107,6 @@ StageOutput run_replace_pseudoregisters_bare_exit(const capture::Call& call, con
 StageOutput run_local_slot_names(const capture::Call& call, const AsmContext&,
                                  const json::Value& args, const json::Value& kwargs) {
   const auto pools = Pools::decode(json::parse(call.input));
-  // Python's `colorings` has no default, and `compute_local_slot_names`
-  // reads it with `.get`, so None would raise there.
   const json::Value* colorings_json = param(args, 0, kwargs, "colorings");
   if (colorings_json == nullptr) {
     throw std::runtime_error("compute_local_slot_names was given no colorings");
@@ -131,7 +124,6 @@ StageOutput run_local_slot_names(const capture::Call& call, const AsmContext&,
 StageOutput run_lower_data_load_address(const capture::Call& call, const AsmContext&,
                                         const json::Value&, const json::Value& kwargs) {
   auto prog = asm_program(call);
-  // Both are keyword-only in Python.
   const auto slot_symbols = decode_opt<Addrs>(param(json::Value{}, 0, kwargs, "slot_symbols"));
   const auto byte_names = decode_opt<ByteNames>(param(json::Value{}, 0, kwargs, "byte_names"));
   return {asdl::dump(lower_data_load_address(std::move(prog), ptr(slot_symbols), ptr(byte_names))),

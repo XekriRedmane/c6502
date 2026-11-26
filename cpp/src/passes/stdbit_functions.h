@@ -1,6 +1,5 @@
-// The port of passes/stdbit_functions.py: the definitions of the
-// <stdbit.h> functions a unit refers to by name, which the type checker
-// adds before it checks the program.
+// The definitions of the <stdbit.h> functions a unit refers to by name,
+// which the type checker adds before it checks the program.
 #pragma once
 
 #include <string>
@@ -12,10 +11,7 @@
 namespace c6502::passes::stdbit_functions {
 
 // Returns the resolved name of the parameter of the definition of
-// `name`, `@<name>.value`. The symbol table holds every parameter by its
-// resolved name, so each definition needs its own, and the letters after
-// the `@` keep it apart from the names identifier_resolution makes,
-// which have digits there.
+// `name`, `@<name>.value`.
 std::string parameter(std::string_view name);
 
 // Appends to `decls`, a program's file-scope declarations, a definition

@@ -1,6 +1,3 @@
-// compile.py's `translate_for_codegen` and `_optimized_tac`: the
-// translation of the type-checked c99 program to TAC and, under `-O`,
-// the TAC passes that run before code generation.
 #pragma once
 
 #include "c99_ast.h"

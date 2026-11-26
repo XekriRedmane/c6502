@@ -33,15 +33,11 @@ const json::Value& arg(const json::Value& args, std::size_t i) {
   return args.items[i];
 }
 
-// Returns the keyword argument `name`, or null when the call wasn't
-// given it or was given None.
 const json::Value* kwarg(const json::Value& kwargs, std::string_view name) {
   const json::Value* v = kwargs.get(name);
   return v != nullptr && v->kind != json::Value::Kind::kNull ? v : nullptr;
 }
 
-// Returns the type table given as positional argument `index` or as the
-// keyword `types`, or none, as Python's default is None.
 std::optional<TypeTable> types_of(const json::Value& args, std::size_t index,
                                   const json::Value& kwargs) {
   if (args.items.size() > index) {
@@ -59,7 +55,6 @@ tac_ast::Program tac_program(const capture::Call& call) {
   return asdl::load<tac_ast::Program>(call.input);
 }
 
-// Returns the options of an allocator from its keyword arguments.
 ZpAllocationOptions allocation_options(const json::Value& kwargs) {
   ZpAllocationOptions options;
   if (const json::Value* v = kwarg(kwargs, "pool")) {
@@ -83,8 +78,6 @@ ZpAllocationOptions allocation_options(const json::Value& kwargs) {
     options.fallback = RangeC::decode(*v);
   }
   if (const json::Value* v = kwarg(kwargs, "shares")) {
-    // The harness records a tuple of shares as a tuple, and a list as a
-    // list.
     options.shares = v->get("tuple") != nullptr ? TupleOf<SlotShareC>::decode(*v)
                                                 : Shares::decode(*v);
   }
@@ -100,8 +93,6 @@ const char* kFunctionMeta = "passes.zp_link_metadata.FunctionMeta";
 const char* kExternMeta = "passes.zp_link_metadata.ExternMeta";
 const char* kLinkMetadata = "passes.zp_link_metadata.LinkMetadata";
 
-// The codec of a `LinkMetadata`, whose fields and those of its records
-// are in the dataclasses' order.
 struct LinkMetadataC {
   using type = LinkMetadata;
   using Pinned = ListOf<Optional<IntC>>;
@@ -188,11 +179,6 @@ StageOutput run_plan_zero_page(const capture::Call& call, const AsmContext&,
   const SymbolTable symbols = SymbolTableC::decode(arg(args, 0));
   const auto types = types_of(args, 1, kwargs);
   const json::Value* promote = kwarg(kwargs, "promote");
-  // Python measures the HARGS bytes of `tac_to_asm`'s translation of the
-  // program when the runtime's block has to move. Until group F connects
-  // group C's port of `tac_to_asm` here, the measure is the HARGS size
-  // the recorded result holds, which is that measure or 1 when the
-  // program uses none, and `choose_layout` makes the same size of both.
   const HargsNeed need = [&call]() -> asdl::Int {
     if (!call.output_is_json || call.output.empty()) {
       throw std::runtime_error(
@@ -263,8 +249,6 @@ StageOutput run_local_slot_symbols(const capture::Call& call, const AsmContext&,
   const auto pools = Pools::decode(json::parse(call.input));
   const json::Value* names = kwarg(kwargs, "slot_names_by_fn");
   if (names == nullptr) {
-    // Without the names, Python names the slots from the colorings
-    // (`colorings or {}`) with `compute_local_slot_names`.
     const json::Value* colorings =
         !args.items.empty() ? &args.items[0] : kwargs.get(std::string("colorings"));
     ColoringsByFunction by_fn;

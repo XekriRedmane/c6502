@@ -1,33 +1,3 @@
-// The port of passes/stdbit_functions.py, the definitions of the
-// <stdbit.h> functions a unit refers to by name.
-//
-// <stdbit.h> declares each function with a suffix, such as `unsigned int
-// stdc_leading_zeros_uc(unsigned char value);`, and defines its name as
-// a macro for the builtin `__c6502_stdc_leading_zeros_uc`
-// (docs/stdbit.md). A call written the ordinary way expands to the
-// builtin, which is lowered in place. C23 §7.1.4 also lets a program
-// reach the function itself, by taking its address, by calling
-// `(stdc_leading_zeros_uc)(x)`, whose parentheses keep the macro from
-// expanding, or by calling it after `#undef`. c6502 has no library to
-// hold the functions, so `add_definitions` writes a definition of each
-// one a unit refers to that way, whose body returns the builtin of its
-// parameter, and the type checker gives it internal linkage.
-//
-// A definition is added only for a name that a file-scope declaration
-// without `static` declares as a function, so a program that doesn't
-// include <stdbit.h> can still use the names for its own static
-// functions and objects. A name the unit defines itself gets no second
-// definition.
-//
-// The declarations of the functions the unit doesn't refer to are
-// removed, all 70 of them in a unit that calls none, since the later
-// passes would give each one zero-page parameter slots, `EQU` lines, and
-// a line of link metadata.
-//
-// Each unit that refers to a function has its own copy, at its own
-// address. C23 has one function with external linkage, so a pointer to
-// it from one unit compares unequal to a pointer from another, which is
-// the one way this falls short of the standard.
 #include "passes/stdbit_functions.h"
 
 #include <set>
@@ -42,9 +12,6 @@ namespace {
 namespace ir = ::c6502::c99_ast;
 using Names = std::set<std::string, std::less<>>;
 
-// Returns the builtin of the <stdbit.h> function `name`, one of a
-// single parameter type such as `stdc_leading_zeros_uc`, or an empty
-// string when `name` isn't one (Python's `STDBIT_FUNCTIONS`).
 std::string function_builtin(std::string_view name) {
   std::string builtin = "__c6502_" + std::string(name);
   const auto* b = builtin_functions::find_stdbit_builtin(builtin);
@@ -95,7 +62,6 @@ void names_in(const ir::Type_declaration& d, Names& names) {
   }
 }
 
-// Adds to `names` every name a `Var` or `FunctionCall` in `e` refers to.
 void names_in(const ir::Type_exp& e, Names& names) {
   using E = ir::Kind_exp;
   switch (ir::kind(e)) {
@@ -291,8 +257,6 @@ void names_in(const ir::Type_statement& s, Names& names) {
 std::string parameter(std::string_view name) { return "@" + std::string(name) + ".value"; }
 
 std::vector<std::string> add_definitions(std::vector<ir::Type_declaration>& decls) {
-  // The first declaration of each function, in the order of the
-  // program (Python's dict keeps the order of insertion).
   std::vector<std::pair<std::string, ir::Type_data_type>> declared;
   Names declared_names;
   Names defined;
@@ -316,9 +280,6 @@ std::vector<std::string> add_definitions(std::vector<ir::Type_declaration>& decl
   if (declared.empty()) {
     return {};
   }
-  // Only the bodies of function definitions and the other declarations
-  // are searched, so a declaration of a function doesn't count as a
-  // reference to it.
   Names referenced;
   for (const auto& d : decls) {
     if (const auto* f = std::get_if<ir::FunctionDecl>(&d)) {

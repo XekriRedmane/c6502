@@ -1,5 +1,3 @@
-// passes/string_lifting.py: the string literals that don't initialize a
-// character array, each hoisted into a file-scope `static char[N+1]`.
 #pragma once
 
 #include "c99_ast.h"
@@ -10,10 +8,10 @@ namespace c6502::passes {
 // naming a new file-scope `static char str@N[len+1]` that the string
 // initializes, except a string that initializes a character array
 // directly, which stays in place. The new declarations go in front of
-// the program's, numbered from 0 in the order of Python's walk. A list
-// with designators is first rewritten into positional form
-// (`designators::normalize_initializer`), which throws `CompileError`
-// of type `TypeCheckError` for a designator the type doesn't take.
+// the program's, numbered from 0. A list with designators is first
+// rewritten into positional form (`designators::normalize_initializer`),
+// which throws `CompileError` of type `TypeCheckError` for a designator
+// the type doesn't take.
 c99_ast::Program lift_strings(c99_ast::Program prog);
 
 }  // namespace c6502::passes

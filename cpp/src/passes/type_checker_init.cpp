@@ -1,19 +1,3 @@
-// Part T-B of the port of passes/type_checking.py: static initializers
-// and `constexpr` objects. These are the module's functions of
-// type_checking.py:491-1199, which compute the value tree of a static
-// object's initializer, and the checker's methods of 3637-4438, which
-// check blocks, block-scope declarations, compound literals, the
-// initializers of arrays, structs, and unions, and the rules of C23's
-// `constexpr` (§6.7.2).
-//
-// A static object's value tree is in the "natural form" of its type: an
-// integer for an integer type (unbounded, so the static_init builder
-// masks it to the type's width), the IEEE 754 bits of a `float` or a
-// `double` as an integer, an `AddressInit` for an address constant, a
-// tuple of the elements or members for an array or a struct, and for a
-// union a tuple of its first member's tree or a `UnionValue`. No
-// floating value of the host reaches a tree, since every conversion
-// between integer and floating values goes through fp_arith.
 #include <set>
 #include <string>
 #include <vector>
@@ -75,8 +59,6 @@ std::string struct_keyword(const Type& t) {
   return asdl::isa<ir::Union>(t) ? "union" : "struct";
 }
 
-// Returns `text` with every occurrence of `from` replaced by `to`, as
-// Python's `str.replace` does.
 std::string replace_all(std::string text, const std::string& from, const std::string& to) {
   if (from.empty()) {
     return text;
@@ -99,9 +81,6 @@ std::size_t code_point_count(const std::string& s) { return pyrepr::code_points(
 
 Int as_int(std::size_t n) { return Int(static_cast<long long>(n)); }
 
-// Returns Python's `int()` of the truncated floating value with IEEE 754
-// `bits`, which raises for an infinity or a NaN, with the message of
-// `int(float)`.
 Int floating_bits_to_int(Int bits, bool single, const Type& target) {
   const auto truncated =
       single ? fp_arith::single_bits_to_int(bits) : fp_arith::double_bits_to_int(bits);
@@ -116,18 +95,12 @@ Int floating_bits_to_int(Int bits, bool single, const Type& target) {
   if (const auto exact = truncated->exact()) {
     return *exact;
   }
-  // A value of 2^126 or more is reduced to the target's width here,
-  // which Python's unbounded int and the reduction after it give too.
   if (is_integer_type(target) && !asdl::isa<ir::Bool>(target)) {
     return truncated->wrapped(int_bits(target));
   }
   throw InternalError("a floating value too large for a 128-bit integer");
 }
 
-// Returns the value tree `value`, of type `source_type`, in
-// `target_type`'s form. An integer goes through `coerce_init_value`.
-// An address converts only to a pointer, which leaves it as it is, or to
-// `bool`, where the address of an object isn't null.
 ValueTree coerce_tree(const ValueTree& value, const Type& source_type, const Type& target_type) {
   if (value.kind == ValueTree::Kind::kInt) {
     return tree_int(coerce_init_value(value.integer, source_type, target_type));
@@ -138,7 +111,6 @@ ValueTree coerce_tree(const ValueTree& value, const Type& source_type, const Typ
     return value;
   }
   if (asdl::isa<ir::Bool>(target)) {
-    // `int(value != 0)` of a tuple or an `AddressInit` is 1.
     return tree_int(1);
   }
   if (is_floating_type(target) || is_integer_type(target) || is_floating_type(source)) {
@@ -147,8 +119,6 @@ ValueTree coerce_tree(const ValueTree& value, const Type& source_type, const Typ
   return value;
 }
 
-// The address constant `exp` gives, as Python's `_address_constant`
-// computes it with its nested functions.
 class AddressConstant {
  public:
   AddressConstant(const std::string& name, const SymbolTable* symbols, const TypeTable* types)
@@ -194,7 +164,6 @@ class AddressConstant {
     failure("names no member " + pyrepr::string(member) + " of " + asdl::py_repr(t));
   }
 
-  // Returns the address of the object the lvalue `e` designates.
   AddressInit lvalue(const Exp& e) const {
     switch (ir::kind(e)) {
       case E::Var:
@@ -250,7 +219,6 @@ class AddressConstant {
     }
   }
 
-  // Returns the address that the pointer-valued `e` holds.
   AddressInit pointer(const Exp& e) const {
     switch (ir::kind(e)) {
       case E::AddressOf:
@@ -305,7 +273,6 @@ class AddressConstant {
   const TypeTable* types_;
 };
 
-// The offset `_null_based_offset` computes with its nested functions.
 class NullBasedOffset {
  public:
   explicit NullBasedOffset(const TypeTable* types) : types_(types) {}
@@ -417,14 +384,10 @@ class NullBasedOffset {
   const TypeTable* types_;
 };
 
-// Returns whether `t`, without qualifiers, is `float` or `double`.
 bool is_fp(const std::optional<Type>& t) {
   return t && asdl::isa<ir::Float, ir::Double>(strip_quals(*t));
 }
 
-// Python's `_FP_FOLDS`: the floating operations a static initializer
-// folds, each in its `float` and `double` forms in fp_arith. Returns
-// null for any other operator.
 using FpFold = Int (*)(Int, Int);
 const FpFold* fp_folds(const ir::Type_binary_operator& op) {
   static const FpFold kAdd[2] = {&fp_arith::single_add, &fp_arith::double_add};
@@ -445,8 +408,6 @@ const FpFold* fp_folds(const ir::Type_binary_operator& op) {
   }
 }
 
-// Returns the value of an integer constant variant, the bit pattern it
-// holds.
 Int const_raw_value(const ir::Type_const& c) {
   using C = ir::Kind_const;
   switch (ir::kind(c)) {
@@ -475,7 +436,6 @@ Int const_raw_value(const ir::Type_const& c) {
   }
 }
 
-// Parses the decimal digits of a `zeropage(addr)` marker's address.
 Int parse_decimal(std::string_view digits) {
   Int v = 0;
   bool negative = false;
@@ -499,14 +459,6 @@ Int parse_decimal(std::string_view digits) {
 
 }  // namespace
 
-// ---------------------------------------------------------------------
-// The module's functions.
-// ---------------------------------------------------------------------
-
-// Maps a constant's payload into `target_type`'s natural static-init
-// form: an integer for an integer type, or the IEEE 754 bits for
-// `float` and `double`. The constant's own type comes from its variant,
-// and a conversion across the floating boundary goes through fp_arith.
 Int coerce_init_const_value(const ir::Type_const& c, const Type& target_type) {
   const Type src_type = const_source_type(c);
   Int raw = 0;
@@ -520,20 +472,11 @@ Int coerce_init_const_value(const ir::Type_const& c, const Type& target_type) {
   } else if (const auto* d = std::get_if<ir::ConstDouble>(&c)) {
     raw = d->bits;
   } else {
-    // An integer constant holds its bit pattern, so a signed one with
-    // the sign bit set is negative.
     raw = coerce_int_to_type(const_raw_value(c), src_type);
   }
   return coerce_init_value(raw, src_type, target_type);
 }
 
-// Converts `value`, in `source_type`'s natural static-init form, into
-// `target_type`'s. A conversion to the same type changes nothing, an
-// integer converts to an integer as a cast does, and a conversion to or
-// from a floating type goes through fp_arith. Qualifiers don't change a
-// value's form, so they are stripped first: `static const double x =
-// 1.5;` once stored the integer 1 as its bits, since `Const(Double)`
-// didn't count as floating.
 Int coerce_init_value(Int value, const Type& source_type, const Type& target_type) {
   const Type& source = strip_quals(source_type);
   const Type& target = strip_quals(target_type);
@@ -556,14 +499,12 @@ Int coerce_init_value(Int value, const Type& source_type, const Type& target_typ
   const bool src_is_fp = asdl::isa<ir::Float, ir::Double>(source);
   const bool tgt_is_fp = asdl::isa<ir::Float, ir::Double>(target);
   if (src_is_fp && tgt_is_fp) {
-    // A floating value changes precision.
     if (asdl::isa<ir::Float>(source)) {
       return fp_arith::single_bits_to_double_bits(value);
     }
     return fp_arith::double_bits_to_single_bits(value);
   }
   if (!src_is_fp && tgt_is_fp) {
-    // An integer value becomes the IEEE 754 bits of the target.
     if (asdl::isa<ir::Float>(target)) {
       return fp_arith::int_to_single_bits(value);
     }
@@ -574,21 +515,12 @@ Int coerce_init_value(Int value, const Type& source_type, const Type& target_typ
     // §6.3.1.4).
     value = floating_bits_to_int(value, asdl::isa<ir::Float>(source), target);
   }
-  // An integer wraps to the target's range here, since a cast in the
-  // middle of a chain has to wrap at the cast's width. `static long v =
-  // (unsigned char)400;` once stored 400, where the conversion gives
-  // 144, and `(signed char)200` gave 200 where it gives -56. The
-  // static-const folds read the value too, and the static_init builder
-  // masks it to the target's width.
   if (is_integer_type(target)) {
     return coerce_int_to_type(value, target);
   }
   return value;
 }
 
-// Returns the data type of a constant variant, for the coercion of
-// static initializers. A `ConstChar` gives `char` here, where the
-// constant evaluator gives `signed char`.
 Type const_source_type(const ir::Type_const& c) {
   using C = ir::Kind_const;
   switch (ir::kind(c)) {
@@ -624,42 +556,15 @@ Type const_source_type(const ir::Type_const& c) {
   throw InternalError("unexpected c99 const: " + asdl::py_repr(c));
 }
 
-// Returns the address that the pointer-valued expression `exp` gives,
-// as a static object's or function's name and a byte offset from it,
-// for the initializer of the static-storage object `name`. C99 §6.6p9
-// forms such an address constant with `&` (or an array's or function's
-// decay, which the type checker writes as an `AddressOf`), `[]`, `.`,
-// `->`, `*`, pointer casts, and the addition or subtraction of an
-// integer constant. So `A[5] + 2`, with `A` a `uint8_t[11][14]`, is `A`
-// plus 72 bytes. Throws when `exp` isn't one, as `&p[1]` isn't for a
-// pointer `p`, since its value depends on what `p` holds at run time.
 AddressInit address_constant(const Exp& exp, const std::string& name, const SymbolTable* symbols,
                              const TypeTable* types) {
   return AddressConstant(name, symbols, types).pointer(exp);
 }
 
-// Returns the address that the type-checked pointer expression `exp`
-// gives when it is a member or element of an object at address 0, as in
-// `&((struct s *)0)->m[2]`, or none for any other expression.
-// <stddef.h>'s `offsetof(type, member)` expands to such an address
-// converted to `size_t`, and C23 §7.21p4 makes that an integer constant
-// expression, so the type checker folds the address to a constant.
-// Nothing is read at address 0, since `->`, `.`, `[]`, and `&` only
-// compute addresses here.
 std::optional<Int> null_based_offset(const Exp& exp, const TypeTable* types) {
   return NullBasedOffset(types).pointer(exp);
 }
 
-// Returns the value of a static-storage initializer, which C99 §6.7.8p4
-// requires to be a constant expression. After the checks and the
-// conversion of the initializer, `exp` is a `Constant`, a named
-// constant, a `Cast` of one of these (each cast applies its conversion
-// in turn, so `(int)(float)0x100` goes through float), an address
-// constant (C99 §6.6p9, `_address_constant`), a floating `+`, `-`, or an
-// operation of `_FP_FOLDS`, or an integer operator expression that the
-// constant evaluator folds. The value is in `target_type`'s natural
-// form. `symbols` tells whether the object an address names has static
-// storage, since the address of a local isn't constant.
 ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::string& name,
                            const SymbolTable* symbols, const TypeTable* types) {
   switch (ir::kind(exp)) {
@@ -696,12 +601,9 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
   }
   if (const auto* u = std::get_if<ir::Unary>(&exp)) {
     if (asdl::isa<ir::Plus>(u->op) && is_fp(t)) {
-      // `+1.5` is `1.5`.
       return const_init_value(*u->exp, target_type, name, symbols, types);
     }
     if (asdl::isa<ir::Negate>(u->op) && is_fp(t)) {
-      // `-1.5` negates the IEEE 754 pattern by flipping its sign bit,
-      // and then converts from the operand's type to the target.
       const Type fp_t = strip_quals(*t);
       const bool single = asdl::isa<ir::Float>(fp_t);
       const ValueTree bits = const_init_value(*u->exp, fp_t, name, symbols, types);
@@ -715,10 +617,6 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
   if (const auto* b = std::get_if<ir::Binary>(&exp)) {
     if (is_fp(t)) {
       if (const FpFold* folds = fp_folds(b->op)) {
-        // `1.0 / 3.0`, computed as the program would compute it, in the
-        // type of the operation, to which the type checker has converted
-        // both operands, so that C23's `constexpr double third = 1.0 /
-        // 3.0;` compiles (§6.7.2p18).
         const Type fp_t = strip_quals(*t);
         const ValueTree a = const_init_value(*b->left, fp_t, name, symbols, types);
         const ValueTree c = const_init_value(*b->right, fp_t, name, symbols, types);
@@ -735,10 +633,6 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
       t && is_integer_type(strip_quals(*t))) {
     const auto* call = std::get_if<ir::FunctionCall>(&exp);
     if (call == nullptr || builtin_functions::is_builtin(call->name)) {
-      // An integer operator expression such as `-5`, `1 << 20`, or
-      // `sizeof(long)`. C99 §6.6p6 lets an arithmetic constant
-      // expression use these, and the folder applies C's width and
-      // signedness rules.
       try {
         const auto [value, value_type] = ce::evaluate_integer_constant_expression(exp);
         return tree_int(coerce_init_value(value, value_type, target_type));
@@ -752,14 +646,6 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
        " is not a constant expression");
 }
 
-// Returns a value tree of zeros for a static object of type `t`: 0 for
-// a scalar (the bits of +0.0 are all zero, so 0 serves for `float` and
-// `double` too), a tuple of `N` zeroed elements for an array, and for a
-// struct a tuple with each member zeroed in declaration order. A union
-// zeroes only its first member, since its bytes are all zero anyway, and
-// the first member's shape gives the static_init flattening a uniform
-// tree to walk. It serves tentative definitions and the trailing entries
-// a partial array initializer leaves out.
 ValueTree zero_aggregate(const Type& type, const TypeTable* types) {
   const Type& t = strip_quals(type);
   if (const auto* a = std::get_if<ir::Array>(&t)) {
@@ -793,9 +679,6 @@ ValueTree zero_aggregate(const Type& type, const TypeTable* types) {
   return tree_int(0);
 }
 
-// Returns whether `t` is one of the three character element types,
-// qualified or not, which a string literal may initialize an array of
-// (C99 §6.7.8p14).
 bool is_char_element(const Type& t) {
   return asdl::isa<ir::Char, ir::SChar, ir::UChar>(strip_quals(t));
 }
@@ -819,14 +702,6 @@ std::vector<std::optional<Int>> param_zeropage(const std::vector<std::string>& m
   return out;
 }
 
-// Returns `t` completed by its initializer `init` when `t` is an array
-// of unknown size (C99 §6.7.8p22): a string literal for an array of
-// char gives its length plus the null, and a braced list its number of
-// items. Anything else, no initializer among them, leaves `t` as it is,
-// and the checks after it reject the incomplete type. The empty
-// initializer `{}` is an error, because C23 §6.7.11p4 states "An array
-// of unknown size shall not be initialized by an empty initializer."
-// `what` names the object in the message, as in "array 'a'".
 Type size_from_initializer(const Type& t, const Exp* init, std::string_view what) {
   const auto* a = std::get_if<ir::Array>(&t);
   if (a == nullptr || a->size != Int(0) || init == nullptr) {
@@ -849,12 +724,6 @@ Type size_from_initializer(const Type& t, const Exp* init, std::string_view what
   return ir::Array{.element_type = *a->element_type, .size = size};
 }
 
-// Returns the constant that the empty initializer `{}` gives a scalar
-// of type `t`, before its conversion to `t`. C23 §6.7.11p11 initializes
-// a pointer to a null pointer and an arithmetic object to zero. Integer
-// 0 is a null pointer constant, and it converts to every integer type,
-// to bool, and to `nullptr_t` (§6.3.2.4p2). A floating object gets a
-// floating zero, so no integer-to-float conversion is left for run time.
 Exp empty_init_zero(const Type& type) {
   const Type& t = strip_quals(type);
   if (asdl::isa<ir::Float>(t)) {
@@ -866,13 +735,6 @@ Exp empty_init_zero(const Type& type) {
   return ir::Constant{.const_ = ir::ConstInt{.value = 0}, .data_type = std::nullopt};
 }
 
-// Returns the expression that initializes a scalar of type `t` from its
-// initializer `init`. C23 §6.7.11p12 states "The initializer for a
-// scalar shall be a single expression, optionally enclosed in braces, or
-// it shall be an empty initializer." So `{5}` and `{5,}` give the 5, and
-// `{}` gives the zero of `empty_init_zero`. A list of two or more items
-// and a second pair of braces (`{{5}}`) are errors. `what` names the
-// scalar in the message, as in "scalar variable 'x'".
 Exp unbrace_scalar_init(Exp init, const Type& t, std::string_view what) {
   auto* list = std::get_if<ir::InitList>(&init);
   if (list == nullptr) {
@@ -895,9 +757,6 @@ Exp unbrace_scalar_init(Exp init, const Type& t, std::string_view what) {
   return item;
 }
 
-// Returns the composite of two array types that differ only in that one
-// has an unknown size (C99 §6.7.5.2p6, §6.2.7p3), which is the one with
-// the size, or none when they aren't such a pair.
 std::optional<Type> composite_array(const Type& a, const Type& b) {
   const auto* aa = std::get_if<ir::Array>(&a);
   const auto* ba = std::get_if<ir::Array>(&b);
@@ -916,11 +775,6 @@ std::optional<Type> composite_array(const Type& a, const Type& b) {
   return std::nullopt;
 }
 
-// Returns the value tuple of a string literal's body (one code point per
-// byte, 0 to 255) for an array of `n` characters: the bytes, then zeros
-// to `n`, the first of which is the null terminator. The caller has
-// checked that the string isn't longer than `n`. When it is exactly `n`
-// long the null is left out (C99 §6.7.8p14 and its footnote).
 ValueTree string_to_value_tuple(const std::string& s, Int n) {
   std::vector<ValueTree> out;
   for (const std::uint32_t c : pyrepr::code_points(s)) {
@@ -932,18 +786,10 @@ ValueTree string_to_value_tuple(const std::string& s, Int n) {
   return tree_tuple(std::move(out));
 }
 
-// Returns the value tree (a scalar or nested tuples) of an array, struct,
-// or union static initializer. Scalar leaves go through
-// `const_init_value`, so every rule of constant expressions applies, and
-// an array or struct recurses into its list's items, with the
-// element's or member's zero for each trailing entry the list leaves out
-// (C99 §6.7.8p21).
 ValueTree const_init_aggregate(const Exp& init, const Type& var_type0, const std::string& name,
                                const SymbolTable* symbols, const TypeTable* types) {
   const Type& var_type = strip_quals(var_type0);
   if (const auto* a = std::get_if<ir::Array>(&var_type)) {
-    // A string literal initializing a char array, at any depth, lays
-    // its bytes down with zeros to the array's size.
     if (const auto* s = std::get_if<ir::String>(&init);
         s != nullptr && is_char_element(*a->element_type)) {
       return string_to_value_tuple(s->str, a->size);
@@ -984,7 +830,6 @@ ValueTree const_init_aggregate(const Exp& init, const Type& var_type0, const std
     if (found == nullptr || !found->complete) {
       fail("static struct/union " + pyrepr::string(name) + " has incomplete type");
     }
-    // A copy, since the recursion reads the table again.
     const StructLayout layout = *found;
     std::vector<MemberInfo> members;
     if (asdl::isa<ir::Union>(var_type)) {
@@ -1018,9 +863,6 @@ ValueTree const_init_aggregate(const Exp& init, const Type& var_type0, const std
   return const_init_value(init, var_type0, name, symbols, types);
 }
 
-// Returns the index in `layout` of the union member that the list
-// `init` initializes: the one `init.union_member` names, or the first
-// member when it names none.
 int union_member_index(const StructLayout& layout, const ir::InitList& init) {
   if (!init.union_member) {
     return 0;
@@ -1032,10 +874,6 @@ int union_member_index(const StructLayout& layout, const ir::InitList& init) {
   }
   fail("union '" + layout.tag + "' has no member named " + pyrepr::string(*init.union_member));
 }
-
-// ---------------------------------------------------------------------
-// Blocks and block-scope declarations.
-// ---------------------------------------------------------------------
 
 void TypeChecker::check_block(ir::Type_block& block) {
   for (ir::Type_block_item& item : std::get<ir::Block>(block).block_item) {
@@ -1065,9 +903,6 @@ void TypeChecker::check_block_declaration(ir::Type_declaration& decl) {
   }
 }
 
-// string_lifting has put the whole program's lists in positional form,
-// so this matters for the lists the parser checks while folding a
-// `constexpr` object.
 Exp TypeChecker::normalize_init(Exp init, const Type& t, const std::optional<std::string>& name) {
   const designators::LayoutOf layout_of =
       [this](std::string_view tag) -> std::optional<designators::Members> {
@@ -1108,11 +943,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
     fail("object " + pyrepr::string(vd.name) + " declared with non-object type " +
          asdl::py_repr(vd.data_type));
   }
-  // A struct or union object's tag must be complete where it is
-  // declared. A pointer to a struct may point to an incomplete one, since
-  // the walk passes `require_complete` false through a `Pointer`. A
-  // block-scope `extern` declaration may name an incomplete struct or
-  // array, whose definition is elsewhere, as at file scope.
   const bool is_extern_decl = vd.storage_class && asdl::isa<ir::Extern>(*vd.storage_class);
   const bool is_static = vd.storage_class && asdl::isa<ir::Static>(*vd.storage_class);
   const bool require_complete =
@@ -1156,12 +986,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
       // §6.7.8p10), an array as a tuple of zeros of its size.
       initial = Initial{zero_aggregate(vd.data_type, &types)};
     } else if (auto* arr = std::get_if<ir::Array>(&vd.data_type)) {
-      // `static int a[3] = {1, 2, 3};` takes a braced list, which
-      // `check_array_init_list` checks and converts item by item, and
-      // `const_init_aggregate` then walks the same tree for the value
-      // tuple, with the missing trailing entries padded. A char array
-      // initialized by a string literal (`static char a[N] = "abc";`)
-      // takes its own path of §6.7.8p14.
       const ir::Array arr_type = *arr;
       if (auto* s = std::get_if<ir::String>(&*vd.init);
           s != nullptr && is_char_element(*arr_type.element_type)) {
@@ -1177,8 +1001,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
         initial = Initial{const_init_aggregate(*vd.init, vd.data_type, vd.name, &symbols, &types)};
       }
     } else if (asdl::isa<ir::Structure, ir::Union>(strip_quals(vd.data_type))) {
-      // `static struct s x = {1, 2};`, or a structure constant in place
-      // of the list.
       if (auto* list = std::get_if<ir::InitList>(&*vd.init)) {
         const Type struct_type = vd.data_type;
         check_struct_init_list(*list, struct_type, vd.name);
@@ -1192,11 +1014,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
         initial = Initial{std::move(*value)};
       }
     } else {
-      // As for a file-scope static: the initializer is checked and
-      // converted to the declared type (so a constant of another variant
-      // gets an implicit cast), and its value is read through the casts.
-      // An array or a function decays to a pointer first, as it does at
-      // file scope.
       Exp init = unbrace_scalar_init(std::move(*vd.init), vd.data_type,
                                      "scalar variable " + pyrepr::string(display_name(vd.name)));
       check_exp(init);
@@ -1221,10 +1038,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
     symbols.insert_or_assign(vd.name, Symbol{.type = vd.data_type, .attrs = std::move(attr)});
     return;
   }
-  // `int x;` or `long x;`, with automatic storage. The initializer is an
-  // expression evaluated at run time, which is checked and converted to
-  // the declared type, so the AST has an explicit cast for any change of
-  // width, as for an assignment, a return, and an argument.
   const bool is_register = vd.storage_class && asdl::isa<ir::Register>(*vd.storage_class);
   if (is_register) {
     check_register_object(vd.data_type, 1, "register local " + pyrepr::string(vd.name));
@@ -1240,10 +1053,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
   // for the dispatch on the aggregate's shape.
   const Type data_type_uq = strip_quals(vd.data_type);
   if (const auto* arr = std::get_if<ir::Array>(&data_type_uq)) {
-    // An array takes a braced list (`int a[3] = {1, 2, 3};`). A char
-    // array initialized by a string literal (`char a[N] = "abc";`)
-    // takes its own path of §6.7.8p14, which c99_to_tac lowers to a
-    // store per byte.
     if (auto* s = std::get_if<ir::String>(&*vd.init);
         s != nullptr && is_char_element(*arr->element_type)) {
       check_string_array_init(*s, *arr, vd.name);
@@ -1258,8 +1067,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
     return;
   }
   if (asdl::isa<ir::Structure, ir::Union>(data_type_uq)) {
-    // A struct or union takes a braced list, one item per member, or an
-    // expression of the same struct type, which copies it.
     if (auto* list = std::get_if<ir::InitList>(&*vd.init)) {
       check_struct_init_list(*list, data_type_uq, vd.name);
       return;
@@ -1272,9 +1079,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
     }
     return;
   }
-  // A scalar's initializer may be in braces (`int x = {5};`) or be the
-  // empty initializer (`int x = {};`), and `int x = {1, 2};` is
-  // rejected.
   Exp init = unbrace_scalar_init(std::move(*vd.init), vd.data_type,
                                  "scalar variable " + pyrepr::string(display_name(vd.name)));
   check_exp(init);
@@ -1282,12 +1086,6 @@ void TypeChecker::check_block_var_body(ir::Type_var_decl& vd) {
   vd.init = convert_to(std::move(init), vd.data_type);
 }
 
-// ---------------------------------------------------------------------
-// `constexpr` objects (C23 §6.7.2).
-// ---------------------------------------------------------------------
-
-// The evaluator in constant_expression.cpp reads this through
-// `named_constant`.
 std::optional<NamedConstant> TypeChecker::named_constant(const Exp& exp) {
   if (const auto* v = std::get_if<ir::Var>(&exp)) {
     const auto it = constexpr_values.find(v->name);
@@ -1317,7 +1115,6 @@ std::optional<NamedConstant> TypeChecker::named_constant(const Exp& exp) {
   }
   const ValueTree& value = base->value;
   if (value.kind == ValueTree::Kind::kUnion) {
-    // A designator initialized this member of the union.
     const MemberInfo& member = layout->members.at(static_cast<std::size_t>(value.member));
     if (member.name != dot->member) {
       throw ce::ConstantExpressionError(
@@ -1336,8 +1133,6 @@ std::optional<NamedConstant> TypeChecker::named_constant(const Exp& exp) {
       throw InternalError("TypeError: len() of a value tree that isn't a tuple");
     }
     if (i >= value.items.size()) {
-      // Only a union's first member has a value, since its initializer
-      // sets that one.
       throw ce::ConstantExpressionError(
           "member " + pyrepr::string(m.name) +
           " of a union constant isn't the member its initializer sets, and only that one is a "
@@ -1348,9 +1143,6 @@ std::optional<NamedConstant> TypeChecker::named_constant(const Exp& exp) {
   return std::nullopt;
 }
 
-// Returns the value tree of `vd`'s initializer when it is a structure or
-// union constant of `vd`'s type, as in `constexpr struct s B = A;` with
-// `A` declared `constexpr`, or none.
 std::optional<ValueTree> TypeChecker::structure_constant_init(ir::Type_var_decl& vd) {
   check_exp(*vd.init);
   const auto named = ce::named_constant(*vd.init);
@@ -1360,10 +1152,6 @@ std::optional<ValueTree> TypeChecker::structure_constant_init(ir::Type_var_decl&
   return named->value;
 }
 
-// Checks the rules of C23 §6.7.2p5-6 for the `constexpr` object `vd`
-// that don't depend on its converted initializer: no volatile type in
-// it, and each value of the initializer exactly representable in the
-// type it initializes.
 void TypeChecker::begin_constexpr(ir::Type_var_decl& vd) {
   const std::string name = display_name(vd.name);
   if (const auto volatile_desc = volatile_part(vd.data_type)) {
@@ -1377,9 +1165,6 @@ void TypeChecker::begin_constexpr(ir::Type_var_decl& vd) {
   check_constexpr_init(*vd.init, vd.data_type, name);
 }
 
-// Records the value of the `constexpr` object `vd`, which the normal
-// checks have converted to its type, so that later named constants read
-// it. Every pointer in it must be null (C23 §6.7.2p6).
 void TypeChecker::end_constexpr(ir::Type_var_decl& vd) {
   const std::string name = display_name(vd.name);
   const Symbol* sym = symbols.find(vd.name);
@@ -1406,7 +1191,6 @@ void TypeChecker::end_constexpr(ir::Type_var_decl& vd) {
   constexpr_values.insert_or_assign(vd.name, NamedConstant{vd.data_type, std::move(value)});
 }
 
-// Returns whether the value tree `value` holds an address.
 bool TypeChecker::has_address(const ValueTree& value) {
   switch (value.kind) {
     case ValueTree::Kind::kAddress:
@@ -1424,9 +1208,6 @@ bool TypeChecker::has_address(const ValueTree& value) {
   }
 }
 
-// Returns a description of the volatile part of the object type `t` (the
-// object itself, an element, or a member at any depth), or none. What a
-// pointer points to doesn't count.
 std::optional<std::string> TypeChecker::volatile_part(const Type& t, std::set<std::string>* seen) {
   std::set<std::string> own;
   if (seen == nullptr) {
@@ -1463,13 +1244,6 @@ std::optional<std::string> TypeChecker::volatile_part(const Type& t, std::set<st
   }
 }
 
-// Checks each value in the initializer `init` of an object of type `t`
-// in the `constexpr` object `name`: an object of integer type takes an
-// integer constant expression and one of real floating type an integer
-// or real floating one, and the value must be exactly representable in
-// the type, since a constexpr initializer can't change a value (C23
-// §6.7.2p5-6). `end_constexpr` checks pointers later. The shapes the
-// normal checks reject are left for them.
 void TypeChecker::check_constexpr_init(const Exp& init, const Type& t, const std::string& name) {
   const Type st = strip_quals(t);
   if (const auto* arr = std::get_if<ir::Array>(&st)) {
@@ -1519,8 +1293,6 @@ void TypeChecker::check_constexpr_init(const Exp& init, const Type& t, const std
   if (!(is_integer_type(st) || is_floating_type(st))) {
     return;
   }
-  // A compound literal in the copy is checked again by the normal
-  // checks, which record the same object.
   Exp leaf = init;
   check_exp(leaf);
   leaf = decay_if_array(std::move(leaf));
@@ -1574,10 +1346,6 @@ void TypeChecker::check_constexpr_init(const Exp& init, const Type& t, const std
   }
 }
 
-// Each character of the string literal `s` must keep its value in the
-// `constexpr` array's element type (C23 §6.7.2p5). A string's characters
-// have type `char`, which is unsigned in c6502, so one above 127 changes
-// value in a `signed char`.
 void TypeChecker::check_constexpr_string(const ir::String& s, const Type& element,
                                          const std::string& name) {
   if (!is_signed(strip_quals(element))) {
@@ -1593,13 +1361,6 @@ void TypeChecker::check_constexpr_string(const ir::String& s, const Type& elemen
   }
 }
 
-// `(T){...}` (C99 §6.5.2.5) declares an unnamed object named `exp.name`,
-// so it is checked as the declaration `T name = {...};` would be. Inside
-// a function the object is automatic (§6.5.2.5p6), and a static
-// initializer can't take its address. At file scope it is static, so its
-// initializer must be constant (§6.5.2.5p3). An array of unknown size
-// takes its size from the initializer, as `int a[] = {1, 2};` would
-// (§6.7.8p22).
 Type TypeChecker::check_compound_literal(ir::CompoundLiteral& exp) {
   *exp.init = normalize_init(std::move(*exp.init), exp.target_type, std::nullopt);
   const Type t = size_from_initializer(exp.target_type, &*exp.init, "the compound literal's array");
@@ -1607,9 +1368,6 @@ Type TypeChecker::check_compound_literal(ir::CompoundLiteral& exp) {
   const bool at_file_scope = !return_type.has_value();
   std::optional<ir::Type_storage_class> storage = exp.storage_class;
   if (at_file_scope) {
-    // C23 §6.5.3.6p4 checks a compound literal's storage class as a
-    // declaration's at its scope, and a file-scope object can't be
-    // `register`.
     if (storage && asdl::isa<ir::Register>(*storage)) {
       fail("a compound literal at file scope can't be `register` (C23 §6.5.3.6p4)");
     }
@@ -1624,7 +1382,6 @@ Type TypeChecker::check_compound_literal(ir::CompoundLiteral& exp) {
   try {
     check_block_var(vd);
   } catch (const TypeCheckError& e) {
-    // The object's name is one identifier_resolution made up.
     std::string message = replace_all(e.what(), pyrepr::string(exp.name), "'(compound literal)'");
     message = replace_all(std::move(message), pyrepr::string(display_name(exp.name)),
                           "'(compound literal)'");
@@ -1635,13 +1392,6 @@ Type TypeChecker::check_compound_literal(ir::CompoundLiteral& exp) {
   return t;
 }
 
-// Checks `char arr[N] = "abc";` (C99 §6.7.8p14). The literal's body has
-// `len(init.str)` bytes, without the terminator. The standard allows the
-// null too when N is at least that plus one, and leaves it out when N is
-// exactly the length. A shorter N is a constraint violation. Python then
-// stamps the String with `Array(Char, len + 1)`, an attribute the c99
-// IR's `String` doesn't have, which neither the dump format nor any
-// later pass reads, so the port leaves it out.
 void TypeChecker::check_string_array_init(ir::String& init, const ir::Array& arr_type,
                                           const std::string& name) {
   const Int slen = as_int(code_point_count(init.str));
@@ -1654,11 +1404,6 @@ void TypeChecker::check_string_array_init(ir::String& init, const ir::Array& arr
   }
 }
 
-// Checks a braced initializer for a struct or union: no more items than
-// members, and each item converted to its member's type with
-// `convert_to`, which replaces `init.items` in place. The qualifiers of
-// `const struct s x = {...};` don't change the layout, so they are
-// stripped first.
 void TypeChecker::check_struct_init_list(ir::InitList& init, const Type& struct_type0,
                                          const std::string& var_name) {
   const Type struct_type = strip_quals(struct_type0);
@@ -1667,14 +1412,11 @@ void TypeChecker::check_struct_init_list(ir::InitList& init, const Type& struct_
     fail("struct/union " + pyrepr::string(var_name) + ": incomplete type '" +
          struct_keyword(struct_type) + " " + tag_of(struct_type) + "'");
   }
-  // A copy, since checking an item can add to the type table.
   const StructLayout layout = *found;
   std::vector<MemberInfo> members;
   if (asdl::isa<ir::Union>(struct_type)) {
     // Per C99 §6.7.8p16, a list without designators initializes the
-    // first named member of a union, so one item at most is allowed. A
-    // designator may have chosen another member, which
-    // `init.union_member` names.
+    // first named member of a union, so one item at most is allowed.
     const auto k = static_cast<std::size_t>(union_member_index(layout, init));
     if (k < layout.members.size()) {
       members.push_back(layout.members[k]);
@@ -1700,7 +1442,6 @@ void TypeChecker::check_struct_init_list(ir::InitList& init, const Type& struct_
     const Type& elem_type = m.type;
     Exp& item = init.items[i];
     if (const auto* arr = std::get_if<ir::Array>(&strip_quals(elem_type))) {
-      // A char-array member initialized by a string literal.
       if (auto* s = std::get_if<ir::String>(&item); s != nullptr &&
                                                     is_char_element(*arr->element_type)) {
         check_string_array_init(*s, *arr, var_name + "." + m.name);
@@ -1720,8 +1461,6 @@ void TypeChecker::check_struct_init_list(ir::InitList& init, const Type& struct_
       }
       check_struct_init_list(*list, elem_type, var_name + "." + m.name);
     } else {
-      // A scalar member's initializer may be braced, as in `{ {5}, 1 }`,
-      // or empty, as in `{ {}, 1 }`.
       Exp scalar = unbrace_scalar_init(
           std::move(item), elem_type,
           "member " + pyrepr::string(m.name) + " of " + pyrepr::string(display_name(var_name)));
@@ -1733,16 +1472,6 @@ void TypeChecker::check_struct_init_list(ir::InitList& init, const Type& struct_
   init.data_type = struct_type;
 }
 
-// Checks a braced initializer for an array: no more items than elements
-// (c99_to_tac pads a shorter list with zeros), and each item converted
-// to the element type with `convert_to`, so a constant of another width
-// gets an implicit cast. It replaces `init.items` in place and stamps
-// `init.data_type` with the array type. A multi-dimensional array
-// (`int a[2][3] = {{1,2,3},{4,5,6}};`) takes a nested list for each
-// element, which the recursion checks. C99 also allows the flat form
-// `{1,2,3,4,5,6}` by §6.7.8p20's rule for subaggregates, which takes a
-// grouping pass at parse time that c6502 doesn't have, so only the fully
-// nested form is accepted.
 void TypeChecker::check_array_init_list(ir::InitList& init, const ir::Array& arr_type0,
                                         const std::string& var_name) {
   const ir::Array arr_type = arr_type0;
@@ -1757,11 +1486,6 @@ void TypeChecker::check_array_init_list(ir::InitList& init, const ir::Array& arr
     Exp& item = init.items[i];
     const std::string index = std::to_string(i);
     if (const auto* elem_arr = std::get_if<ir::Array>(&elem_type)) {
-      // Each item is a nested list, or a string literal when the inner
-      // array's element type is a character type, since a char array
-      // may be initialized by a string literal at any depth (C99
-      // §6.7.8p14). The flat form (`{1,2,3,4,5,6}` for `int[2][3]`)
-      // isn't supported.
       if (auto* s = std::get_if<ir::String>(&item); s != nullptr &&
                                                     is_char_element(*elem_arr->element_type)) {
         check_string_array_init(*s, *elem_arr, var_name + "[" + index + "]");
@@ -1774,8 +1498,6 @@ void TypeChecker::check_array_init_list(ir::InitList& init, const ir::Array& arr
       }
       check_array_init_list(*list, *elem_arr, var_name);
     } else if (asdl::isa<ir::Structure, ir::Union>(strip_quals(elem_type))) {
-      // An array of structs or unions takes a nested list for each
-      // element.
       auto* list = std::get_if<ir::InitList>(&item);
       if (list == nullptr) {
         fail("expected nested initializer (`{...}`) at index " + index + " of " +
@@ -1783,10 +1505,6 @@ void TypeChecker::check_array_init_list(ir::InitList& init, const ir::Array& arr
       }
       check_struct_init_list(*list, elem_type, var_name + "[" + index + "]");
     } else {
-      // A scalar element's initializer may be braced, as in `{ {5}, 1 }`,
-      // or empty, as in `{ {}, 1 }`. It decays first, as a scalar's
-      // initializer and an assignment's right side do, and then
-      // `convert_to` wraps it in an implicit cast when its type differs.
       Exp scalar = unbrace_scalar_init(
           std::move(item), elem_type,
           "element " + index + " of " + pyrepr::string(display_name(var_name)));

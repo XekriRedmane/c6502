@@ -36,8 +36,6 @@ const json::Value* kwarg(const json::Value& kwargs, std::string_view name) {
   return v != nullptr && v->kind != json::Value::Kind::kNull ? v : nullptr;
 }
 
-// Returns the type table given as the second positional argument or as
-// the keyword `types`, or none, as Python's default is None.
 std::optional<TypeTable> types_of(const json::Value& args, const json::Value& kwargs) {
   if (args.items.size() > 1) {
     return Optional<TypeTableC>::decode(args.items[1]);
@@ -57,13 +55,10 @@ std::string names(const NameSet& xs) { return encode<NameSetC>(xs); }
 
 std::string cycles_text(const Cycles& c) { return encode<CyclesC>(c); }
 
-// Returns the `mutated` line of a call that changed its positional
-// argument `index`, whose text after the call is `text`.
 std::string mutated_arg(std::size_t index, const std::string& text) {
   return "{\"args\": {\"" + std::to_string(index) + "\": " + text + "}, \"kwargs\": {}}";
 }
 
-// The codec of a `SavePlan`, an object of four fields.
 struct SavePlanC {
   using type = SavePlan;
   static SavedByIndexC::type to_tagged(const OrderedMap<int, std::vector<SavedValue>>& m) {
@@ -121,7 +116,6 @@ std::vector<asdl::Int> big_ints(const std::vector<int>& xs) {
   return {xs.begin(), xs.end()};
 }
 
-// The codec of a TAC `CFG` and its `BasicBlock`s.
 struct CfgC {
   using type = tac_cfg::Cfg;
   static type decode(const json::Value& v) {

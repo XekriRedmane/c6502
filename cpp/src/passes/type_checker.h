@@ -1,34 +1,14 @@
-// The port of passes/type_checking.py's checker: the `TypeChecker` class
-// and the module's free functions, which the four parts of the port
-// share (docs/cpp_port.md, "Step 6", group T). The type queries of step
-// 6a are in passes/type_checking_types.h, and the symbol and type tables
-// in passes/type_checking.h.
+// The type checker. It stamps the program it is given in place. A method
+// that replaces fields of an expression takes a reference to the
+// expression's slot, and a function that wraps its argument in a new
+// expression, such as `convert_to` and `decay_if_array`, takes the
+// expression by value and returns the result, so a caller writes `e =
+// convert_to(std::move(e), t)`.
 //
-// The checker stamps the program it is given in place, as Python's
-// does. Each method that Python gives an expression and that replaces
-// fields of it takes a reference to the expression's slot. A Python
-// function that returns a new expression wrapping its argument, such as
-// `_convert_to` and `_decay_if_array`, takes the expression by value and
-// returns the result, so a caller writes `e = convert_to(std::move(e),
-// t)`.
-//
-// The parser's folds (`_fold_integer_constant`, `_expression_type`, and
-// `_fold_named_constant`, parser.py:2422-2663) make a checker of their
-// own, fill `symbols`, `types` (through `check_struct_decl`), and
-// `constexpr_values`, install `named_constant` as the resolver of
-// constant_expression.h, and call `check_exp` or `check_block_var`. Those
-// members are public for that reason.
-//
-// The file of each part:
-// - type_checker.cpp (T-A): the free functions of type_checking.py:127-490
-//   and 1200-2406, and the class's tag scopes and `require_*` methods.
-// - type_checker_init.cpp (T-B): static initializers and `constexpr`,
-//   type_checking.py:491-1199 and 3637-4438, with designators.cpp.
-// - type_checker_decls.cpp (T-C): `check_program`, the file-scope and
-//   struct declarations, layouts, functions, calls and the builtins'
-//   checks, and statements, type_checking.py:2538-3636 and 4439-4775,
-//   with stdbit_functions.cpp.
-// - type_checker_exp.cpp (T-D): expressions, type_checking.py:4776-6197.
+// The parser's folds make a checker of their own, fill `symbols`,
+// `types` (through `check_struct_decl`), and `constexpr_values`, install
+// `named_constant` as the resolver of constant_expression.h, and call
+// `check_exp` or `check_block_var`, so those members are public.
 #pragma once
 
 #include <map>
@@ -53,29 +33,17 @@ using Exp = c99_ast::Type_exp;
 using Int = asdl::Int;
 using constant_expression::NamedConstant;
 
-// Raised on any type-level inconsistency in the program (Python's
-// `TypeCheckError`).
 class TypeCheckError : public CompileError {
  public:
   explicit TypeCheckError(const std::string& message)
       : CompileError("TypeCheckError", message) {}
 };
 
-// ---------------------------------------------------------------------
-// The free functions of T-A (type_checker.cpp).
-// ---------------------------------------------------------------------
-
-// Returns Python's repr of an optional type, "None" when it is none, as
-// `{exp.data_type!r}` shows one in a message.
 std::string repr_or_none(const std::optional<Type>& t);
-// Returns `c_type` of an optional type, or "NoneType" for none, as
-// Python's `_c_type(None)` gives.
 std::string c_type_or_none(const std::optional<Type>& t);
 
 // Returns the `data_type` field of `exp`, which a `String` and a
-// `Designation` don't have, so they give none. Python reads the field
-// of those two only where it raises AttributeError, which no program of
-// the corpus reaches.
+// `Designation` don't have, so they give none.
 const std::optional<Type>& data_type_of(const Exp& exp);
 // Returns the `data_type` field of `exp` to stamp, or null for a
 // `String` or a `Designation`.
@@ -87,16 +55,11 @@ std::optional<Type>* data_type_slot(Exp& exp);
 // or 64.
 bool is_stdbit_generic_type(const Type& t);
 // Returns the parameter type of the <stdbit.h> function with the suffix
-// `suffix` ("uc", "us", "ui", "ul", or "ull"), Python's
-// `_STDBIT_PARAMETER_TYPES`.
+// `suffix` ("uc", "us", "ui", "ul", or "ull").
 Type stdbit_parameter_type(std::string_view suffix);
 
-// Returns whether `a` and `b` are the same type, field for field.
 bool types_equal(const Type& a, const Type& b);
 
-// Returns Python's `str` of a value tree, as a message shows
-// `Initial.value`: an int in decimal, a tuple as `(1, 2)` or `(1,)`,
-// and an `AddressInit` or a `UnionValue` as its dataclass repr.
 std::string value_str(const ValueTree& value);
 
 // Returns the initial value of a file-scope object `name` after another
@@ -113,13 +76,10 @@ bool is_object_type(const Type& t);
 // Returns `is_object_type`, or whether `t` is an array, a struct, or a
 // union, the types a declaration may give an object.
 bool is_complete_object_type(const Type& t);
-// Returns whether `t` is an integer or floating type.
 bool is_arithmetic_type(const Type& t);
 
-// Returns whether `op` always gives 0 or 1: a comparison, `&&`, or `||`
-// (Python's `_TRUTH_OPS`).
+// Returns whether `op` always gives 0 or 1: a comparison, `&&`, or `||`.
 bool is_truth_op(const c99_ast::Type_binary_operator& op);
-// Returns the spelling of the binary operator `op`, such as "<<".
 std::string_view binary_op_spelling(const c99_ast::Type_binary_operator& op);
 // Returns whether `exp`, not yet type-checked, always gives 0 or 1: a
 // comparison, `&&`, `||`, `!`, or the constant 0 or 1, which a
@@ -184,9 +144,6 @@ void check_register_object(const Type& t, int max_bytes, std::string_view where)
 // one byte for each register.
 void check_named_register_param(const Type& t, std::string_view regs, std::string_view where);
 
-// The checker's tag scopes as `check_well_formed_type` reads them:
-// `visible` says whether a tag is in a live scope, and `introduce`
-// declares a tag never seen before as incomplete in the innermost one.
 class TypeChecker;
 
 // Throws if the declared or named type `t` isn't well formed (C99
@@ -196,8 +153,7 @@ class TypeChecker;
 // kind, or incomplete where `require_complete` is set. `types` null
 // skips the checks of tags. With `checker` set, a tag not in scope is
 // rejected, and a tag never declared is declared incomplete in the
-// checker's innermost tag scope (Python's `tag_visible` and
-// `auto_introduce` arguments).
+// checker's innermost tag scope.
 void check_well_formed_type(const Type& t, std::string_view where, const TypeTable* types,
                             bool require_complete = false, TypeChecker* checker = nullptr);
 
@@ -235,13 +191,6 @@ c99_ast::Type_const const_for_value(Int value, const Type& t);
 // that only an explicit cast may make, or none may.
 Exp convert_to(Exp exp, const Type& target);
 
-// ---------------------------------------------------------------------
-// The free functions of T-B (type_checker_init.cpp).
-// ---------------------------------------------------------------------
-
-// Python's `_linkage_to_is_global` is `linkage is Linkage.EXTERNAL`,
-// which T-C writes where it computes the linkage.
-
 // Returns the IEEE 754 bits or the integer that the constant `c`
 // initializes an object of type `target_type` with.
 Int coerce_init_const_value(const c99_ast::Type_const& c, const Type& target_type);
@@ -249,7 +198,6 @@ Int coerce_init_const_value(const c99_ast::Type_const& c, const Type& target_typ
 // a static initializer's value: an integer, or the IEEE 754 bits of a
 // floating type.
 Int coerce_init_value(Int value, const Type& source_type, const Type& target_type);
-// Returns the type of the constant `c`.
 Type const_source_type(const c99_ast::Type_const& c);
 // Returns the address constant `exp` initializes a static pointer with.
 // `symbols` and `types` may be null.
@@ -265,7 +213,6 @@ ValueTree const_init_value(const Exp& exp, const Type& target_type, const std::s
                            const SymbolTable* symbols = nullptr, const TypeTable* types = nullptr);
 // Returns the value tree of an object of type `t` with every byte zero.
 ValueTree zero_aggregate(const Type& t, const TypeTable* types = nullptr);
-// Returns whether `t` is `char`, `signed char`, or `unsigned char`.
 bool is_char_element(const Type& t);
 // Returns `FunAttr.param_zeropage` from a function_decl's
 // `param_registers`, where a `zeropage(addr)` parameter is "@addr".
@@ -293,10 +240,6 @@ ValueTree const_init_aggregate(const Exp& init, const Type& var_type, const std:
 // initializes.
 int union_member_index(const StructLayout& layout, const c99_ast::InitList& init);
 
-// ---------------------------------------------------------------------
-// The checker.
-// ---------------------------------------------------------------------
-
 // Walks one program and fills `symbols` and `types`, which accumulate
 // over its declarations. Tag visibility is per block: `tag_scopes` is a
 // stack of sets, pushed for each block scope (compound statements,
@@ -313,16 +256,12 @@ class TypeChecker {
   // Whether the body being checked is a `return_bool_in_carry`
   // function's, whose `return e;` returns `e != 0`.
   bool carry_return = false;
-  // The tag scopes, the file scope first.
   std::vector<std::set<std::string, std::less<>>> tag_scopes{1};
   // Each `constexpr` object checked so far, by name, with its type and
   // its value tree in the form of `Initial.value`, which
-  // `named_constant` gives the evaluator (Python's `_constexpr`).
+  // `named_constant` gives the evaluator.
   std::map<std::string, NamedConstant, std::less<>> constexpr_values;
 
-  // -------------------------------------------------------------------
-  // T-A (type_checker.cpp).
-  // -------------------------------------------------------------------
   void push_tag_scope();
   void pop_tag_scope();
   bool tag_visible(std::string_view tag) const;
@@ -341,13 +280,8 @@ class TypeChecker {
   // Throws for pointer arithmetic (`where`) on a pointer to `void`, to a
   // function, or to an incomplete struct or union (C99 §6.5.6p2).
   void require_complete_pointee(const Type& ptr, std::string_view where) const;
-  // Calls `check_well_formed_type` with this checker's types and tag
-  // scopes.
   void check_well_formed(const Type& t, std::string_view where, bool require_complete = false);
 
-  // -------------------------------------------------------------------
-  // T-B (type_checker_init.cpp).
-  // -------------------------------------------------------------------
   void check_block(c99_ast::Type_block& block);
   void check_block_item(c99_ast::Type_block_item& item);
   void check_block_declaration(c99_ast::Type_declaration& decl);
@@ -378,9 +312,6 @@ class TypeChecker {
   void check_array_init_list(c99_ast::InitList& init, const c99_ast::Array& arr_type,
                              const std::string& var_name);
 
-  // -------------------------------------------------------------------
-  // T-C (type_checker_decls.cpp).
-  // -------------------------------------------------------------------
   void check_program(c99_ast::Program& prog);
   void check_file_scope_declaration(c99_ast::Type_declaration& decl);
   void check_struct_decl(c99_ast::Type_struct_decl& sd);
@@ -418,9 +349,6 @@ class TypeChecker {
   void check_switch(c99_ast::SwitchStmt& stmt);
   void check_for_init(c99_ast::Type_for_init& init);
 
-  // -------------------------------------------------------------------
-  // T-D (type_checker_exp.cpp).
-  // -------------------------------------------------------------------
   Type pointer_equality_common_type(Exp& lhs, Exp& rhs, const Type& tl, const Type& tr);
   std::optional<Type> check_nullptr_binary(c99_ast::Binary& exp, const Type& tl, const Type& tr);
   // Type-checks `exp` in place: stamps its type and its operands',

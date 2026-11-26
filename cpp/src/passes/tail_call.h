@@ -1,4 +1,3 @@
-// The port of passes/tail_call.py.
 #pragma once
 
 #include "asm_ast.h"

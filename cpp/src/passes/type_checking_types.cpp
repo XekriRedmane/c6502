@@ -173,9 +173,6 @@ bool is_signed(const Type& t) {
 }
 
 std::pair<int, int> rank(const Type& t) {
-  // The standard integer types left after the integer promotions, each
-  // with its width in bits and its place in the order of rank `short <
-  // int < long < long long` (Python's `_STANDARD_RANKS`).
   switch (ir::kind(t)) {
     case K::BitInt:
       return {static_cast<int>(std::get<ir::BitInt>(t).width), 0};
@@ -195,8 +192,6 @@ std::pair<int, int> rank(const Type& t) {
 
 namespace {
 
-// Returns the unsigned type of the same rank as the promoted integer
-// type `t`.
 Type unsigned_counterpart(const Type& t) {
   switch (ir::kind(t)) {
     case K::BitInt:
@@ -216,8 +211,6 @@ Type unsigned_counterpart(const Type& t) {
   }
 }
 
-// Returns a new value of `t`'s class, as Python's `type(t)()` makes
-// one, which only a type without fields allows.
 Type fresh(const Type& t) {
   switch (ir::kind(t)) {
     case K::BitInt:
@@ -275,9 +268,6 @@ Type common_bit_precise_type(const Type& a, const Type& b) {
   if (rank(unsigned_t) >= rank(signed_t)) {
     return unsigned_t;
   }
-  // The signed type has the greater rank. It's the result when it holds
-  // every value of the unsigned type, and otherwise the unsigned type
-  // corresponding to it is.
   if (int_bits(signed_t) - 1 >= int_bits(unsigned_t)) {
     return signed_t;
   }
@@ -302,7 +292,6 @@ Type common_type(const Type& a_in, const Type& b_in) {
   const bool a_signed = is_signed(a);
   const bool b_signed = is_signed(b);
   if (a_signed == b_signed) {
-    // Both signed or both unsigned, and the higher rank wins.
     return int_width(a) >= int_width(b) ? fresh(a) : fresh(b);
   }
   const Type& signed_t = a_signed ? a : b;
@@ -310,9 +299,6 @@ Type common_type(const Type& a_in, const Type& b_in) {
   if (int_width(unsigned_t) >= int_width(signed_t)) {
     return fresh(unsigned_t);
   }
-  // The signed type has the higher rank, and with c6502's widths its
-  // range covers the unsigned type's: `long` covers `unsigned int`, and
-  // `long long` covers `unsigned int` and `unsigned long`.
   return fresh(signed_t);
 }
 

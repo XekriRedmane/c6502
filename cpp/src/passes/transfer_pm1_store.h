@@ -1,4 +1,3 @@
-// The port of passes/transfer_pm1_store.py.
 #pragma once
 
 #include "asm_ast.h"
@@ -11,8 +10,7 @@ namespace c6502::passes {
 // of a byte that an index register already holds as `INY` or `DEY`, a
 // step on either side of a transfer as a step of the index register,
 // and a step stored and loaded into an index register as a step of the
-// register. The comment at the top of transfer_pm1_store.cpp gives the
-// conditions and the reasons.
+// register.
 asm_ast::Program apply_transfer_pm1_store(asm_ast::Program prog,
                                           const AsmContext& ctx);
 

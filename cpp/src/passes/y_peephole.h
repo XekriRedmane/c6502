@@ -1,5 +1,3 @@
-// The port of passes/y_peephole.py, which drops or shortens the
-// `LDY #imm` lines of the emitted text where Y is known.
 #pragma once
 
 #include <string>

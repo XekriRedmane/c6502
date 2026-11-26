@@ -1,15 +1,5 @@
-// The queries of c99 types that the front end's passes share, from
-// passes/type_checking.py: the predicates, the spelling of a type in
-// messages, the widths and signedness of the integer types, their rank,
-// the integer promotions, the usual arithmetic conversions, and the
-// reduction of a value to an integer type. The type checker uses all of
-// them, the parser reads `c_type`, `int_bits`, and `is_signed` for its
-// messages and ranges, designators.py reads `c_type`, and the unroller
-// reads `promote_integer`, `common_type`, and `coerce_int_to_type`.
-// Python keeps them private to type_checking.py (`_strip_quals` and so
-// on), so they are in the namespace `type_checking`. A query that
-// raises `TypeError` in Python, for a type it doesn't apply to, throws
-// `InternalError` with the same message.
+// The queries of c99 types that the front end's passes share. A query
+// given a type it doesn't apply to throws `InternalError`.
 #pragma once
 
 #include <string>
@@ -38,9 +28,7 @@ bool is_pointer_type(const Type& t);
 bool is_struct_or_union(const Type& t);
 bool is_array_type(const Type& t);
 bool is_nullptr_type(const Type& t);
-// Returns whether `t` is `void` itself, which `void *` isn't.
 bool is_void(const Type& t);
-// Returns whether `t` is `void *`.
 bool is_void_pointer(const Type& t);
 
 // Returns `name` as the program spelled it. identifier_resolution

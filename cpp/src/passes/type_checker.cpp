@@ -1,28 +1,3 @@
-// Part T-A of the port of passes/type_checking.py: the module's free
-// functions of type_checking.py:127-490 and 1200-2406 that the step 6a
-// queries (type_checking_types.cpp) left, and the `TypeChecker`'s tag
-// scopes and `_require_*` methods.
-//
-// Python's module docstring describes the pass as a whole, and it is
-// kept in type_checker_decls.cpp beside `check_program`. What these
-// functions share is the vocabulary of types.
-//
-// An object type, for the checker, is a scalar value type that can be
-// an operand without further decay (C99 §6.2.5): the arithmetic types,
-// pointers, and C23's `nullptr_t` (§6.2.5p26). Arrays are object types
-// in the standard, but every operand site decays them to pointers first
-// (`decay_if_array`), so leaving them out makes a missed decay site an
-// error instead of a silent miscompile. A function isn't an object, and
-// a struct or union never reaches a scalar operand site, so the sites
-// that take one test for it themselves. Qualifiers don't change whether
-// a type is an object type.
-//
-// The implicit conversions of C99 §6.3.1.8 and §6.5.16.1 happen in
-// `convert_to`, which wraps an operand whose type differs from the
-// target in an implicit `Cast`, so every operand that reaches TAC has
-// its own type and every change of size or signedness is an explicit
-// cast. Explicit casts go through the checker's `Cast` case, which this
-// doesn't gate.
 #include "passes/type_checker.h"
 
 #include <algorithm>
@@ -41,7 +16,6 @@ using E = ir::Kind_exp;
 
 [[noreturn]] void fail(const std::string& message) { throw TypeCheckError(message); }
 
-// Returns Python's `type(t).__name__` for a type.
 std::string class_name(const Type& t) {
   std::string r = asdl::py_repr(t);
   return r.substr(0, r.find('('));
@@ -89,9 +63,6 @@ std::string repr_tree(const ValueTree& v) {
       return "UnionValue(member=" + asdl::int_to_string(v.member) +
              ", value=" + repr_tree(v.items.at(0)) + ")";
     default:
-      // The checker's value trees hold the bits of a floating value as
-      // an int, so neither a Python float nor a TAC initializer reaches
-      // a message.
       throw InternalError("value_str: a value tree the type checker doesn't make");
   }
 }
@@ -493,14 +464,6 @@ bool is_volatile_qualified(const Type& t) {
   return asdl::isa<ir::Volatile>(*p);
 }
 
-// Per C99 §6.5.2.3p3, a member reached through a `const` or `volatile`
-// container has those qualifiers too, so `s.m` on a `const` `s` is a
-// `const T`. Both qualifiers go on independently, `Volatile` inside and
-// `Const` outside. Qualifying an array qualifies its elements (C99
-// §6.7.3p8), so the `b` of `const struct { char b[3]; } *p` gives
-// `p->b` the type `Array(Const(Char), 3)`. A `Const(Array(...))` would
-// neither decay nor subscript, since both look for an `Array` at the
-// top.
 Type propagate_quals(const Type& member_t, const Type& container_t) {
   if (const auto* a = std::get_if<ir::Array>(&member_t)) {
     return ir::Array{.element_type = propagate_quals(*a->element_type, container_t),
@@ -516,14 +479,6 @@ Type propagate_quals(const Type& member_t, const Type& container_t) {
   return out;
 }
 
-// C99 §6.5.8p2, §6.5.9p2, and §6.5.6p3 accept pointers "to qualified or
-// unqualified versions of compatible" types, so only the qualifiers on
-// each pointee are ignored, and `const uint8_t *` meets `uint8_t *`.
-// Qualifiers further in still have to match, so `const uint8_t **`
-// doesn't meet `uint8_t **`. A pointer to `void` meets any pointer at a
-// pointer to `void`. The result's pointee carries the qualifiers of
-// both pointees (§6.5.15p6), so `c ? p : buf`, with `p` a `const
-// uint8_t *`, is a `const uint8_t *`.
 std::optional<Type> composite_pointer(const Type& tl, const Type& tr) {
   const Type& pl = *std::get<ir::Pointer>(strip_quals(tl)).referenced_type;
   const Type& pr = *std::get<ir::Pointer>(strip_quals(tr)).referenced_type;
@@ -544,10 +499,6 @@ std::optional<Type> composite_pointer(const Type& tl, const Type& tr) {
   return ir::Pointer{.referenced_type = std::move(base)};
 }
 
-// Python's `_sizeof`, which mirrors c99_to_tac's helper of the same
-// name, since both encode the storage model. A struct or union reads its
-// layout's size, and sizeof of an incomplete type is illegal (C99
-// §6.5.3.4p1).
 Int sizeof_type(const Type& type, const TypeTable* types) {
   const Type& t = strip_quals(type);
   switch (ir::kind(t)) {
@@ -574,8 +525,6 @@ Int sizeof_type(const Type& type, const TypeTable* types) {
     case K::Double:
       return 8;
     case K::BitInt:
-      // ceil(N/8) bytes, with the padding bits at the top
-      // (bit_precise.py).
       return bit_precise::storage_bytes(std::get<ir::BitInt>(t).width);
     case K::Array: {
       const auto& a = std::get<ir::Array>(t);
@@ -599,10 +548,6 @@ Int sizeof_type(const Type& type, const TypeTable* types) {
   }
 }
 
-// The register is assigned by position later (abi_selection and the
-// optimizer), so this enforces only the type: not a pointer, a scalar
-// integer, and at most `max_bytes` wide (2 for a parameter spread over
-// A and X, 1 for a local in Y).
 void check_register_object(const Type& t, int max_bytes, std::string_view where) {
   const std::string w(where);
   if (is_pointer_type(t)) {
@@ -620,10 +565,6 @@ void check_register_object(const Type& t, int max_bytes, std::string_view where)
   }
 }
 
-// A function the compiler compiles copies a pointer parameter into a
-// zero-page pair of its pool on entry, and a routine with a fixed
-// address has no body, so a pointer is as good as any other 2-byte value
-// here.
 void check_named_register_param(const Type& t, std::string_view regs, std::string_view where) {
   std::string attr = "in_";
   for (const char c : regs) {
@@ -641,18 +582,11 @@ void check_named_register_param(const Type& t, std::string_view regs, std::strin
   }
 }
 
-// The walk descends through `Pointer`, so `void (*)[3]` is rejected for
-// its `void[3]`, and through `Array`. A `FunType` is a leaf, since a
-// function's parameters and return type are checked when the function
-// is. A top-level qualifier doesn't change well-formedness.
 void check_well_formed_type(const Type& type, std::string_view where, const TypeTable* types,
                             bool require_complete, TypeChecker* checker) {
   const Type& t = strip_quals(type);
   const std::string w(where);
   if (const auto* a = std::get_if<ir::Array>(&t)) {
-    // The incomplete array `[]`, size 0 from the parser, is legal only
-    // at the outermost type of an `extern` declaration, so every other
-    // context passes `require_complete`.
     if (require_complete && a->size == 0) {
       fail(w + ": incomplete array type (`[]`) is allowed only at the outermost type of an "
                "`extern` declaration");
@@ -664,14 +598,10 @@ void check_well_formed_type(const Type& type, std::string_view where, const Type
     if (asdl::isa<ir::FunType>(*a->element_type)) {
       fail(w + ": array element type cannot be a function type (C99 §6.7.5.2.1)");
     }
-    // An element must be complete, which for a struct means its body is
-    // visible.
     check_well_formed_type(*a->element_type, where, types, true, checker);
     return;
   }
   if (const auto* p = std::get_if<ir::Pointer>(&t)) {
-    // A pointee may be incomplete, as in `struct foo *p;` with only a
-    // forward declaration of `struct foo`.
     check_well_formed_type(*p->referenced_type, where, types, false, checker);
     return;
   }
@@ -679,15 +609,9 @@ void check_well_formed_type(const Type& type, std::string_view where, const Type
     return;
   }
   const std::string& tag = tag_of(t);
-  // The message shows the tag as the source spells it, without the
-  // `@N.` that identifier_resolution puts in front.
   const std::string display_tag = display_name(tag);
   const std::string kw = struct_keyword(t);
   const StructLayout* layout = types->find(tag);
-  // A tag that was never declared is declared now, as C99's rule that
-  // `struct foo` in any declaration introduces the tag. A tag declared
-  // somewhere but not visible here (in a scope that has ended, such as
-  // a `for` body's) is out of scope.
   if (checker != nullptr && !checker->tag_visible(tag)) {
     if (layout == nullptr) {
       checker->auto_introduce_tag(t);
@@ -699,7 +623,6 @@ void check_well_formed_type(const Type& type, std::string_view where, const Type
   if (layout == nullptr) {
     fail(w + ": undeclared type '" + kw + " " + display_tag + "'");
   }
-  // `struct foo` where the tag in scope is `union foo`, or the reverse.
   if (layout->is_union != asdl::isa<ir::Union>(t)) {
     fail(w + ": tag " + pyrepr::string(display_tag) + " declared as '" +
          (layout->is_union ? "union" : "struct") + "' but used as '" + kw + "'");
@@ -717,14 +640,6 @@ void require_not_function(const Type& t, std::string_view what) {
   }
 }
 
-// Implements C99 §6.3.2.1p3's decay of an array. The wrapper's type is
-// `Pointer(elem)`, the address of the first element, narrower than the
-// standard's "pointer to array of N" and what `*(arr + i)` works on.
-// Each site that reads an expression's value decays it before checking
-// it further, and `is_object_type` leaves arrays out, so a missed site
-// is an error. A function designator that isn't the operand of `&` or
-// `sizeof` converts to a pointer to the function (§6.3.2.1p4), so
-// `apply(add, 1, 2)` passes `&add`.
 Exp decay_if_array(Exp exp) {
   const std::optional<Type>& t = data_type_of(exp);
   if (!t) {
@@ -746,12 +661,8 @@ bool is_pointer_to_function(const Type& t) {
   return p != nullptr && asdl::isa<ir::FunType>(*p->referenced_type);
 }
 
-// Each `*` gives a function (of a function, by decaying it first, or of
-// a function pointer), and each `&` needs a function and gives a pointer
-// to it, so `*f`, `**fp`, `&f`, and `*&f` name the function or pointer,
-// and `&fp`, a pointer to the pointer, doesn't.
 std::optional<std::string> callee_name(const Exp& exp, const SymbolTable& symbols) {
-  std::vector<bool> derefs;  // outermost first; true for `*`, false for `&`
+  std::vector<bool> derefs;
   const Exp* e = &exp;
   while (true) {
     if (const auto* d = std::get_if<ir::Dereference>(e)) {
@@ -793,12 +704,6 @@ std::optional<std::string> callee_name(const Exp& exp, const SymbolTable& symbol
   return var->name;
 }
 
-// C99 §6.3.2.3p3 makes "an integer constant expression with the value
-// 0, or such an expression cast to type void *" a null pointer constant.
-// This recognizes the literal form under any casts, `nullptr` (C23
-// §6.3.2.3p3), and a named constant of integer type and value 0, such
-// as `constexpr int Z = 0;` (C23 §6.6p11, footnote 118). Pointer
-// equality and the conversions to a pointer read it.
 bool is_null_pointer_constant(const Exp& expression) {
   const Exp* exp = &expression;
   while (const auto* c = std::get_if<ir::Cast>(exp)) {
@@ -842,10 +747,6 @@ bool is_null_pointer_constant(const Exp& expression) {
   }
 }
 
-// The test for converting a value to `nullptr_t` (C23 §6.3.2.4p2,
-// §6.5.5p4, §6.5.17.2p1), which is stricter than
-// `is_null_pointer_constant`: `(int *)0` is a null pointer but not a null
-// pointer constant, so it doesn't convert to `nullptr_t`.
 bool is_c23_null_pointer_constant(const Exp& expression) {
   if (const auto* c = std::get_if<ir::Constant>(&expression)) {
     if (asdl::isa<ir::ConstNullptr>(c->const_)) {
@@ -871,11 +772,6 @@ bool is_c23_null_pointer_constant(const Exp& expression) {
   }
 }
 
-// The constant variants hold nonnegative bit patterns for the consumers
-// that shift and mask bytes out of them, so a negative value of a signed
-// type wraps to its 2's complement pattern at the type's width. Plain
-// `char` is unsigned in c6502, so it gets a `ConstUChar` with `unsigned
-// char`, and only `signed char` a `ConstChar`.
 ir::Type_const const_for_value(Int value, const Type& type) {
   const Type& t = strip_quals(type);
   switch (ir::kind(t)) {
@@ -911,23 +807,11 @@ ir::Type_const const_for_value(Int value, const Type& type) {
   }
 }
 
-// C99 §6.5.16.1p1 allows these implicit conversions to a pointer: from a
-// compatible pointer type, from `void *` to any object pointer and the
-// reverse (§6.3.2.3p1), and from a null pointer constant (§6.3.2.3p3).
-// Anything else (a nonzero integer, a mismatched pointer, a floating
-// value) is rejected, so that it doesn't lower to meaningless bytes. In
-// the other direction a pointer converts implicitly only to `bool`.
-// Qualifiers are compared away, since assignment converts unqualified
-// types (§6.5.16.1). The check that an lvalue is modifiable is the
-// assignment's own.
 Exp convert_to(Exp exp, const Type& target) {
   const std::optional<Type> src = data_type_of(exp);
   if (src && types_equal(strip_quals_recursive(*src), strip_quals_recursive(target))) {
     return exp;
   }
-  // A void value, such as a call of a void function or `(void)e`, has no
-  // value to convert. A conversion to void is an explicit cast, which
-  // doesn't come here.
   if (src && is_void(*src)) {
     fail("void expression cannot be converted to " + asdl::py_repr(target) +
          "; void has no value");
@@ -936,18 +820,10 @@ Exp convert_to(Exp exp, const Type& target) {
     fail("cannot implicitly convert " + repr_or_none(src) +
          " to void; use an explicit `(void)expr` cast to discard a value");
   }
-  // A struct or union value converts only to its own type, which the
-  // test above lets through, so `foo(s)` for an `int` parameter is a
-  // constraint violation (C99 §6.5.2.2p2, §6.5.16.1p1). The cast this
-  // once made reached c99_to_tac, which has no width for it.
   if (is_struct_or_union(target) || (src && is_struct_or_union(*src))) {
     fail("cannot convert " + repr_or_none(src) + " to " + asdl::py_repr(target) +
          "; a struct or union value converts only to its own type");
   }
-  // A `nullptr_t` value converts to a pointer, giving a null pointer, and
-  // to `bool`, giving false (C23 §6.3.2.4p1), and §6.5.17.2p1 lets
-  // assignment do either. Only a null pointer constant or another
-  // `nullptr_t` converts to `nullptr_t` (§6.3.2.4p2).
   if (src && is_nullptr_type(*src)) {
     if (!asdl::isa<ir::Pointer, ir::Bool>(strip_quals(target))) {
       fail("cannot convert nullptr_t to " + c_type(target) +
@@ -964,9 +840,6 @@ Exp convert_to(Exp exp, const Type& target) {
     }
     return ir::Cast{.target_type = target, .exp = std::move(exp), .data_type = target};
   }
-  // A `const`-qualified pointer target (`uint8_t *const t[] = { 0x2000
-  // };`) skips these checks, and the examples rely on that to initialize
-  // tables of fixed addresses without a cast.
   if (asdl::isa<ir::Pointer>(target) && src) {
     if (is_integer_type(*src)) {
       if (!is_null_pointer_constant(exp)) {
@@ -976,9 +849,6 @@ Exp convert_to(Exp exp, const Type& target) {
              "is assignable to a pointer per C99 §6.3.2.3.3");
       }
     } else if (is_pointer_type(*src)) {
-      // The pointee types differ, since the test at the top didn't
-      // return. `void *` converts freely to and from any object pointer
-      // (C99 §6.3.2.3p1), with the same width and representation.
       if (!is_void_pointer(*src) && !is_void_pointer(target)) {
         fail("cannot implicitly convert " + asdl::py_repr(*src) + " to " +
              asdl::py_repr(target) +
@@ -992,9 +862,6 @@ Exp convert_to(Exp exp, const Type& target) {
            "per C99 §6.5.16.1.1");
     }
   }
-  // A pointer converts to an integer or floating type only by a cast.
-  // §6.5.16.1p1 allows assigning a pointer only to a `bool`, which gets
-  // `p != 0`.
   if (is_arithmetic_type(target) && !asdl::isa<ir::Bool>(strip_quals(target)) && src &&
       is_pointer_type(*src)) {
     fail("cannot implicitly convert pointer type " + asdl::py_repr(*src) +
@@ -1002,10 +869,6 @@ Exp convert_to(Exp exp, const Type& target) {
   }
   return ir::Cast{.target_type = target, .exp = std::move(exp), .data_type = target};
 }
-
-// ---------------------------------------------------------------------
-// The checker's tag scopes and `require_*` methods.
-// ---------------------------------------------------------------------
 
 void TypeChecker::push_tag_scope() { tag_scopes.emplace_back(); }
 
@@ -1032,10 +895,6 @@ void TypeChecker::auto_introduce_tag(const Type& t) {
   record_tag_visible(tag);
 }
 
-// The controlling expression of an `if`, a `while`, a `do`, a `for`, or
-// `?:` shall have scalar type (C99 §6.8.4.1p1, §6.8.5p2, §6.5.15p2): an
-// arithmetic type, a pointer, or `nullptr_t` (C23 §6.2.5p26). An array
-// decays to a pointer as an operand (§6.3.2.1p3), so it is accepted.
 void TypeChecker::require_scalar_controlling(const Exp& exp, std::string_view where) const {
   const std::optional<Type>& t = data_type_of(exp);
   if (t && asdl::isa<ir::Array>(*t)) {
@@ -1053,12 +912,6 @@ void TypeChecker::require_scalar_controlling(const Exp& exp, std::string_view wh
        " (C99 §6.8.4.1)");
 }
 
-// C99 §6.7.2.1p8 forbids reading or writing the value of an object of
-// incomplete type, since its size and layout are unknown until the type
-// is completed. The sites that materialize a value (an assignment's
-// operands, a cast's operand, a call's result, an expression statement,
-// a `for` header's expression) check this. Taking an address doesn't
-// read the value, so `&v` doesn't.
 void TypeChecker::require_complete_value(const Exp& exp, std::string_view where) const {
   const std::optional<Type>& t = data_type_of(exp);
   if (!t || !asdl::isa<ir::Structure, ir::Union>(*t)) {
@@ -1071,10 +924,6 @@ void TypeChecker::require_complete_value(const Exp& exp, std::string_view where)
   }
 }
 
-// C99 §6.5.6p2 requires a pointer to a complete object type for pointer
-// arithmetic, since the step is the pointee's size. c99_to_tac once
-// raised its own `TypeError` sizing one (`buff += 3` on a `void *`,
-// `ptr + 0` on a `struct s *` with no body).
 void TypeChecker::require_complete_pointee(const Type& ptr, std::string_view where) const {
   const Type& pointee = strip_quals(*std::get<ir::Pointer>(strip_quals(ptr)).referenced_type);
   const std::string w(where);

@@ -21,8 +21,6 @@ namespace {
 
 using namespace ::c6502::tagged;
 
-// The forms of the values the stage calls take and return, as
-// compile.py passes them.
 using Sym = SymbolTableC;
 using Types = TypeTableC;
 using IntSet = SetOf<IntC>;
@@ -91,8 +89,6 @@ std::vector<StageSignature> make_signatures() {
        .args = {rt<AbiC>},
        .output = rt<NameSetC>,
        .run = &stage_abi::run_pool_eligible},
-      // Group A's: `pinned_slot_symbols`, and the calls compile.py
-      // doesn't make itself, recorded where their callers reach them.
       {.name = "pinned_slot_symbols",
        .input_json = rt<AbiC>,
        .output = rt<Addrs>,
@@ -148,8 +144,6 @@ std::vector<StageSignature> make_signatures() {
        .input_json = rt<Shares>,
        .output = rt<SlotAliases>,
        .run = &stage_sharing::run_slot_aliases},
-      // Group B's calls after code generation, and `access_weights`,
-      // where `plan_zero_page` calls it.
       {.name = "access_weights",
        .input = "tac_ast",
        .output = rt<Addrs>,
@@ -264,7 +258,6 @@ std::vector<StageSignature> make_signatures() {
                   {"types", rt<Types>},
                   {"colorings", rt<Colorings>}},
        .run = &stage_frames::run_replace_pseudoregisters},
-      // The asm SSA round trip, each on one asm function.
       {.name = "to_ssa",
        .input = "asm_ast",
        .kwargs = {{"statics", rt<NameSetC>}},
@@ -288,8 +281,6 @@ std::vector<StageSignature> make_signatures() {
        .kwargs = {{"fn_name", rt<Str>}, {"cycle_counter", rt<ListOf<IntC>>}},
        .output = &ssa_stage::round_trip_instructions,
        .run = &ssa_stage::run_order_parallel_copies},
-      // The register allocation of `_optimize_function`, whose runners
-      // are in src/passes/optimization_asm/regalloc_stage.cpp.
       {.name = "compute_liveness",
        .input = "asm_ast",
        .output = rt<LivenessC>,
@@ -323,8 +314,6 @@ std::vector<StageSignature> make_signatures() {
                   {"frame_names", rt<NameSetC>}},
        .output = rt<ColoringC>,
        .run = &regalloc_stage::run_color_graph},
-      // The calls inside the asm optimizer's driver, whose runners are in
-      // src/passes/optimization_asm/optimizer_stage.cpp.
       {.name = "optimize_function",
        .input = "asm_ast",
        .args = {rt<NameSetC>, rt<IntSet>, rt<OptRange>},
@@ -356,7 +345,6 @@ std::vector<StageSignature> make_signatures() {
 
 const std::vector<StageSignature>& stage_signatures() {
   static const std::vector<StageSignature> signatures = [] {
-    // The calls of step 4, then those of step 5, then those of step 6.
     std::vector<StageSignature> all = make_signatures();
     for (auto& s : tac_stage::signatures()) {
       all.push_back(std::move(s));

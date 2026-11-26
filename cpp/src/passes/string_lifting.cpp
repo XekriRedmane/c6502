@@ -1,50 +1,3 @@
-/*
-The string lifting pass, c99_ast to c99_ast (passes/string_lifting.py).
-
-A string literal is an object of static storage duration (C99 §6.4.5p6),
-and most expressions use it by reference, through its decay to `char *`.
-Only a direct initializer of a character array, `char a[N] = "abc";`,
-takes its bytes as the array's own. This pass hoists every other string
-into a file-scope declaration `static char str@N[len+1] = "...";` and
-puts a `Var` naming it where the string was, so the passes after it
-treat `char *p = "abc"`, `&"abc"`, and `"abc"[1]` as uses of an
-ordinary file-scope array. The `@` keeps the name apart from every C
-identifier, and with no leading `.` it isn't a dasm local label, which
-would be visible only inside the function emitted just before it.
-
-Each literal gets a name of its own, numbered from 0 by one counter in
-the order of Python's walk, which visits the fields of each node in the
-order its constructor names them (`for`'s init, condition, step, and
-body; a do-while's body before its condition). The new declarations go
-in front of the program's, so that a static initializer such as
-`static char *p = "abc";`, which becomes `&str@0`, finds its target
-declared before it.
-
-A string stays in place when it initializes a character array: the
-initializer of a `char`, `signed char`, or `unsigned char` array (with
-any qualifiers on the element), at any depth of a braced list whose
-element or member there is such an array, and `{"abc"}` for such an
-array, which is `"abc"` (§6.7.8p14). Each item of a braced list goes to
-the subobject it initializes. An array's items go to its element type,
-and a struct's to its members in order, from the bodies of the struct
-and union declarations seen so far in the walk, so a string for a
-`char *` member is lifted and one for a `char[N]` member stays. A
-union's list goes to the member `InitList.union_member` names, or to
-its first member. Where the type isn't known (a member past the end of
-a struct, or the members of a struct with no body), a string item stays
-and the type checker reports what is wrong with it. A list for any other
-type, such as a `const struct`, is walked as an expression, which lifts
-every string in it.
-
-A list with designators is first rewritten into positional form by
-`designators::normalize_initializer`, with the member lists seen so far,
-so no pass after this one sees a `Designation`. The pass runs after
-identifier_resolution, so the names it makes aren't renamed, and before
-the label passes and the type checker, which see the rewritten program.
-
-Python builds a new program and leaves its input alone. This one
-rewrites the program it is given, which it takes by value.
-*/
 #include "passes/string_lifting.h"
 
 #include <optional>
@@ -66,8 +19,6 @@ using Exp = ir::Type_exp;
 using Type = ir::Type_data_type;
 using designators::Members;
 
-// Returns `name` as the program spelled it. identifier_resolution
-// renames a block-scope object `x` to `@N.x`.
 std::string display_name(const std::string& name) {
   if (!name.empty() && name[0] == '@') {
     const std::size_t dot = name.find('.');
@@ -78,8 +29,6 @@ std::string display_name(const std::string& name) {
   return name;
 }
 
-// Returns whether `t` is an array of `char`, `signed char`, or `unsigned
-// char`, with any qualifiers on the element. A null `t` is Python's None.
 bool is_char_array(const Type* t) {
   if (t == nullptr) {
     return false;
@@ -126,10 +75,6 @@ class Lifter {
         function_decl(*std::get<ir::FunctionDecl>(decl).function_decl);
         return;
       case ir::Kind_declaration::StructDecl: {
-        // A struct or union declaration holds no expression. Its body
-        // is recorded, so that a later braced list dispatches its items
-        // by member type. A declaration without a body leaves the last
-        // body of its tag in place.
         const auto& sd = std::get<ir::StructDecl>(decl).struct_decl;
         if (!sd.members.empty()) {
           Members members;
@@ -143,9 +88,6 @@ class Lifter {
     }
   }
 
-  // Lifts the strings in a declaration's initializer, after rewriting a
-  // list with designators into positional form, so that each item lines
-  // up with the subobject it initializes.
   void var_decl(ir::Type_var_decl& vd) {
     if (!vd.init) {
       return;
@@ -154,8 +96,6 @@ class Lifter {
     init(*vd.init, &vd.data_type);
   }
 
-  // Rewrites `e`, the initializer of an object of type `t`, into
-  // positional form.
   void normalize(Exp& e, const Type& t, const std::optional<std::string>& what) {
     if (!std::holds_alternative<ir::InitList>(e) || !designators::has_designation(e)) {
       return;
@@ -170,14 +110,9 @@ class Lifter {
     e = designators::normalize_initializer(std::move(e), t, layout_of, what);
   }
 
-  // Lifts the strings of `e`, the initializer of a subobject of type
-  // `declared`, or of unknown type when `declared` is null.
   void init(Exp& e, const Type* declared) {
     if (std::holds_alternative<ir::String>(e) &&
         (declared == nullptr || is_char_array(declared))) {
-      // A direct initializer of a character array. Inside a braced
-      // list of unknown type the item is taken to initialize a
-      // character array member, which the type checker checks.
       return;
     }
     auto* list = std::get_if<ir::InitList>(&e);
@@ -194,9 +129,6 @@ class Lifter {
     }
     if (declared != nullptr) {
       if (const auto* a = std::get_if<ir::Array>(declared)) {
-        // Each item initializes an element. A nested list goes to the
-        // element type, so a string at the deepest character array
-        // stays in place.
         const Type& elem = *a->element_type;
         for (auto& item : list->items) {
           init(item, &elem);
@@ -210,8 +142,6 @@ class Lifter {
       exp(e);
       return;
     }
-    // A list inside a struct's list whose member type isn't known.
-    // Its strings stay, and everything else is lifted.
     for (auto& item : list->items) {
       if (std::holds_alternative<ir::String>(item)) {
         continue;
@@ -224,11 +154,6 @@ class Lifter {
     }
   }
 
-  // Lifts the strings of the list of a struct or union of type
-  // `declared`, each item by the type of the member it initializes. A
-  // union's list initializes the member a designator chose, or its
-  // first member (C99 §6.7.8p16). A tag with no body leaves every
-  // member's type unknown, and the type checker rejects the list.
   void struct_list(ir::InitList& list, const Type& declared) {
     const std::string& tag = std::holds_alternative<ir::Structure>(declared)
                                  ? std::get<ir::Structure>(declared).tag
@@ -301,7 +226,6 @@ class Lifter {
         return;
       }
       case ir::Kind_statement::DoWhileStmt: {
-        // Python builds the node with its body first.
         auto& d = std::get<ir::DoWhileStmt>(stmt);
         statement(*d.body);
         exp(d.condition);
@@ -335,9 +259,6 @@ class Lifter {
         return;
       }
       case ir::Kind_statement::CaseStmt: {
-        // A case value is a constant expression, where a string isn't
-        // allowed (§6.6). It is walked anyway, and the type checker
-        // rejects the `Var` a string leaves.
         auto& c = std::get<ir::CaseStmt>(stmt);
         exp(c.value);
         statement(*c.body);
@@ -357,9 +278,6 @@ class Lifter {
     }
   }
 
-  // Replaces each `String` in the expression `e` with a `Var` naming a
-  // new file-scope static. The operands of each node are walked in the
-  // order of the Python constructor's keyword arguments.
   void exp(Exp& e) {
     switch (ir::kind(e)) {
       case ir::Kind_exp::String: {
@@ -445,19 +363,12 @@ class Lifter {
         }
         return;
       case ir::Kind_exp::Designation:
-        // Only a list of a type the pass couldn't work out keeps a
-        // designation, and the type checker rejects that list.
         exp(*std::get<ir::Designation>(e).init);
         return;
       case ir::Kind_exp::SizeOfExp:
-        // The operand isn't evaluated, but a string in it is lifted
-        // like any other. The `Var` has the `char[N+1]` type the string
-        // had, so the size comes out the same.
         exp(*std::get<ir::SizeOfExp>(e).exp);
         return;
       case ir::Kind_exp::CompoundLiteral: {
-        // The initializer lifts as a declaration's of the literal's
-        // type would, so `(char[]){"abc"}` keeps its string.
         auto& c = std::get<ir::CompoundLiteral>(e);
         normalize(*c.init, c.target_type, std::nullopt);
         init(*c.init, &c.target_type);
@@ -472,12 +383,9 @@ class Lifter {
     }
   }
 
-  // Returns a `Var` naming a new declaration `static char str@N[len+1]
-  // = s;`, which goes in front of the program's declarations. The
-  // element type is plain `char`, since the only reads are byte loads
-  // through the `char *` the array decays to. The length counts code
-  // points, which the C++ string holds as UTF-8.
   Exp mint(std::string s) {
+    // The name has no leading `.`, since dasm treats a name that starts
+    // with one as a local label of the function emitted before it.
     std::string name = "str@" + std::to_string(counter_++);
     const auto size = static_cast<long long>(pyrepr::code_points(s).size()) + 1;
     lifted_.push_back(ir::VarDecl{.var_decl = ir::Type_var_decl{
@@ -492,9 +400,6 @@ class Lifter {
 
   int counter_ = 0;
   std::vector<ir::Type_declaration> lifted_;
-  // Each struct or union tag's members as `(name, type)` pairs, from
-  // the last body of the tag the walk has passed. A list can only
-  // initialize a complete type, so its body comes earlier in the walk.
   std::unordered_map<std::string, Members> struct_members_;
 };
 

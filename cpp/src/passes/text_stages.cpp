@@ -17,7 +17,6 @@ TextStageResult run_text_stage(TextStage stage, const std::string& text, bool op
   TextStageResult out;
   switch (stage) {
     case TextStage::kParse:
-      // `--parse` doesn't unroll, even under `-O`.
       out.text = asdl::py_pretty(parser::parse(text)) + "\n";
       return out;
     case TextStage::kResolve:
@@ -30,8 +29,6 @@ TextStageResult run_text_stage(TextStage stage, const std::string& text, bool op
   type_checking::CheckedProgram tables = type_checking::check_program(prog);
   tac_ast::Program tac = c99_to_tac::translate_program(prog, tables.symbols, &tables.types);
   if (optimize) {
-    // `_run_stage("tac")` skips the inliner when a test has set
-    // `compile.inline_small_functions` to False (tests/no_inlining.py).
     if (inline_calls) {
       tac = inline_functions(std::move(tac), tables.symbols, prog);
     }

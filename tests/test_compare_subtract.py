@@ -6,6 +6,8 @@ Each case runs in both pipelines, with values that make the compare
 go both ways, including signed operands whose difference overflows
 on the side of the branch that doesn't use it, and checks that the
 optimized code has no separate compare.
+
+The `-S` text is checked in cpp/tests/test_compare_subtract_source.cpp.
 """
 from __future__ import annotations
 
@@ -73,22 +75,6 @@ class TestCompareSubtract(unittest.TestCase):
                         got = build_sim(src, optimize=optimize).run()
                         self.assertEqual(got.return_int(), expected & 0xFFFF)
 
-    def test_no_separate_compare(self) -> None:
-        for fn, calls in _CASES:
-            if "signed char" in fn:
-                # The compare is of the operands widened to `int`, and
-                # the subtract is narrowed back to a byte, so the two
-                # don't match.
-                continue
-            with self.subTest(fn=fn.split("{")[0].strip()):
-                asm = _run_source(
-                    "codegen", _program(fn, calls[0][0]),
-                    optimize=True,
-                )
-                body = asm.split("\nf:\n")[1].split("\nmain:\n")[0]
-                self.assertNotIn("CMP", body)
-                self.assertEqual(body.count("SBC"), _width(fn), body)
-
 
 @needs_c6502cpp
 class TestLoopInRegisters(unittest.TestCase):
@@ -127,13 +113,6 @@ class TestLoopInRegisters(unittest.TestCase):
                     build_sim(src, optimize=optimize).run().return_int(),
                     1000 % 16 + 2 + 1000 // 16,
                 )
-
-
-def _width(fn: str) -> int:
-    """How many bytes the function's operands have."""
-    if "long" in fn:
-        return 4
-    return 1 if "char" in fn else 2
 
 
 if __name__ == "__main__":

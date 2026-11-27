@@ -1,9 +1,9 @@
-"""Tests for `ir_dump`, the dump format of the four IRs, and for its
-agreement with the C++ port's reader and writer (cpp/)."""
+"""Tests for `ir_dump`, the dump format of the four IRs. Its agreement
+with the C++ port's reader and writer on the dumps of tests/ir_dump/ is
+checked by cpp/tests/test_ir_dump_files.cpp."""
 from __future__ import annotations
 
 import os
-import subprocess
 import unittest
 from pathlib import Path
 
@@ -156,8 +156,7 @@ class TestFormat(unittest.TestCase):
 
 
 class TestRealPrograms(unittest.TestCase):
-    """Reads and dumps again the four IRs of a compiled example, and,
-    when the C++ CLI is built, has it read and dump each one again."""
+    """Reads and dumps again the four IRs of a compiled example."""
 
     @classmethod
     def setUpClass(cls):
@@ -169,20 +168,6 @@ class TestRealPrograms(unittest.TestCase):
                 prog = load(text, module)
                 self.assertEqual(dump(prog), text)
                 self.assertEqual(load(dump(prog), module), prog)
-
-    @unittest.skipUnless(cpp_cli(), "the C++ CLI isn't built (cpp/README.md)")
-    def test_cpp_reads_and_writes_the_same_bytes(self):
-        texts = dict(self.texts)
-        texts["asm_ast sample"] = _SAMPLE_TEXT
-        for key, text in texts.items():
-            module = key.split()[0]
-            with self.subTest(module=key):
-                out = subprocess.run(
-                    [cpp_cli(), "roundtrip", module],
-                    input=text.encode("utf-8"), capture_output=True,
-                    check=True,
-                ).stdout.decode("utf-8")
-                self.assertEqual(out, text)
 
 
 if __name__ == "__main__":

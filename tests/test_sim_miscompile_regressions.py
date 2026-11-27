@@ -8,14 +8,16 @@ the asm simulator with `-O`. Every run must return the value
 C99 gives under c6502's widths (int 16 bits, long 32, long long 64,
 plain char unsigned).
 
-The comment on each case names the defect it pins down."""
+The comment on each case names the defect it pins down.
+
+The `-S` text and the TAC interpreter's results are checked in
+cpp/tests/test_sim_miscompile_regressions.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -618,18 +620,8 @@ _CASES: list[tuple[str, str, int]] = [
 ]
 
 
-def _s16(v: int) -> int:
-    v &= 0xFFFF
-    return v - 0x10000 if v & 0x8000 else v
-
-
 @needs_c6502cpp
 class TestMiscompileRegressions(unittest.TestCase):
-
-    def test_tac_sim(self) -> None:
-        for name, src, expected in _CASES:
-            with self.subTest(case=name):
-                self.assertEqual(_s16(_run_tac(src)), expected)
 
     def test_asm_sim(self) -> None:
         for name, src, expected in _CASES:
@@ -638,37 +630,6 @@ class TestMiscompileRegressions(unittest.TestCase):
                     result = build_sim(src, optimize=optimize).run()
                     self.assertFalse(result.timed_out)
                     self.assertEqual(result.return_int_signed(), expected)
-
-
-@needs_c6502cpp
-class TestExternFunctionAddress(unittest.TestCase):
-    """`fp = f;` for an `extern` f stored the address of a soft-stack
-    slot, because GetAddress lowered every non-static name as a
-    local, and f kept zp_abi although a call through `fp` passes its
-    arguments on the soft stack. Nothing defines f here, so this
-    checks the assembly."""
-
-    _SRC = (
-        "unsigned char add3(unsigned char a, unsigned char b,\n"
-        "                   unsigned char c);\n"
-        "unsigned char (*fp)(unsigned char, unsigned char,\n"
-        "                    unsigned char);\n"
-        "unsigned char main(void) {\n"
-        "    fp = add3;\n"
-        "    return add3(1, 2, 3) + fp(1, 2, 3);\n"
-        "}\n"
-    )
-
-    def test_address_is_the_label(self) -> None:
-        from compile import _run_source
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _run_source(
-                    "codegen", self._SRC, optimize=optimize,
-                )
-                self.assertIn("LDA   #<add3", asm)
-                self.assertIn("LDA   #>add3", asm)
-                self.assertNotIn("__zpabi_add3", asm)
 
 
 if __name__ == "__main__":

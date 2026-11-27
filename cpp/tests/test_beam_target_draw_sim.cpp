@@ -1,36 +1,23 @@
-"""End-to-end simulator test for `beam_target_draw` under both the
-unoptimized and optimized pipelines.
+// `beam_target_draw` run in both pipelines with recording stubs for
+// `draw_sprite` and `score_add`, from tests/test_beam_target_draw_sim.py.
+//
+// The scenarios cover the idle gate, the gate on a delta of zero, a
+// chase with no hit at two of the clamp's boundaries, a hit at slot 3
+// (the loop's entry), a hit at slot 0 (after the whole loop), a hit at
+// slot 3 that hides one at slot 0 (the early return), a column too low,
+// a row out of range, and a slot with its flag clear. Each scenario
+// records 16 bytes of state.
+#include <cstdint>
+#include <vector>
 
-`beam_target_draw` gates on `beam_state`, computes the beam-trail
-height `floor_y_table[state & 0x0F] - beam_y` (clamped to 4 rows),
-draws the trail via `draw_sprite`, then walks 4 enemy slots (3..0)
-looking for the first one whose `proj_screen_col[col]` lands in
-{$24, $25} AND whose `y` sits in `(beam_y, beam_y + 3]`. The first
-hit zeros the enemy flag, drops `beam_state` back to idle, arms the
-post-hit jingle (`beam_snd_ctr := $0A`), loads a `$0100` BCD score
-addend, and calls `score_add`.
+#include "doctest.h"
+#include "sim_case.h"
 
-Scenarios cover: idle gate, delta-zero gate, chase-only no-hit at
-two clamp boundaries, hit at slot 3 (loop entry), hit at slot 0
-(loop iterates all the way down), hit-3-shadows-hit-0 (early
-return), column-too-low miss, row-out-of-range miss, and
-inactive-flag skip. Each scenario writes 16 bytes of observable
-state into a flat `result_log`; the three tests assert (a) unopt
-matches the hand-computed expected state, (b) opt matches expected,
-and (c) opt == unopt byte-for-byte.
-"""
+namespace c6502::suite {
 
-import unittest
+namespace {
 
-import sim.runtime as rt_mod
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-# Inlined beam_target_draw source plus definitions of the externs it
-# references, recording stubs for `draw_sprite` / `score_add`, and a
-# `main` driver that exercises one scenario per branch.
-_PROGRAM = r"""
+const char* const kProgram = R"c(
 #include <stdint.h>
 
 uint8_t beam_state;
@@ -286,172 +273,81 @@ int main(void) {
 
     return (int)log_idx;
 }
-"""
+)c";
 
+// Each row is beam_state, beam_y, beam_snd_ctr, enemy_flag[0..3],
+// score_add_lo, score_add_hi, draw_calls, draw_last_width,
+// draw_last_height, draw_last_x, draw_last_y, draw_last_page, and
+// score_calls. The counts of calls run on across the scenarios, and
+// draw_last_* keep their values through a scenario that doesn't draw.
+const std::vector<std::uint8_t> kExpected = {
+    // 1. Idle: nothing happened.
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // 2. A delta of 0: the state stays $04 and beam_y $BB, with no draw.
+    0x04, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // 3. A chase with no hit and the height clamped to 4. The draw is
+    // (2, 4, $24, $80, beam_spr, $80), and the state doesn't change.
+    0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x04, 0x24, 0x80, 0x80, 0x00,
+    // 4. A chase with no hit and a delta of 1. The draw is (2, 1, $24,
+    // $6A, beam_spr, $00).
+    0x02, 0x6A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x02, 0x01, 0x24, 0x6A, 0x00, 0x00,
+    // 5. A hit at slot 3, after the draw (2, 4, $24, $80, beam_spr, $40).
+    // The hit clears enemy_flag[3] and beam_state, sets beam_snd_ctr to
+    // $0A and the addend to $0100, and calls score_add.
+    0x00, 0x80, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x02, 0x04, 0x24, 0x80, 0x40, 0x01,
+    // 6. A hit at slot 0, after the draw (2, 4, $24, $80, beam_spr, $00).
+    0x00, 0x80, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x02, 0x04, 0x24, 0x80, 0x00, 0x02,
+    // 7. The hit at slot 3 hides the one at slot 0, so enemy_flag[0]
+    // stays $55.
+    0x00, 0x80, 0x0A, 0x55, 0x00, 0x00, 0x00, 0x00, 0x01, 0x05, 0x02, 0x04, 0x24, 0x80, 0x00, 0x03,
+    // 8. A column too low: no hit, so enemy_flag[3] stays $01 and
+    // beam_state $03.
+    0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x06, 0x02, 0x04, 0x24, 0x80, 0x00, 0x03,
+    // 9. A row out of range: no hit.
+    0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x07, 0x02, 0x04, 0x24, 0x80, 0x00, 0x03,
+    // 10. A slot whose flag is clear: no hit, and enemy_flag[3] stays 0.
+    0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x02, 0x04, 0x24, 0x80, 0x00, 0x03,
+};
 
-# Hand-computed expected state per scenario. Each entry is the
-# 16-byte record `record()` lays down. draw_calls / score_calls
-# are cumulative across the run; draw_last_* persist between
-# scenarios that don't redraw.
-def _scenarios() -> list[list[int]]:
-    # 1. Idle: nothing happened.
-    s1 = [
-        0x00,  # beam_state
-        0x00,  # beam_y
-        0x00,  # beam_snd_ctr
-        0x00, 0x00, 0x00, 0x00,  # enemy_flag[0..3]
-        0x00,  # score_add_lo
-        0x00,  # score_add_hi
-        0x00,  # draw_calls
-        0x00, 0x00, 0x00, 0x00, 0x00,  # draw_last_*
-        0x00,  # score_calls
-    ]
-    # 2. Delta=0: state stays $04, beam_y stays $BB. No draw.
-    s2 = [
-        0x04, 0xBB, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-        0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00,
-    ]
-    # 3. Chase no-hit, height clamped to 4. draw fires
-    #    (2, 4, $24, $80, beam_spr, $80). State unchanged.
-    s3 = [
-        0x03, 0x80, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-        0x01,                              # draw_calls
-        0x02, 0x04, 0x24, 0x80, 0x80,       # last_width, height, x, y, page
-        0x00,
-    ]
-    # 4. Chase no-hit, small delta=1. draw fires (2, 1, $24, $6A,
-    #    beam_spr, $00).
-    s4 = [
-        0x02, 0x6A, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-        0x02,
-        0x02, 0x01, 0x24, 0x6A, 0x00,
-        0x00,
-    ]
-    # 5. Hit slot 3. Pre-hit: draw fires (2, 4, $24, $80, beam_spr,
-    #    $40). Post-hit: enemy_flag[3]=0, beam_state=0,
-    #    beam_snd_ctr=$0A, score_add_lo=0, score_add_hi=1,
-    #    score_calls=1.
-    s5 = [
-        0x00, 0x80, 0x0A,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x01,
-        0x03,
-        0x02, 0x04, 0x24, 0x80, 0x40,
-        0x01,
-    ]
-    # 6. Hit slot 0. Draw fires (2, 4, $24, $80, beam_spr, $00).
-    #    enemy_flag[0]=0 after hit; beam_state=0; snd=$0A.
-    s6 = [
-        0x00, 0x80, 0x0A,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x01,
-        0x04,
-        0x02, 0x04, 0x24, 0x80, 0x00,
-        0x02,
-    ]
-    # 7. Hit-3 shadows hit-0. Draw fires (2, 4, $24, $80, beam_spr,
-    #    $00). Slot 3 hit clears enemy_flag[3] to 0; slot 0 stays
-    #    at $55. beam_state=0, snd=$0A, score_lo/hi=0/1.
-    s7 = [
-        0x00, 0x80, 0x0A,
-        0x55, 0x00, 0x00, 0x00,
-        0x00, 0x01,
-        0x05,
-        0x02, 0x04, 0x24, 0x80, 0x00,
-        0x03,
-    ]
-    # 8. Column too low. Draw fires (2, 4, $24, $80, beam_spr,
-    #    $00). No hit -- enemy_flag[3] stays at $01,
-    #    beam_state stays at $03.
-    s8 = [
-        0x03, 0x80, 0x00,
-        0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00,
-        0x06,
-        0x02, 0x04, 0x24, 0x80, 0x00,
-        0x03,
-    ]
-    # 9. Row out of range. Draw fires. No hit -- enemy_flag[3]
-    #    stays at $01, beam_state stays at $03.
-    s9 = [
-        0x03, 0x80, 0x00,
-        0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00,
-        0x07,
-        0x02, 0x04, 0x24, 0x80, 0x00,
-        0x03,
-    ]
-    # 10. Inactive flag. Draw fires. No hit -- enemy_flag[3]
-    #     stays at $00.
-    s10 = [
-        0x03, 0x80, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-        0x08,
-        0x02, 0x04, 0x24, 0x80, 0x00,
-        0x03,
-    ]
-    return [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10]
+struct Run {
+  sim::SimResult result;
+  std::vector<std::uint8_t> log;
+};
 
+Run run(bool optimize) {
+  sim::Simulation s = build_sim(kProgram, optimize);
+  Run out{s.run(5'000'000), {}};
+  INFO("optimize=" << optimize);
+  CHECK_FALSE(out.result.timed_out);
+  const std::int64_t at = s.symbol("result_log");
+  out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + 10 * 16);
+  return out;
+}
 
-def _flatten(rows: list[list[int]]) -> bytes:
-    out = bytearray()
-    for row in rows:
-        out.extend(row)
-    return bytes(out)
+std::vector<std::uint8_t> hargs(const sim::SimResult& r) {
+  return std::vector<std::uint8_t>(r.memory.begin() + r.hargs, r.memory.begin() + r.hargs + 2);
+}
 
+}  // namespace
 
-@needs_c6502cpp
-class TestBeamTargetDrawSim(unittest.TestCase):
-    """Differential opt vs unopt check on `beam_target_draw`."""
+TEST_CASE("beam_target_draw_sim: the unoptimized program records each scenario") {
+  const Run r = run(false);
+  // log_idx is 16 bytes for each of the 10 scenarios.
+  CHECK((r.result.return_int() & 0xFFFF) == 10 * 16);
+  CHECK(r.log == kExpected);
+}
 
-    def _run(self, optimize: bool):
-        sim = build_sim(_PROGRAM, optimize=optimize)
-        result = sim.run(max_cycles=5_000_000)
-        self.assertFalse(
-            result.timed_out,
-            f"beam_target_draw sim timed out (optimize={optimize})",
-        )
-        log_addr = sim.symbols["result_log"]
-        log_bytes = bytes(result.memory[log_addr:log_addr + 10 * 16])
-        return result, log_bytes
+TEST_CASE("beam_target_draw_sim: the optimized program records each scenario") {
+  const Run r = run(true);
+  CHECK((r.result.return_int() & 0xFFFF) == 10 * 16);
+  CHECK(r.log == kExpected);
+}
 
-    def test_unoptimized_matches_expected(self):
-        result, log = self._run(optimize=False)
-        self.assertEqual(
-            result.return_int() & 0xFFFF, 10 * 16,
-            "log_idx should reflect 10 recorded scenarios * 16 bytes",
-        )
-        self.assertEqual(log, _flatten(_scenarios()))
+TEST_CASE("beam_target_draw_sim: both pipelines record the same state and HARGS") {
+  const Run unopt = run(false);
+  const Run opt = run(true);
+  CHECK(unopt.log == opt.log);
+  CHECK(hargs(unopt.result) == hargs(opt.result));
+}
 
-    def test_optimized_matches_expected(self):
-        result, log = self._run(optimize=True)
-        self.assertEqual(result.return_int() & 0xFFFF, 10 * 16)
-        self.assertEqual(log, _flatten(_scenarios()))
-
-    def test_opt_and_unopt_agree(self):
-        unopt_result, unopt_log = self._run(optimize=False)
-        opt_result, opt_log = self._run(optimize=True)
-        self.assertEqual(
-            unopt_log, opt_log,
-            "optimizer changed observable state",
-        )
-        unopt_hargs = bytes(
-            unopt_result.memory[rt_mod.HARGS:rt_mod.HARGS + 2]
-        )
-        opt_hargs = bytes(
-            opt_result.memory[rt_mod.HARGS:rt_mod.HARGS + 2]
-        )
-        self.assertEqual(unopt_hargs, opt_hargs)
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace c6502::suite

@@ -101,6 +101,9 @@ cpp/
     frozen.*, unxz.*  the frozen captures' archives, and their .xz
                       decompression with XZ Embedded
     sha256.*          SHA-256, for the golden files' digests
+    sha512.*          SHA-512, for the string seeds of py_random
+    py_random.*       CPython's random.Random, for the tests and the
+                      fuzzers ("The tests of whole compiles")
     rtlib/helpers.h   the runtime helpers' table (step 7, group E)
     py_int.*          Python's `int()` of a string and its integer
                       operators, in 128 bits with an error past them
@@ -277,6 +280,8 @@ cpp/
     sim/assembler.*   instruction_size, from sim/assembler.py
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
+    compile_case.*    the library of the tests of whole compiles (step 9)
+    frozen/py_random.txt   CPython 3.11's results of random.Random
     asm_text.h        a test's program and expected instructions as dump text
     call_case.h       a recorded call of a function of emission, for the
                       tests recorded from the Python unit tests
@@ -3386,6 +3391,52 @@ about 18 MB of tables), test_address_attr_placement.cpp,
 test_pointer_restage.cpp, and test_if_character_constants_rewriting.cpp,
 which calls `preprocessor::without_named_escapes`, declared in
 preprocessor.h for it.
+
+## The tests of whole compiles
+
+Step 9's group G1 moved the Python tests that compile a program and
+check its text, its error, or its command line, and those that run
+`main` in the TAC interpreter, to doctest cases written by hand
+(docs/cpp_port.md, "Step 9: no Python left"). Each case checks every
+assertion of the Python test it replaced. The cases of
+`tests/test_<m>.py` are in `tests/test_<m>.cpp`, or
+`tests/test_<m>_source.cpp` beside an earlier file of that name, and
+each case's name starts with `<m>:`, so that `c6502_tests -tc="<m>:*"`
+runs one module's.
+
+They share the library in tests/compile_case.h, which runs the
+compiler in process as compile.py, cpp_backend.py, and
+tests/link_helpers.py did for the Python tests:
+
+- `compile` runs a source to one of the stages of compile.py's
+  `_run_source` (`--lex`, `--parse`, `--resolve`, `--tac`, `-S`), with
+  `-O`, inlining, link metadata, the preprocessor's arguments, and a
+  file name, through the functions the backend's modes call
+  (`passes::front_end`, `passes::codegen`, `passes::run_text_stage`),
+  and returns the text, what the preprocessor wrote to stderr, the
+  warnings, and the error's Python class and message. The IR checks
+  are on unless a case turns them off, since the Python suite ran with
+  `C6502_CHECK_IR=1`. `run_source`, `codegen`, and `compile_error` throw
+  when the result isn't the one the case expects.
+- `is_a` gives errors.py's hierarchy by name, so that a case accepts
+  the subclasses that `assertRaises` would.
+- `tac_program` returns the TAC that `--tac` prints, and `tac_main` /
+  `run_program` what `main` returns in the TAC interpreter, through
+  `tac_sim_modes::translate`.
+- `compile_main`, `nm_main`, and `objdump_main` run the three command
+  lines in process with a given stdin, and `TempDir` and `ChangeDir`
+  give them a directory.
+- `compile_object`, `link` (with sim/linked.py's `--defsym` pairs for
+  the simulator's helpers), `linked_text`, `listing`, and `symbols` are
+  tests/link_helpers.py's.
+- `function_body` returns one function's lines of the `-S` text.
+
+The tests find the checkout through `C6502_SOURCE_ROOT`, which
+CMakeLists.txt defines. src/py_random.h is CPython 3.11's
+`random.Random`, which tools/py_random_vectors.py checked against
+CPython's own results, frozen in tests/frozen/py_random.txt, so that a
+case or a fuzzer that draws operands at random draws the Python
+test's.
 
 ## Status
 

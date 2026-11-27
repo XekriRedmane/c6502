@@ -15,6 +15,8 @@ Coverage:
     multi-byte stores write all bytes correctly.
   * The optimization fires only for static-storage arrays whose
     total byte size ≤ 256.
+
+The `-S` text is checked in cpp/tests/test_indexed_symbol_store.cpp.
 """
 from __future__ import annotations
 
@@ -22,69 +24,6 @@ import unittest
 
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestIndexedSymbolStoreAsmShape(unittest.TestCase):
-    """Source-level tests asserting the emitted asm uses absolute,X."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_static_uint8_array_uses_absolute_x_store(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "static uint8_t arr[100];\n"
-            "void f(uint8_t i, uint8_t v) { arr[i] = v; }\n"
-            "int main(void) { f(3, 7); return arr[3]; }\n"
-        )
-        asm = self._compile(src)
-        self.assertIn("STA   arr,X", asm)
-        # No DPTR staging for this access.
-        # (Other code paths may stage DPTR; this is a sanity-check
-        # confirming the fast path fired.)
-
-    def test_extern_uint8_array_uses_absolute_x_store(self) -> None:
-        # The fast path also fires for `extern T name[]` — the
-        # incomplete-array form has `_sizeof = 0`, which trivially
-        # passes the ≤ 256 check (the contract: programmer ensures
-        # the defining TU sizes it to ≤ 256 bytes).
-        src = (
-            "#include <stdint.h>\n"
-            "extern uint8_t entity_active[];\n"
-            "void f(uint8_t slot) { entity_active[slot] = 1; }\n"
-            "int main(void) { return 0; }\n"
-        )
-        asm = self._compile(src)
-        self.assertIn("STA   entity_active,X", asm)
-
-    def test_static_uint16_array_emits_two_sta(self) -> None:
-        # 2-byte element type — IndexedSymbolStore lowering emits
-        # two STA atoms (low byte and high byte).
-        src = (
-            "#include <stdint.h>\n"
-            "static uint16_t arr[10];\n"
-            "void f(uint8_t i, uint16_t v) { arr[i] = v; }\n"
-            "int main(void) { return 0; }\n"
-        )
-        asm = self._compile(src)
-        self.assertIn("STA   arr,X", asm)
-        self.assertIn("STA   arr+1,X", asm)
-
-    def test_large_static_array_does_not_use_fast_path(self) -> None:
-        # ≥ 257 bytes — byte index can exceed 255, falls back to
-        # the generic pointer-arithmetic + indirect-Y store.
-        src = (
-            "#include <stdint.h>\n"
-            "static uint8_t big[300];\n"
-            "void f(uint16_t i, uint8_t v) { big[i] = v; }\n"
-            "int main(void) { return 0; }\n"
-        )
-        asm = self._compile(src)
-        # Should NOT have `STA big,X`; should have a DPTR-staged
-        # indirect-Y store instead.
-        self.assertNotIn("STA   big,X", asm)
 
 
 @needs_c6502cpp

@@ -35,8 +35,9 @@ the low N bytes of the product, which is the result for both signed
 and unsigned C operands at the width the caller reads. `udivmod*`
 floor-divides unsigned operands, and `sdivmod*` truncates toward zero
 with the remainder taking the dividend's sign (C99 §6.5.5.6). The
-helpers with 6502 code (`rtlib/helpers.py`, the runtime
-library) run as 6502 code instead of their hooks.
+helpers with 6502 code (cpp/src/rtlib/helpers.h, the runtime library,
+which `cpp_backend.helper_program` reads from `c6502cpp helper-dump`)
+run as 6502 code instead of their hooks.
 
 FP helpers (`i2f` / `u2f` / `f2i` / `f2d` / `fadd` / etc., plus the
 ordering helpers `flt` / `fle` / `dlt` / `dle`) are implemented as
@@ -256,7 +257,7 @@ def _fp_unimplemented(name: str) -> Hook:
 # IEEE 754 single / double (float / double) arithmetic helpers,
 # implemented via Python's built-in float — i.e. via the host's
 # native FP unit. These are stand-ins until the actual 6502 asm
-# implementations land in `rtlib/helpers.py`. They give
+# implementations land in cpp/src/rtlib/helpers.cpp. They give
 # end-to-end FP correctness for the chapter tests today; the asm
 # versions are what'll let real c6502 binaries run.
 import struct as _struct
@@ -508,7 +509,7 @@ def build_runtime(layout=None) -> Runtime:
     when None).
 
     Helpers split into two pools:
-      - Real-asm helpers (`rtlib.helpers.ASM_IMPLEMENTED`):
+      - Real-asm helpers (`cpp_backend.helper_program`):
         assembled into `helper_image` at `TRAP_BASE` (= $E000), with
         their resolved addresses recorded in `symbols`. Real 6502
         code runs when the user program JSRs to one of these names.
@@ -520,9 +521,9 @@ def build_runtime(layout=None) -> Runtime:
 
     Both pools share the same `symbols` table, so user code links
     uniformly via the helper name regardless of which pool fulfills
-    it. Adding a helper to `rtlib.helpers.ASM_IMPLEMENTED` flips
-    it from Python to real asm without any changes elsewhere."""
-    from rtlib.helpers import ASM_IMPLEMENTED, all_helper_functions
+    it. A helper added to cpp/src/rtlib/helpers.cpp replaces its hook
+    without any changes elsewhere."""
+    from cpp_backend import helper_program
     from sim.assembler import assemble
     from passes.runtime_layout import CLASSIC
     import asm_ast
@@ -534,18 +535,14 @@ def build_runtime(layout=None) -> Runtime:
     # Assemble the real-asm helpers into a contiguous chunk at
     # TRAP_BASE. The resulting symbol table maps each helper's name
     # to its real address.
-    asm_set = set(ASM_IMPLEMENTED)
+    helpers = helper_program().top_level
+    asm_set = {fn.name for fn in helpers}
     if asm_set:
-        prog = asm_ast.Program(top_level=list(all_helper_functions()))
+        prog = asm_ast.Program(top_level=list(helpers))
         assembled = assemble(
             prog, origin=TRAP_BASE, extra_symbols=layout.addrs(),
         )
         for name in asm_set:
-            if name not in assembled.symbols:
-                raise RuntimeError(
-                    f"helper {name!r} declared in ASM_IMPLEMENTED "
-                    "but not present in assembled output"
-                )
             rt.symbols[name] = assembled.symbols[name]
         # Slice exactly the helper region (origin → code_end) into
         # `helper_image`; `install_runtime` lays it down at

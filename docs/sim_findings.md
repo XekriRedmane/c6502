@@ -145,7 +145,8 @@ arms now dispatch by operand signedness, mirroring the existing
 `asr*` / `lsr*` split — `sdivmod{8,16,32}` for signed, `udivmod{8,16,32}`
 for unsigned, both gated by `_is_unsigned_val(src1)`. (2) `udivmod8`
 and `sdivmod8` exist as real 6502 assembly in
-`rtlib/helpers.py`; the simulator assembles them into the
+`rtlib/helpers.py` (cpp/src/rtlib/helpers.cpp since step 9 of the
+port); the simulator assembles them into the
 program image at `$E000+` and the user's `JSR udivmod8` lands on the
 real 6502 routine instead of a Python trap. The 16- and 32-bit
 variants stay as Python hooks for now (same algorithm, scaled

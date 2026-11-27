@@ -911,9 +911,8 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
 - `runtime_layout.h` — `choose_layout`. Where SSP, FP, HARGS, and
   DPTR go: the classic `$00`-`$25` unless a fixed zero-page object is
   there, else HARGS (sized to the program's offsets and the
-  footprints of the helpers it calls, measured from
-  `rtlib/helpers.py`, of which c6502cpp holds a copy in
-  cpp/generated/rtlib_helpers.cpp), SSP, FP, and DPTR in the lowest free
+  footprints of the helpers it calls, measured on
+  cpp/src/rtlib/helpers.h), SSP, FP, and DPTR in the lowest free
   runs below `$80`. The layout is `RuntimeLayout` (`asm_context.h`),
   which an asm pass reads as `ctx.layout` of the compile's
   `AsmContext`. `asm_aliasing.runtime_zp_addrs`,
@@ -921,7 +920,7 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
   `asm_emit` read it. `hargs_need` and `check_hargs`, which verifies
   the final code fits the size, are in `zp_globals.h`.
 - `runtime_library.h` — the runtime library: the helpers of
-  `rtlib/helpers.py` (the table cpp/src/rtlib/helpers.h reads), which
+  cpp/src/rtlib/helpers.h, which
   the linker adds to a program that calls them. `needed` gives the
   helpers the objects name and neither define nor get from
   `--defsym`, with the helpers those call (`closure`), and the linker

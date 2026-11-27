@@ -25,14 +25,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from binutils import elf as E
-from rtlib.helpers import all_helper_functions
+from cpp_backend import helper_names
 from tests.cpp_build import needs_c6502cpp
-
-
-def helper_names() -> frozenset[str]:
-    """The names of the helpers the runtime library has, the functions
-    of rtlib/helpers.py, which the simulator keeps."""
-    return frozenset(fn.name for fn in all_helper_functions())
 
 
 

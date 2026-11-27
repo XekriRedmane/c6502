@@ -34,6 +34,11 @@ fuzz/tac_passes.py.
 and runs the stage it names in one process, and nm.py's and
 objdump.py's in `c6502cpp nm` and `c6502cpp objdump`.
 
+`helper_program` and `helper_footprints` give the runtime helpers,
+which are built in C++ (cpp/src/rtlib/helpers.h), as `c6502cpp
+helper-dump` and `c6502cpp helper-footprints` write them, for the
+simulator, which assembles them at $E000, and for the tests.
+
 The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
 issues again through `diagnostics.warn`, and an error that a pass of
@@ -47,6 +52,7 @@ paths in the preprocessor's messages are relative to the caller's.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import subprocess
@@ -451,6 +457,40 @@ def run_tool(name: str, argv: list[str], *, inline: bool = True) -> int:
     if done.returncode == 2 and done.stderr.startswith(b"usage: "):
         raise SystemExit(2)
     return done.returncode
+
+
+@functools.lru_cache(maxsize=1)
+def helper_program():
+    """Returns the `asm_ast.Program` of the runtime helpers that have
+    6502 code, in the order the runtime library lays them out. Every call
+    returns the same object, which the caller must not change."""
+    import ir_dump
+    done = subprocess.run(
+        [_require_cli(), "helper-dump"], check=True, capture_output=True,
+    )
+    return ir_dump.load(done.stdout.decode("utf-8"), "asm_ast")
+
+
+def helper_names() -> frozenset[str]:
+    """Returns the names of the runtime helpers that have 6502 code."""
+    return frozenset(fn.name for fn in helper_program().top_level)
+
+
+@functools.lru_cache(maxsize=1)
+def helper_footprints() -> dict[str, int]:
+    """Returns each runtime helper's HARGS footprint, the number of
+    HARGS bytes it touches, counting the helpers it calls, by name, in
+    the order of `helper_program`. Every call returns the same dict,
+    which the caller must not change."""
+    done = subprocess.run(
+        [_require_cli(), "helper-footprints"], check=True,
+        capture_output=True,
+    )
+    out: dict[str, int] = {}
+    for line in done.stdout.decode("utf-8").splitlines():
+        name, size = line.split()
+        out[name] = int(size)
+    return out
 
 
 def _terminal_columns() -> int:

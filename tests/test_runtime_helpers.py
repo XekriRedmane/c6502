@@ -1,4 +1,4 @@
-"""Tests for the 6502 runtime helpers in `rtlib.helpers`.
+"""Tests for the 6502 runtime helpers (cpp/src/rtlib/helpers.h).
 
 Each helper has its own correctness obligations; this file drives
 each in isolation by handcrafting a tiny C program that exercises the

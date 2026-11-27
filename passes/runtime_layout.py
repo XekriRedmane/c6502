@@ -39,20 +39,20 @@ driver sets with `set_current` and resets at the end.
 A helper reads its inputs from HARGS, writes its outputs there, and
 may use more of it as scratch: `mul32` works in HARGS+12..19. So a
 program needs the larger of its own highest HARGS offset and the
-footprint of every helper it calls. The footprints are measured from
-the 6502 helpers in `rtlib/helpers.py`, including the helpers
-they call. A helper that's only a Python hook in the simulator, such
-as the floating-point ones, uses no scratch, so the program's own
-offsets cover it. The runtime library the linker adds to a program
-(passes/runtime_library.py) is the same code, so its helpers keep
-within these footprints. A runtime written outside this repo, given
-with `--defsym`, has to keep each helper within them too.
+footprint of every helper it calls. The footprints are measured on
+the 6502 helpers (cpp/src/rtlib/helpers.h), including the helpers they
+call, and `c6502cpp helper-footprints` lists them. A helper that's only
+a Python hook in the simulator, such as the floating-point ones, uses
+no scratch, so the program's own offsets cover it. The runtime library
+the linker adds to a program (cpp/src/passes/runtime_library.h) is the
+same code, so its helpers keep within these footprints. A runtime
+written outside this repo, given with `--defsym`, has to keep each
+helper within them too.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 
 import asm_ast
 from passes.dataclass_fields import fields_of
@@ -178,37 +178,12 @@ def _hargs_offsets(instrs) -> set[int]:
     return out
 
 
-@lru_cache(maxsize=1)
 def helper_footprints() -> dict[str, int]:
-    """For each 6502 helper in `rtlib/helpers.py`, the number
-    of HARGS bytes it touches, counting the helpers it calls."""
-    from rtlib.helpers import all_helper_functions
-    fns = {fn.name: fn for fn in all_helper_functions()}
-    own = {
-        name: max(_hargs_offsets(fn.instructions), default=-1) + 1
-        for name, fn in fns.items()
-    }
-    calls = {
-        name: {
-            i.name for i in fn.instructions
-            if isinstance(i, asm_ast.Call) and i.name in fns
-        }
-        for name, fn in fns.items()
-    }
-    out: dict[str, int] = {}
-
-    def size(name: str, seen: frozenset[str]) -> int:
-        if name in out:
-            return out[name]
-        n = own[name]
-        for callee in calls[name] - seen:
-            n = max(n, size(callee, seen | {name}))
-        out[name] = n
-        return n
-
-    for name in fns:
-        size(name, frozenset())
-    return out
+    """For each 6502 helper, the number of HARGS bytes it touches,
+    counting the helpers it calls, as `c6502cpp helper-footprints` gives
+    it."""
+    import cpp_backend
+    return cpp_backend.helper_footprints()
 
 
 def hargs_need(prog: asm_ast.Program) -> int:

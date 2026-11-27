@@ -63,8 +63,8 @@ The build makes these targets.
 - `c6502`, a static library with all of the compiler's code (`src/`
   and `generated/`). A `.cpp` file added under `src/`, `src/asdl/`,
   `src/passes/`, `src/passes/optimization/`,
-  `src/passes/optimization_asm/`, or `src/sim/` is picked up the next
-  time CMake runs.
+  `src/passes/optimization_asm/`, `src/rtlib/`, or `src/sim/` is
+  picked up the next time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
 - `c6502cpp`, the CLI (`src/main.cpp`): the compiler's commands that
   compile.py, nm.py, and objdump.py run, and the checks below.
@@ -79,8 +79,6 @@ cpp/
   generated/          checked in
     asm_ast.h/.cpp    one header and one source per .asdl module, which
                       asdlgen writes, never edited
-    rtlib_helpers.cpp the runtime helpers of rtlib/helpers.py, which
-                      tools/rtlib_table.py writes, never edited
     c99_lalr.cpp      the tables of the C parser (lark_table.h), which
                       Lark computed from the Python parser's grammar
                       and which are edited by hand since step 8
@@ -109,7 +107,8 @@ cpp/
     sha512.*          SHA-512, for the string seeds of py_random
     py_random.*       CPython's random.Random, for the tests and the
                       fuzzers ("The tests of whole compiles")
-    rtlib/helpers.h   the runtime helpers' table (step 7, group E)
+    rtlib/helpers.*   the runtime helpers' asm functions ("The runtime
+                      library")
     py_int.*          Python's `int()` of a string and its integer
                       operators, in 128 bits with an error past them
     capture.*         the reader of capture files and their contexts
@@ -2432,9 +2431,8 @@ text, and `optimized_program` runs the region and the steps of
 
 Since the stage's driver runs code generation in C++ too, everything
 these read comes from C++. The HARGS footprints of the runtime helpers
-(`runtime_layout.helper_footprints`) are measured on the copy of
-rtlib/helpers.py compiled into the program ("The runtime library"
-below), since the helpers' code stays in Python with the simulator.
+(`runtime_layout.helper_footprints`) are measured on the helpers
+built into the program ("The runtime library" below).
 The link metadata's records that read the TAC, the ABI,
 and the symbol table (`build_metadata`, `changed_param_slots`, the
 carry functions, `preferred_symbols`, and the `ext` records of the
@@ -2645,30 +2643,30 @@ uv run python tools/binutils_errors.py captures/binutils
 
 ### The runtime library
 
-The helpers' 6502 code stays in rtlib/helpers.py, where the simulator
-reads it, until step 9. `tools/rtlib_table.py` writes
-cpp/generated/rtlib_helpers.cpp, which holds the dump of the program of
-every helper's `asm_ast` function, one line of the dump to a string
-literal, and the names of `DECIMAL_MODE_HELPERS`, sorted, with LF line
-endings. `tests/test_rtlib_table.py` writes it again and fails when it
-differs, as `tests/test_lalr_table.py` does for the parser's table, so
-after an edit of rtlib/helpers.py the table is regenerated with `uv run
-python tools/rtlib_table.py`. The table is compiled in, which keeps the
-build and the executable free of a data file to find, and
-`rtlib::all_helper_functions` (src/rtlib/helpers.h) reads the dump on
-the first call, in about a millisecond. The call edges between the
-helpers aren't in the table, since the C++ code finds them in the
-functions' `Call` and `Jump` instructions as the Python code does.
-Python's `helper_footprints` follows the calls in a set's order, which
-could change a footprint only through a cycle, so the generator refuses
-helpers that call each other in one.
+src/rtlib/helpers.cpp builds each helper's `asm_ast` function, with
+the builders that several share (`negate_n_inplace`, `copy_n_via_a`,
+`shift_wide`, `sdivmod_wide`) and a comment on each that gives its
+`HARGS` layout and its algorithm. `rtlib::all_helper_functions` builds
+them on the first call, and `rtlib::helper_dump` gives their program in
+the dump format, which `c6502cpp helper-dump` writes for the simulator
+(`cpp_backend.helper_program`). The call edges between the helpers are
+found in the functions' `Call` and `Jump` instructions, and
+`rtlib::check_acyclic`, which `all_helper_functions` runs, refuses
+helpers that call each other in a cycle, since a footprint counts the
+helpers a helper calls.
+
+Until step 9 the helpers were Python, in rtlib/helpers.py, and
+tools/rtlib_table.py copied their dump into
+cpp/generated/rtlib_helpers.cpp, which the C++ side read. Group G2 of
+step 9 ported the builders and removed all three, and
+cpp/tests/frozen/rtlib_helpers.txt is the dump the generated file held,
+which test_rtlib_helpers.cpp compares with `helper_dump()`, beside the
+footprints Python measured.
 
 `passes::helper_footprints` (src/passes/zp_globals.h, beside
-`hargs_need`) is `runtime_layout.helper_footprints` on the table.
-`c6502cpp helper-footprints` lists it, and tests/test_rtlib_table.py
-compares the list with Python's for every helper. The backend's request
-doesn't carry the footprints any more, so a compile through c6502cpp
-imports no part of rtlib or passes.runtime_layout for them.
+`hargs_need`) measures each helper's footprint on the functions.
+`c6502cpp helper-footprints` lists it, which is where
+`passes.runtime_layout.helper_footprints` reads it for the tests.
 
 `passes::needed`, `closure`, `helper_names`, and `library_text`
 (src/passes/runtime_library.h) are passes/runtime_library.py on the
@@ -3705,9 +3703,10 @@ test's.
   tools/capture_binutils.py, which all match, and nm.py run through
   `c6502cpp nm` under `C6502_CPP_BACKEND=1`.
 - 22 Nov 2026: group E of step 7, the runtime library ("The runtime
-  library"): the helpers' table generated from rtlib/helpers.py, the
-  HARGS footprints measured on it, which the backend's request no
-  longer carries, and `needed` and `library_text`, which match Python
+  library"): the helpers' table generated from rtlib/helpers.py (built
+  in C++ since step 9), the HARGS footprints measured on it, which the
+  backend's request no longer carries, and `needed` and `library_text`,
+  which match Python
   on all 4,534 `runtime_library` records of the corpus and the 101 of
   the suite, 182 distinct sets of helpers in all, in the builds of MSVC
   19.36 and GCC 12.2.

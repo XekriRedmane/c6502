@@ -535,8 +535,8 @@ class TestReadmeLink(unittest.TestCase):
 
     def test_helpers_are_its_own(self) -> None:
         from binutils import elf as E
-        from rtlib.helpers import all_helper_functions
-        helpers = {fn.name for fn in all_helper_functions()}
+        from cpp_backend import helper_names
+        helpers = helper_names()
         absolute = [
             s.name for s in self.exe.symbols
             if s.name in helpers and s.section == E.SHN_ABS

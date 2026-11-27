@@ -28,7 +28,7 @@ one asm `DecimalArith` for it, which `asm_to_asm2` expands into
 `SED; CLC; LDA; ADC; STA; ...; CLD`. `__c6502_bin_to_bcd` lowers to
 TAC `Unary(BinToBcd)`, an `unsigned int` source and an `unsigned long`
 destination, which tac_to_asm lowers to a call of the runtime helper
-`bin16_to_bcd` (rtlib/helpers.py), and `bin_to_bcd` gives its value
+`bin16_to_bcd` (cpp/src/rtlib/helpers.h), and `bin_to_bcd` gives its value
 for constant folding.
 
 `adc_byte` and `sbc_byte` copy py65's `opADC` and `opSBC` in decimal

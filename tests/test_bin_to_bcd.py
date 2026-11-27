@@ -1,6 +1,6 @@
 """Tests for `__c6502_bin_to_bcd` (builtin_functions.py,
 docs/builtins.md) and the runtime helper behind it, `bin16_to_bcd`
-(rtlib/helpers.py).
+(cpp/src/rtlib/helpers.h).
 
 The helper's 6502 code is run on py65 for every 16-bit input and
 compared with its Python hook in the simulator, and every input is run

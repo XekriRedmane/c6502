@@ -13,10 +13,9 @@ tests, and the fuzzers to C++.
   sim/runtime.py, and sim/ali_baba.py), and cpp_backend.py raises a
   compile's layout error as its `RuntimeLayoutError`
   (`_ERROR_MODULES`). `helper_footprints` gives each runtime helper's
-  HARGS footprint, measured from rtlib/helpers.py, and
-  tests/test_rtlib_table.py checks the footprints of the C++ table
-  that tools/rtlib_table.py writes against it, as
-  tests/test_runtime_library.py checks a linked program's HARGS size.
+  HARGS footprint, which it reads from `c6502cpp helper-footprints`
+  (cpp_backend.py), and tests/test_runtime_library.py checks a linked
+  program's HARGS size against it.
   tests/test_runtime_layout.py and tests/test_linker.py read
   `CLASSIC` and `RuntimeLayout`. The module also keeps
   `choose_layout`, `hargs_need`, and `check_hargs`, which nothing in

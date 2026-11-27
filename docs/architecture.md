@@ -312,13 +312,12 @@ to that width (`odd_width_helper_op` in cpp/src/tac_to_asm_arith.cpp).
 `JMP (DPTR)`.
 
 The layouts above are the ones `sim/runtime.py`'s Python hooks read,
-and the 6502 helpers of `rtlib/helpers.py`, which the linker
+and the 6502 helpers of cpp/src/rtlib/helpers.cpp, which the linker
 adds to a program from the runtime library, follow them too.
 `helper_footprints` in cpp/src/passes/zp_globals.h gives how many
-bytes of `HARGS` each of the 6502 helpers touches, measured from the
-copy of rtlib/helpers.py compiled into c6502cpp
-(cpp/generated/rtlib_helpers.cpp), and a helper written outside the repository
-and given with `--defsym` has to stay within those footprints,
+bytes of `HARGS` each of the 6502 helpers touches, and a helper written
+outside the repository and given with `--defsym` has to stay within
+those footprints,
 because `choose_layout` sizes a moved `HARGS` by them.
 
 ## Output format

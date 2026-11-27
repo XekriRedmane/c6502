@@ -87,7 +87,10 @@ the boot stub's BRK fires. It stays in Python until step 9 of the port
   64-bit and floating-point helpers), so every chapter test runs
   end-to-end.
 - The runtime helpers' 6502 code, which `build_runtime` assembles
-  at $E000, is in `rtlib/helpers.py` (see rtlib/CLAUDE.md).
+  at $E000, is built in C++ (cpp/src/rtlib/CLAUDE.md), and
+  `build_runtime` reads it through `cpp_backend.helper_program`, which
+  runs `c6502cpp helper-dump`. The helpers are the ones with 6502 code,
+  and every other name in `_HELPERS` gets a trap address and its hook.
 
 ## Notes
 

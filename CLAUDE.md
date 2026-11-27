@@ -32,9 +32,9 @@ and drive the compiler from there.
   runs.
 - `sim/`, `fuzz/`, and `tests/` are the simulator, the fuzzers, and
   the test suite.
-- `rtlib/helpers.py` holds the code of the runtime helpers, which the
-  simulator assembles and `tools/rtlib_table.py` copies into
-  cpp/generated/rtlib_helpers.cpp for the C++ compiler.
+- The runtime helpers are built in C++ (cpp/src/rtlib/helpers.h), and
+  the simulator reads them from `c6502cpp helper-dump` through
+  `cpp_backend.helper_program`.
 - `binutils/elf.py` and `binutils/opcodes.py` read executables and
   decode opcodes for the simulator.
 - `bit_precise.py` and `builtin_functions.py` are read by the tests,
@@ -86,9 +86,9 @@ stages (parser, lexer, codegen, ASDL definitions, compile.py CLI).
   writer, the assembler `compile.py -c` runs, relocation and
   relaxation, and the disassembler behind `nm.py` and `objdump.py`)
   are in cpp/src/binutils/, which that file describes too.
-- [rtlib/CLAUDE.md](rtlib/CLAUDE.md) — the runtime library, the
-  6502 helpers that the linker adds to a program that calls them and
-  that the simulator runs.
+- [cpp/src/rtlib/CLAUDE.md](cpp/src/rtlib/CLAUDE.md) — the runtime
+  library, the 6502 helpers that the linker adds to a program that
+  calls them and that the simulator runs.
 - [sim/CLAUDE.md](sim/CLAUDE.md) — in-process 6502 simulator
   (assembler, runtime stub, Python-implemented helpers, and the
   loader for linked executables).
@@ -216,9 +216,8 @@ Key runtime conventions:
   with the asm atoms `SetDecimal` / `ClearDecimal`, which only the
   helpers write (`check_asm` rejects them elsewhere), and
   `check_asm2` checks that it clears the flag before its `RTS`
-  (`DECIMAL_MODE_HELPERS` in rtlib/helpers.py, which
-  `rtlib::decimal_mode_helpers` in cpp/src/rtlib/helpers.h reads from
-  the generated table). User guide:
+  (`rtlib::decimal_mode_helpers` in cpp/src/rtlib/helpers.h). User
+  guide:
   [docs/builtins.md](docs/builtins.md).
   The other 84 builtins are `<stdbit.h>`'s (C23 §7.18):
   `__c6502_stdc_<op>` for each of the 14 operations in its
@@ -415,9 +414,8 @@ cpp/src/passes/optimized_front.cpp (`select_abi` through
 `synthesize_prologue`, with the pool retries) or, without `-O`,
 `fixed_address_layouts`, `tac_to_asm`, and `replace_pseudoregisters`,
 then the back end's region, the work after it, the link metadata, and
-`asm_emit`. The runtime helpers' HARGS footprints come from the copy
-of rtlib/helpers.py compiled into c6502cpp
-(cpp/generated/rtlib_helpers.cpp, written by tools/rtlib_table.py).
+`asm_emit`. The runtime helpers' HARGS footprints come from the
+helpers built into c6502cpp (cpp/src/rtlib/helpers.h).
 The request also holds a flag that is false when a test has set
 `compile.inline_small_functions` to False (tests/no_inlining.py), so
 that such a test's `static` functions stay functions
@@ -597,8 +595,7 @@ Objects and linking:
   error unless `--defsym NAME=VALUE` gives it. User guide:
   [docs/linker_scripts.md](docs/linker_scripts.md).
 - The runtime helpers a program calls (`mul16`, `sdivmod16`, `asl8`,
-  and the rest with 6502 code in `rtlib/helpers.py`, which the
-  compiler reads from cpp/generated/rtlib_helpers.cpp) come from
+  and the rest with 6502 code in cpp/src/rtlib/helpers.cpp) come from
   the runtime library (cpp/src/passes/runtime_library.h), as routines come
   from libgcc. The linker takes each helper that some object names,
   that no object defines, and that no `--defsym` gives, and the
@@ -707,9 +704,6 @@ Root-level files:
 - `ir_dump.py` — the dump format, a canonical text form of any IR
   value (`dump`, `load`) that the C++ compiler reads and writes too.
   Its docstring gives the grammar.
-- `tools/rtlib_table.py` — copies the runtime helpers of
-  rtlib/helpers.py into cpp/generated/rtlib_helpers.cpp, and with
-  `--check` exits 1 when the file differs.
 - `tools/run_exclusive.sh LABEL COMMAND...` — runs a command while
   holding a machine-wide lock (`/c/w/heavy.lock`), so that agents
   working in parallel take turns at builds and test runs. A build

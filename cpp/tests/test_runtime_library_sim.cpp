@@ -252,8 +252,6 @@ void check(const std::set<std::string>& helpers, const Type& t, const Type& u,
 }
 
 const Fn kMul = [](Int x, Int y) { return x * y; };
-const Fn kDiv = [](Int x, Int y) { return x / y; };
-const Fn kFloorMod = [](Int x, Int y) { return x % y; };
 const Fn kTruncMod = [](Int x, Int y) { return x - trunc_div(x, y) * y; };
 const Fn kShl = [](Int x, Int y) { return x << static_cast<int>(y); };
 const Fn kShr = [](Int x, Int y) { return x >> static_cast<int>(y); };
@@ -288,7 +286,7 @@ SECTIONS
 // widths aren't linked.
 TEST_CASE("runtime_library sim: mul8") { check({"mul8"}, U8, U8, {{"x * y", kMul}}); }
 TEST_CASE("runtime_library sim: udivmod8") {
-  check({"udivmod8"}, UB8, UB8, {{"x / y", kDiv}, {"x % y", kFloorMod}}, true);
+  check({"udivmod8"}, UB8, UB8, {{"x / y", std::divides<Int>{}}, {"x % y", std::modulus<Int>{}}}, true);
 }
 TEST_CASE("runtime_library sim: sdivmod8") {
   check({"sdivmod8", "udivmod8"}, B8, B8, {{"x / y", trunc_div}, {"x % y", kTruncMod}}, true);
@@ -298,7 +296,7 @@ TEST_CASE("runtime_library sim: lsr8") { check({}, UB8, COUNT, {{"x >> y", kShr}
 TEST_CASE("runtime_library sim: asr8") { check({}, B8, COUNT, {{"x >> y", kShr}}, false, 8, {"asr8"}); }
 TEST_CASE("runtime_library sim: mul16") { check({"mul16"}, U16, U16, {{"x * y", kMul}}); }
 TEST_CASE("runtime_library sim: udivmod16") {
-  check({"udivmod16"}, U16, U16, {{"x / y", kDiv}, {"x % y", kFloorMod}}, true);
+  check({"udivmod16"}, U16, U16, {{"x / y", std::divides<Int>{}}, {"x % y", std::modulus<Int>{}}}, true);
 }
 TEST_CASE("runtime_library sim: sdivmod16") {
   check({"sdivmod16", "udivmod16"}, S16, S16, {{"x / y", trunc_div}, {"x % y", kTruncMod}}, true);
@@ -308,7 +306,7 @@ TEST_CASE("runtime_library sim: lsr16") { check({}, U16, COUNT, {{"x >> y", kShr
 TEST_CASE("runtime_library sim: asr16") { check({}, S16, COUNT, {{"x >> y", kShr}}, false, 16, {"asr16"}); }
 TEST_CASE("runtime_library sim: mul32") { check({"mul32"}, U32, U32, {{"x * y", kMul}}); }
 TEST_CASE("runtime_library sim: udivmod32") {
-  check({"udivmod32"}, U32, U32, {{"x / y", kDiv}, {"x % y", kFloorMod}}, true);
+  check({"udivmod32"}, U32, U32, {{"x / y", std::divides<Int>{}}, {"x % y", std::modulus<Int>{}}}, true);
 }
 TEST_CASE("runtime_library sim: sdivmod32") {
   check({"sdivmod32", "udivmod32"}, S32, S32, {{"x / y", trunc_div}, {"x % y", kTruncMod}}, true);

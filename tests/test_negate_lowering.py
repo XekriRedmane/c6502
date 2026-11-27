@@ -1,6 +1,8 @@
 """Tests for the lowering of an integer negate, `0 - x` a byte at a
 time (`tac_to_asm.Translator`, the `Negate` case of the unary
-lowering)."""
+lowering).
+
+The `-S` text is checked in cpp/tests/test_negate_lowering.cpp."""
 
 from __future__ import annotations
 
@@ -54,15 +56,6 @@ class TestNegate(unittest.TestCase):
                         )
                         self.assertEqual(got, (-v) & ((1 << bits) - 1),
                                          msg=f"-({v})")
-
-    def test_subtracts_from_zero(self):
-        from compile import _run_source
-        src = ("unsigned int g, h;\n"
-               "int main(void) { h = -g; return 0; }\n")
-        asm = _run_source("codegen", src, optimize=True)
-        body = asm[asm.index("\nmain:"):]
-        self.assertNotIn("EOR", body)
-        self.assertIn("SBC   g", body)
 
 
 if __name__ == "__main__":

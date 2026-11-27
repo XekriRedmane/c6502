@@ -5,25 +5,15 @@ asm passes, liveness, keeping a loop counter in X or Y across a call
 `register` local in Y across a call (the register allocator), an
 immediate kept in X across a call (`redundant_load`), and simulator
 runs against stand-in routines.
+
+The simulator runs are here, and the tests that compile a source and
+run no simulator are doctest cases in cpp/tests/test_preserves.cpp.
 """
 from __future__ import annotations
 
-import re
 import unittest
 
-from errors import TypeCheckError
 from sim.harness import build_sim
-
-
-def _codegen(src: str, optimize: bool = True) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _body(asm: str, fn: str) -> str:
-    """The lines of function `fn` in `asm`."""
-    m = re.search(rf"(?ms)^{fn}:\n(.*?)(?=^[A-Za-z_]\w*:|\Z)", asm)
-    return m.group(1) if m else ""
 
 
 # A routine at $D000 that takes A, keeps X, and destroys Y.
@@ -52,63 +42,7 @@ _STANDIN = bytes([0x18, 0x6D, 0x00, 0x31, 0x8D, 0x00, 0x31,
                   0xA0, 0xFF, 0x60])
 
 
-class TestTypeCheck(unittest.TestCase):
-
-    def test_rejected(self) -> None:
-        bad = {
-            "no address":
-                "[[c6502::preserves_x]] void f(void);\n",
-            "int result in X":
-                "[[c6502::preserves_x, c6502::address(0x1000)]] "
-                "int f(void);\n",
-            "unsigned int result in X":
-                "[[c6502::preserves_x, c6502::address(0x1000)]] "
-                "unsigned int f(void);\n",
-        }
-        for label, src in bad.items():
-            with self.subTest(label):
-                with self.assertRaises(TypeCheckError):
-                    _codegen(src)
-
-    def test_accepted(self) -> None:
-        for label, src in {
-            "Y with an int result":
-                "[[c6502::preserves_y, c6502::address(0x1000)]] "
-                "int f(void);\n",
-            "address declared first":
-                "[[c6502::address(0x1000)]] void f(void);\n"
-                "[[c6502::preserves_x]] void f(void);\n",
-        }.items():
-            with self.subTest(label):
-                _codegen(src + "void g(void) { f(); }\n")
-
-
 class TestCountUpLoop(unittest.TestCase):
-
-    def test_counter_in_x_across_the_call(self) -> None:
-        body = _body(_codegen(_KEEPS_X + _SUM_LOOP), "send")
-        self.assertRegex(body, r"CPX\s+n")
-        self.assertRegex(body, r"LDA\s+buf,X\n\s+JSR\s+put\n\s+INX")
-        self.assertNotRegex(body, r"STX|LDX\s+__local")
-
-    def test_wrapped_without_the_promise(self) -> None:
-        # The counter is still kept in X, but saved and reloaded
-        # around a call that may clobber it.
-        body = _body(_codegen(_PLAIN + _SUM_LOOP), "send")
-        self.assertRegex(body, r"STX\s+(\S+)\n\s+JSR\s+put\n\s+LDX\s+\1")
-
-    def test_call_before_the_loop_not_wrapped(self) -> None:
-        src = (
-            _PLAIN
-            + "unsigned char buf[4];\nunsigned char n;\n"
-            "void send(void) {\n"
-            "    put(1); put(2);\n"
-            "    for (unsigned char i = 0; i != n; i++) put(buf[i]);\n"
-            "}\n"
-        )
-        body = _body(_codegen(src), "send")
-        # Only the call inside the loop is wrapped.
-        self.assertEqual(len(re.findall(r"STX", body)), 1)
 
     def test_runs(self) -> None:
         for decl in (_KEEPS_X, _PLAIN):
@@ -131,31 +65,6 @@ class TestCountUpLoop(unittest.TestCase):
         sim.mpu.memory[_TOTAL] = 0
         result = sim.run()
         self.assertNotEqual(result.memory[_TOTAL], 36)
-
-
-class TestCountDownInY(unittest.TestCase):
-    """`counter_to_index_reg` keeps a count-down counter in a register
-    across a call that preserves it."""
-
-    _SRC = (
-        "unsigned char n = 5;\n"
-        "void tick(void) {\n"
-        "    unsigned char c = n;\n"
-        "    do { put(0); } while (--c != 0);\n"
-        "}\n"
-    )
-
-    def test_counter_in_y(self) -> None:
-        keeps_y = (
-            "[[c6502::zp_abi, c6502::preserves_y, c6502::address(0xD000)]]\n"
-            "void put(register unsigned char c);\n"
-        )
-        body = _body(_codegen(keeps_y + self._SRC), "tick")
-        self.assertRegex(body, r"JSR\s+put\n\s+DEY")
-
-    def test_counter_in_memory_without_the_promise(self) -> None:
-        body = _body(_codegen(_PLAIN + self._SRC), "tick")
-        self.assertNotRegex(body, r"DE[XY]")
 
 
 def _run_total(src: str, standin: bytes, optimize: bool) -> int:
@@ -188,16 +97,6 @@ class TestRegisterLocalInY(unittest.TestCase):
     _STANDIN = bytes([0x18, 0x6D, 0x00, 0x31, 0x8D, 0x00, 0x31,
                       0xA2, 0xFF, 0x60])
 
-    def test_in_y_across_the_call(self) -> None:
-        body = _body(_codegen(self._KEEPS_Y + self._SRC), "send")
-        self.assertRegex(body, r"LDA\s+buf,Y\n\s+JSR\s+put\n\s+INY")
-        self.assertNotRegex(body, r"STY|__local")
-
-    def test_rejected_without_the_promise(self) -> None:
-        from errors import RegallocError
-        with self.assertRaisesRegex(RegallocError, "can't pin"):
-            _codegen(_PLAIN + self._SRC)
-
     def test_runs(self) -> None:
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
@@ -221,24 +120,6 @@ class TestImmediateInX(unittest.TestCase):
     # TXA ; CLC ; ADC total ; STA total ; LDY #$FF ; RTS (keeps X)
     _STANDIN = bytes([0x8A, 0x18, 0x6D, 0x00, 0x31, 0x8D, 0x00, 0x31,
                       0xA0, 0xFF, 0x60])
-
-    def test_kept_across_a_preserving_call(self) -> None:
-        body = _body(_codegen(
-            self._DECLS + "void f(void) { keep(5); keep(5); keep(5); }\n"
-        ), "f")
-        self.assertEqual(len(re.findall(r"LDX\s+#\$05", body)), 1)
-
-    def test_reloaded_after_a_plain_call(self) -> None:
-        body = _body(_codegen(
-            self._DECLS + "void f(void) { lose(5); lose(5); }\n"
-        ), "f")
-        self.assertEqual(len(re.findall(r"LDX\s+#\$05", body)), 2)
-
-    def test_memory_reloaded(self) -> None:
-        body = _body(_codegen(
-            self._DECLS + "void f(void) { keep(g); keep(g); }\n"
-        ), "f")
-        self.assertEqual(len(re.findall(r"LDX\s+g", body)), 2)
 
     def test_runs(self) -> None:
         src = self._DECLS + (

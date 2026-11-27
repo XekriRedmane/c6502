@@ -1,25 +1,28 @@
-"""Tests for `[[c6502::save_hardware_stack]]`: a recursive
-function whose recursive calls are marked gets a private zero-page
-pool, and saves what's live across each marked call on the hardware
-stack (`cpp/src/passes/recursion_saves.h`).
+// The simulator tests of tests/test_recursion_saves.py: recursive
+// programs whose recursive calls are marked
+// `[[c6502::save_hardware_stack]]` (src/passes/recursion_saves.h) return
+// what the unoptimized TAC returns, in both pipelines.
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
-The tests that called the Python functions directly are doctest cases of
-the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6), and those that compile a source
-and run no simulator are in cpp/tests/test_recursion_saves.cpp."""
-from __future__ import annotations
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
 
-import unittest
+namespace c6502::suite {
+namespace {
 
-from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
-
-# The attribute, before a statement or declaration. In the programs
-# below, `SAVE ` stands where it goes.
-_SAVE = "[[c6502::save_hardware_stack]] "
-
-
-_DESCEND = """
+// The attribute, before a statement or declaration. In the programs
+// below, `SAVE ` stands where it goes.
+const std::string kSave = "[[c6502::save_hardware_stack]] ";
+// (name, source)
+const std::vector<std::pair<std::string, std::string>> kPrograms = {
+    {"globals", R"c(
 unsigned char level;
 unsigned char deepest;
 unsigned char remaining;
@@ -40,12 +43,8 @@ int main(void) {
     descend();
     return deepest * 10 + level;
 }
-"""
-
-
-_PROGRAMS = {
-    "globals": _DESCEND,
-    "locals and parameters": """
+)c"},
+    {"locals and parameters", R"c(
 unsigned char depth;
 unsigned char out[16];
 unsigned char n;
@@ -73,8 +72,8 @@ int main(void) {
     for (unsigned char i = 0; i < n; i++) s = s * 3 + out[i];
     return (s ^ fact(6)) & 0x7FFF;
 }
-""",
-    "return and declaration": """
+)c"},
+    {"return and declaration", R"c(
 unsigned char weights[8] = {3, 1, 4, 1, 5, 9, 2, 6};
 unsigned int sum_from(unsigned char i) {
     if (i >= 8) return 0;
@@ -95,8 +94,8 @@ int even(unsigned char n) {
     return r * 3 + k;
 }
 int main(void) { return (int)sum_from(0) * 100 + even(6); }
-""",
-    "in a loop": """
+)c"},
+    {"in a loop", R"c(
 unsigned int count_paths(unsigned char n) {
     unsigned int total = 0;
     if (n < 2) return 1;
@@ -106,8 +105,8 @@ unsigned int count_paths(unsigned char n) {
     return total;
 }
 int main(void) { return count_paths(9); }
-""",
-    "address taken": """
+)c"},
+    {"address taken", R"c(
 void bump(unsigned char *p) { *p += 1; }
 unsigned char walk2(unsigned char n) {
     unsigned char local = n;
@@ -118,8 +117,8 @@ unsigned char walk2(unsigned char n) {
     return r + local + keep;
 }
 int main(void) { return walk2(5); }
-""",
-    "long": """
+)c"},
+    {"long", R"c(
 long acc(unsigned char n) {
     long big = (long)n * 70000;
     if (n == 0) return 1;
@@ -127,8 +126,8 @@ long acc(unsigned char n) {
     return r + big;
 }
 int main(void) { return (int)(acc(5) & 0x7FFF); }
-""",
-    "carry flag": """
+)c"},
+    {"carry flag", R"c(
 #include <stdbool.h>
 [[c6502::return_bool_in_carry]]
 bool any_bit(unsigned char n, unsigned char mask) {
@@ -142,8 +141,8 @@ int main(void) {
     for (unsigned char i = 0; i < 40; i++) s = s * 2 + any_bit(i, 3);
     return s & 0x7FFF;
 }
-""",
-    "zp_abi caller": """
+)c"},
+    {"zp_abi caller", R"c(
 int rec(int d) {
     int k = d * 3;
     if (d <= 0) return 0;
@@ -155,8 +154,8 @@ int f0(unsigned char d [[c6502::in_a]], int p0) {
     return p0 + l + d;
 }
 int main(void) { return f0(2, 4); }
-""",
-    "unmarked call on the cycle": """
+)c"},
+    {"unmarked call on the cycle", R"c(
 int pong(int n);
 int ping(int n) {
     int a = n * 2;
@@ -171,26 +170,23 @@ int pong(int n) {
     return r * 2 + b;
 }
 int main(void) { return ping(5); }
-""",
+)c"},
+};
+TEST_CASE("recursion_saves: programs") {
+  for (const auto& [name, marked] : kPrograms) {
+    const std::string src = replace_all(marked, "SAVE ", kSave);
+    // main()'s result on the unoptimized TAC.
+    const std::optional<asdl::Int> tac = run_program(src);
+    REQUIRE(tac.has_value());
+    const std::int64_t expected = static_cast<std::int64_t>(*tac) & 0xFFFF;
+    for (bool optimize : {false, true}) {
+      INFO(name << " optimize=" << optimize);
+      auto result = build_sim(src, optimize).run(5'000'000);
+      CHECK_FALSE(result.timed_out);
+      CHECK((result.return_int_signed() & 0xFFFF) == expected);
+    }
+  }
 }
 
-
-class TestPrograms(unittest.TestCase):
-
-    def test_programs(self) -> None:
-        for name, src in _PROGRAMS.items():
-            src = src.replace("SAVE ", _SAVE)
-            expected = _run_tac(src) & 0xFFFF
-            for optimize in (False, True):
-                with self.subTest(name, optimize=optimize):
-                    result = build_sim(src, optimize=optimize).run(
-                        max_cycles=5_000_000,
-                    )
-                    self.assertFalse(result.timed_out)
-                    self.assertEqual(
-                        result.return_int_signed() & 0xFFFF, expected,
-                    )
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace
+}  // namespace c6502::suite

@@ -1,49 +1,51 @@
-"""Tests for cpp/src/passes/optimization/row_address_tables.h, which looks up
-the address of a row of a 2-D array in a table of row addresses."""
+// The simulator tests of tests/test_row_address_tables.py: programs whose
+// 2-D arrays src/passes/optimization/row_address_tables.h reads through
+// a table of row addresses give the values computed here in both
+// pipelines, and units that share the low bytes of their tables keep one
+// copy.
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <vector>
 
-from __future__ import annotations
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
 
-import unittest
+namespace c6502::suite {
+namespace {
 
-from compile import _run_source
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
+// Returns the `-S -O` text of `src`.
+std::string codegen_o(const std::string& src) { return codegen(src, true); }
 
+auto cell(const auto& r, const auto& c) {
+  // What `_FILL` stores in row `r`, column `c`.
+  return (r * 16 + c) & 0xFF;
+}
 
+// Programs that index 2-D arrays through row tables, run in both
+// pipelines. Each program reads its array often enough that the
+// accesses save more than the tables cost, so that `-O` makes them.
+// (Until step 8 of the port, these tests replaced the Python pass's
+// estimate to force the tables, which the C++ pass's doctest cases now
+// do with `fixed_saving`.)
+void check(const auto& src, const auto& expected, const auto& table) {
+  CHECK(contains(codegen_o(src), cat("\n", table, "@lo:\n")));
+  for (bool optimize : {false, true}) {
+    INFO("optimize=" << optimize);
+    auto got = build_sim(src, optimize).run().return_int();
+    CHECK(got == (expected & 0xFFFF));
+  }
+}
 
-def _codegen(src: str) -> str:
-    return _run_source("codegen", src, optimize=True)
-
-
-def _cell(r: int, c: int) -> int:
-    """What `_FILL` stores in row `r`, column `c`."""
-    return (r * 16 + c) & 0xFF
-
-
-@needs_c6502cpp
-class TestRowAddressTablesSim(unittest.TestCase):
-    """Programs that index 2-D arrays through row tables, run in both
-    pipelines. Each program reads its array often enough that the
-    accesses save more than the tables cost, so that `-O` makes them.
-    (Until step 8 of the port, these tests replaced the Python pass's
-    estimate to force the tables, which the C++ pass's doctest cases now
-    do with `fixed_saving`.)"""
-
-    def _check(self, src: str, expected: int, table: str) -> None:
-        self.assertIn(f"\n{table}@lo:\n", _codegen(src))
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                got = build_sim(src, optimize=optimize).run().return_int()
-                self.assertEqual(got, expected & 0xFFFF)
-
-    _FILL = """
+const std::string kFill = R"c(
         for (uint8_t r = 0; r < ROWS; r++)
             for (uint8_t c = 0; c < COLS; c++)
                 A[r][c] = (uint8_t)(r * 16 + c);
-    """
-
-    def test_fixed_address_array(self):
-        src = """
+    )c";
+TEST_CASE("row_address_tables: fixed address array") {
+  auto src = R"c(
         #include <stdint.h>
         #define ROWS 16
         #define COLS 28
@@ -56,7 +58,8 @@ class TestRowAddressTablesSim(unittest.TestCase):
         uint8_t *cell(uint8_t r, uint8_t c) { return &A[r][c]; }
         uint8_t (*whole(uint8_t r))[COLS] { return &A[r]; }
         int main(void) {
-            """ + self._FILL + """
+            )c" +
+             kFill + R"c(
             put(5, 6, 200);
             int s = get(5, 6) + get(15, 27) + above(1, 3) + below(14, 0);
             s += row(2)[4] + *cell(3, 7) + (*whole(4))[1];
@@ -65,16 +68,12 @@ class TestRowAddressTablesSim(unittest.TestCase):
             if (row(ROWS) != &A[0][0] + ROWS * COLS) return -2;
             return s;
         }
-        """
-        self._check(
-            src,
-            200 + _cell(15, 27) + _cell(0, 3) + _cell(15, 0) + _cell(2, 4)
-            + _cell(3, 7) + _cell(4, 1),
-            "A",
-        )
+        )c";
+  check(src, 200 + cell(15, 27) + cell(0, 3) + cell(15, 0) + cell(2, 4) + cell(3, 7) + cell(4, 1), "A");
+}
 
-    def test_static_array(self):
-        src = """
+TEST_CASE("row_address_tables: static array") {
+  auto src = R"c(
         #include <stdint.h>
         #define ROWS 20
         #define COLS 14
@@ -83,18 +82,18 @@ class TestRowAddressTablesSim(unittest.TestCase):
         uint8_t above(uint8_t r, uint8_t c) { return A[r - 1][c]; }
         uint8_t *end(uint8_t r) { return A[r]; }
         int main(void) {
-            """ + self._FILL + """
+            )c" +
+             kFill + R"c(
             if (end(ROWS) != &A[0][0] + ROWS * COLS) return -1;
             return get(19, 13) + get(0, 0) + above(1, 2) + get(7, 1);
         }
-        """
-        self._check(
-            src, _cell(19, 13) + _cell(0, 0) + _cell(0, 2) + _cell(7, 1), "A",
-        )
+        )c";
+  check(src, cell(19, 13) + cell(0, 0) + cell(0, 2) + cell(7, 1), "A");
+}
 
-    def test_two_byte_elements(self):
-        # Rows of 7 uint16_t, 14 bytes.
-        src = """
+TEST_CASE("row_address_tables: two byte elements") {
+  // Rows of 7 uint16_t, 14 bytes.
+  std::string src = R"c(
         #include <stdint.h>
         static uint16_t W[30][7];
         uint16_t get(uint8_t r, uint8_t c) { return W[r][c]; }
@@ -105,11 +104,12 @@ class TestRowAddressTablesSim(unittest.TestCase):
                     put(r, c, (uint16_t)(r * 1000 + c));
             return get(29, 6) - get(3, 2) + get(0, 1);
         }
-        """
-        self._check(src, (29 * 1000 + 6) - (3 * 1000 + 2) + 1, "W")
+        )c";
+  check(src, 29 * 1000 + 6 - (3 * 1000 + 2) + 1, "W");
+}
 
-    def test_array_of_structs(self):
-        src = """
+TEST_CASE("row_address_tables: array of structs") {
+  std::string src = R"c(
         #include <stdint.h>
         struct cell { uint8_t a, b, c; };
         static struct cell S[90];
@@ -125,11 +125,12 @@ class TestRowAddressTablesSim(unittest.TestCase):
             }
             return a_of(89) + b_of(0) + c_of(45);
         }
-        """
-        self._check(src, 89 + 1 + 47, "S")
+        )c";
+  check(src, 89 + 1 + 47, "S");
+}
 
-    def test_shared_low_bytes(self):
-        src = """
+TEST_CASE("row_address_tables: shared low bytes") {
+  std::string src = R"c(
         #include <stdint.h>
         extern uint8_t M [[c6502::address(0x6000)]][16][28];
         extern uint8_t B [[c6502::address(0x6200)]][16][28];
@@ -138,15 +139,19 @@ class TestRowAddressTablesSim(unittest.TestCase):
             M[3][4] = 10; B[3][4] = 20; M[15][27] = 1; B[15][27] = 2;
             return both(3, 4) * 10 + both(15, 27);
         }
-        """
-        self._check(src, 300 + 3, "B")
-        text = _codegen(src)
-        self.assertNotIn("M@lo", text)
-        tables = text.split("\nB@lo:\n")[1]
-        self.assertIn("\nB@hi:\n", tables)
-        self.assertIn("\nM@hi:\n", tables)
-        self.assertEqual(tables.count("$"), 51)
+        )c";
+  check(src, 300 + 3, "B");
+  auto text = codegen_o(src);
+  CHECK(!contains(text, "M@lo"));
+  auto tables = after(text, "\nB@lo:\n");
+  CHECK(contains(tables, R"c(
+B@hi:
+)c"));
+  CHECK(contains(tables, R"c(
+M@hi:
+)c"));
+  CHECK(count(tables, "$") == 51);
+}
 
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace
+}  // namespace c6502::suite

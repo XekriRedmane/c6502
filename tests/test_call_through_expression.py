@@ -3,18 +3,15 @@ function pointer (C99 §6.5.2.2): `pick()(3)`, `t[i](3)`, `s.g(3)`,
 `p->g(3)`, `(*pp)(3)`. The parser makes a c99 `IndirectCall` for a
 callee that isn't a name, the type checker strips the `*` and `&` that
 don't change which function it is, and c99_to_tac evaluates what's
-left and emits a TAC `IndirectCall`."""
+left and emits a TAC `IndirectCall`.
+
+The tests of the errors are doctest cases in
+cpp/tests/test_call_through_expression.cpp."""
 from __future__ import annotations
 
 import unittest
 
-from errors import RecursionSaveError, TypeCheckError
 from sim.harness import build_sim
-
-
-def _codegen(src: str, optimize: bool = True) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
 
 
 def _run(src: str, optimize: bool) -> int:
@@ -22,23 +19,6 @@ def _run(src: str, optimize: bool) -> int:
 
 
 class TestTypeCheck(unittest.TestCase):
-    def test_not_a_function(self) -> None:
-        for decls, call in [
-            ("int x;", "(*&x)()"),
-            # `&fp` is a pointer to the pointer, not to a function.
-            ("int (*fp)(void);", "(&fp)()"),
-            ("int a[2];", "a[0]()"),
-        ]:
-            with self.subTest(call=call):
-                with self.assertRaisesRegex(TypeCheckError, "not a function"):
-                    _codegen(decls + " int main(void) { return "
-                             + call + "; }")
-
-    def test_argument_count_checked(self) -> None:
-        with self.assertRaisesRegex(TypeCheckError, "called with 2"):
-            _codegen("int (*t[1])(int);"
-                     " int main(void) { return t[0](1, 2); }")
-
     def test_arguments_converted(self) -> None:
         # The `long` argument converts to the `unsigned char` parameter.
         src = """
@@ -138,18 +118,6 @@ class TestRuns(unittest.TestCase):
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 self.assertEqual(_run(src, optimize), 10 * 100 - 5 + 2)
-
-
-class TestHardwareStackSave(unittest.TestCase):
-    def test_rejected_through_a_table(self) -> None:
-        src = """
-            int (*t[1])(int);
-            int main(void) {
-                [[c6502::save_hardware_stack]] return t[0](1);
-            }
-        """
-        with self.assertRaisesRegex(RecursionSaveError, "function pointer"):
-            _codegen(src)
 
 
 if __name__ == "__main__":

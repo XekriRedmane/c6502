@@ -1,37 +1,22 @@
-"""End-to-end simulator test for `floor_enemy_draw` under both the
-unoptimized and optimized pipelines.
+// `floor_enemy_draw` run in both pipelines with a `draw_sprite` that
+// records its arguments, from tests/test_floor_enemy_draw_sim.py.
+//
+// The program also covers the fix to `hwreg_eligibility` for
+// `IndexedData`. Before it, the eligibility scan took an `IndexedData`
+// operand as a Mov peer and pinned a Pseudo to X, and the assembler
+// rejected the result with "unsupported Mov: IndexedData(name='enemy_col',
+// ..., index=X()) -> Reg(reg=X())".
+#include <cstdint>
+#include <vector>
 
-`floor_enemy_draw` walks the 4-slot floor-enemy table and, for each
-active slot (enemy_flag[slot] != 0), projects enemy_col[slot] through
-two const lookup tables and dispatches a `draw_sprite` call with the
-slot-specific sprite pointer pair. Inactive slots are skipped.
+#include "doctest.h"
+#include "sim_case.h"
 
-Test strategy:
-  * Stub `draw_sprite` so it records each call's six args into a
-    `draw_log` buffer; the test asserts the recorded sequence
-    matches what was expected per scenario.
-  * `main` runs a battery of scenarios (clearing slots, setting
-    flags / cols / ys, calling floor_enemy_draw) and records the
-    final log_idx as the return value so the test can sanity-check
-    the call count.
-  * Three tests: unopt matches expected, opt matches expected,
-    opt == unopt byte-for-byte.
+namespace c6502::suite {
 
-Regression coverage: this also pins the
-`hwreg_eligibility`-IndexedData fix. Before the fix, this example
-hit `AssemblerError: unsupported Mov: IndexedData(name='enemy_col',
-..., index=X()) -> Reg(reg=X())` because the eligibility scan
-accepted IndexedData as a Mov peer and pinned a Pseudo to X whose
-loaded value the IR shape couldn't express.
-"""
+namespace {
 
-import unittest
-
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-_PROGRAM = r"""
+const char* const kProgram = R"c(
 #include <stdint.h>
 
 uint8_t enemy_flag[4];
@@ -197,71 +182,55 @@ int main(void) {
 
     return (int)log_idx;
 }
-"""
+)c";
 
+// Each `draw_sprite` call's [width, height, sprite_x, sprite_y,
+// src_low_byte, page_flag]. The table is walked from slot 3 down.
+const std::vector<std::uint8_t> kExpected = {
+    // Scenario 2: slot 3 only.
+    0x01, 0x05, 0x01, 0x22, 0x1D, 0x80,
+    // Scenario 3: slot 2, then slot 0.
+    0x01, 0x05, 0x00, 0x10, 0x3B, 0x00,  //
+    0x01, 0x05, 0x25, 0x80, 0xF9, 0x00,
+    // Scenario 4: slots 3, 2, 1, and 0.
+    0x01, 0x05, 0x03, 0x11, 0x1D, 0x7F,  //
+    0x01, 0x05, 0x06, 0x22, 0x4F, 0x7F,  //
+    0x01, 0x05, 0x14, 0x33, 0x81, 0x7F,  //
+    0x01, 0x05, 0x24, 0x44, 0xD1, 0x7F,
+};
 
-def _expected_log() -> bytes:
-    """Each draw_sprite call: [width, height, sprite_x, sprite_y,
-    src_low_byte, page_flag]."""
-    rows = [
-        # Scenario 2: slot 3 only.
-        [0x01, 0x05, 0x01, 0x22, 0x1D, 0x80],
-        # Scenario 3: slot 2 then slot 0 (reverse walk).
-        [0x01, 0x05, 0x00, 0x10, 0x3B, 0x00],
-        [0x01, 0x05, 0x25, 0x80, 0xF9, 0x00],
-        # Scenario 4: slots 3, 2, 1, 0 in reverse.
-        [0x01, 0x05, 0x03, 0x11, 0x1D, 0x7F],
-        [0x01, 0x05, 0x06, 0x22, 0x4F, 0x7F],
-        [0x01, 0x05, 0x14, 0x33, 0x81, 0x7F],
-        [0x01, 0x05, 0x24, 0x44, 0xD1, 0x7F],
-    ]
-    out = bytearray()
-    for row in rows:
-        out.extend(row)
-    return bytes(out)
+struct Run {
+  sim::SimResult result;
+  std::vector<std::uint8_t> log;
+};
 
+Run run(bool optimize) {
+  sim::Simulation s = build_sim(kProgram, optimize);
+  Run out{s.run(2'000'000), {}};
+  INFO("optimize=" << optimize);
+  CHECK_FALSE(out.result.timed_out);
+  const std::int64_t at = s.symbol("draw_log");
+  out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + kExpected.size());
+  return out;
+}
 
-@needs_c6502cpp
-class TestFloorEnemyDrawSim(unittest.TestCase):
-    """Differential opt-vs-unopt check on `floor_enemy_draw`.
+}  // namespace
 
-    Both pipelines must record the same draw_sprite call sequence
-    and return the same log_idx."""
+TEST_CASE("floor_enemy_draw_sim: the unoptimized program records each call") {
+  const Run r = run(false);
+  // `main` returns log_idx, the count of bytes written.
+  CHECK((r.result.return_int() & 0xFFFF) == static_cast<std::int64_t>(kExpected.size()));
+  CHECK(r.log == kExpected);
+}
 
-    def _run(self, optimize: bool):
-        sim = build_sim(_PROGRAM, optimize=optimize)
-        result = sim.run(max_cycles=2_000_000)
-        self.assertFalse(
-            result.timed_out,
-            f"floor_enemy_draw sim timed out (optimize={optimize})",
-        )
-        expected = _expected_log()
-        log_addr = sim.symbols["draw_log"]
-        log_bytes = bytes(result.memory[log_addr:log_addr + len(expected)])
-        return result, log_bytes, expected
+TEST_CASE("floor_enemy_draw_sim: the optimized program records each call") {
+  const Run r = run(true);
+  CHECK((r.result.return_int() & 0xFFFF) == static_cast<std::int64_t>(kExpected.size()));
+  CHECK(r.log == kExpected);
+}
 
-    def test_unoptimized_matches_expected(self):
-        result, log, expected = self._run(optimize=False)
-        # Return value is log_idx (number of bytes written).
-        self.assertEqual(
-            result.return_int() & 0xFFFF, len(expected),
-            "log_idx should match 7 draw_sprite calls × 6 bytes",
-        )
-        self.assertEqual(log, expected)
+TEST_CASE("floor_enemy_draw_sim: both pipelines record the same calls") {
+  CHECK(run(false).log == run(true).log);
+}
 
-    def test_optimized_matches_expected(self):
-        result, log, expected = self._run(optimize=True)
-        self.assertEqual(result.return_int() & 0xFFFF, len(expected))
-        self.assertEqual(log, expected)
-
-    def test_opt_and_unopt_agree(self):
-        _, unopt_log, _ = self._run(optimize=False)
-        _, opt_log, _ = self._run(optimize=True)
-        self.assertEqual(
-            unopt_log, opt_log,
-            "optimizer changed observable draw_sprite call sequence",
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace c6502::suite

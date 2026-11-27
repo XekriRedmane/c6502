@@ -21,6 +21,9 @@ Coverage:
   * Multi-target `end_label` blocks the rewrite (correctness).
   * Non-{0,1} constants don't fire (Conditional shape).
   * End-to-end sim across `&&` / `||` / nested.
+
+The `-S` text is checked in
+cpp/tests/test_short_circuit_jump_fold_source.cpp.
 """
 from __future__ import annotations
 
@@ -101,61 +104,6 @@ class TestEndToEnd(unittest.TestCase):
         a, b = self._both_paths(src)
         self.assertEqual(a, b)
         self.assertEqual(a, 1 + 10 * 2 + 100 * 2)
-
-
-class TestAsmShape(unittest.TestCase):
-    """After the fold, the `&&` / `||` 0-or-1 materialize labels
-    (.and_false / .and_end / .or_true / .or_end) should be gone
-    from the asm body of a function whose only short-circuit is
-    consumed by an `if`."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_and_collapses_to_chain(self):
-        src = (
-            "#include <stdint.h>\n"
-            "int f(uint8_t a) {\n"
-            "    if (a >= 0x40 && a < 0x47) return 1;\n"
-            "    return 2;\n"
-            "}\n"
-            "int main(void) { return f(0x44); }\n"
-        )
-        asm = self._compile(src)
-        body = self._extract_function(asm, "f")
-        self.assertNotIn(".and_false", body)
-        self.assertNotIn(".and_end", body)
-
-    def test_or_collapses_to_chain(self):
-        src = (
-            "#include <stdint.h>\n"
-            "int f(uint8_t a) {\n"
-            "    if (a < 0x40 || a >= 0x50) return 1;\n"
-            "    return 2;\n"
-            "}\n"
-            "int main(void) { return f(0x44); }\n"
-        )
-        asm = self._compile(src)
-        body = self._extract_function(asm, "f")
-        self.assertNotIn(".or_true", body)
-        self.assertNotIn(".or_end", body)
-
-    @staticmethod
-    def _extract_function(asm: str, name: str) -> str:
-        out: list[str] = []
-        in_fn = False
-        for line in asm.splitlines():
-            if line.startswith(f"{name}:"):
-                in_fn = True
-            if in_fn:
-                if (
-                    line and not line.startswith((" ", "\t", "."))
-                    and line.endswith(":") and not line.startswith(f"{name}:")
-                ):
-                    break
-                out.append(line)
-        return "\n".join(out)
 
 
 class TestCopiesBeforeConsumer(unittest.TestCase):

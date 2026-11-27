@@ -4,7 +4,9 @@ addresses.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_jump_table_source.cpp."""
 
 import unittest
 
@@ -68,13 +70,6 @@ class TestRuns(unittest.TestCase):
                 base = sim.symbols["r"]
                 got = list(sim.mpu.memory[base:base + 25])
                 self.assertEqual(got, want)
-
-    def test_tables_made(self):
-        from compile import _run_source
-        asm = _run_source("codegen", _PROGRAM, optimize=True)
-        # 12 entries for pick (0 to 11) and 9 for pick_high.
-        self.assertEqual(asm.count("DC.W"), 21)
-        self.assertEqual(asm.count("RTS\n.jtab@"), 2)
 
 
 if __name__ == "__main__":

@@ -1,43 +1,18 @@
-"""Tests for the runtime's zero-page layout (`passes/runtime_layout.py`):
-where SSP, FP, HARGS, and DPTR go, how HARGS is sized, the EQU lines
-that bind them, linking, and simulator runs of programs that reserve
-the bytes the classic layout uses.
+"""Simulator runs of programs that reserve the bytes the classic
+layout of the runtime's zero page uses, which check that the moved
+block leaves those bytes alone.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6).
+(docs/cpp_port.md, step 8, group G6), and the tests of where SSP, FP,
+HARGS, and DPTR go, how HARGS is sized, the EQU lines that bind them,
+and linking are in cpp/tests/test_runtime_layout_source.cpp.
 """
 from __future__ import annotations
 
-import io
-import re
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
 
-from passes.runtime_layout import CLASSIC, RuntimeLayout
-from errors import TypeCheckError
 from sim.harness import build_sim
-
-
-def _codegen(src: str, optimize: bool = True) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _equ(asm: str) -> dict[str, int]:
-    return {
-        m.group(1): int(m.group(2), 16)
-        for m in re.finditer(r"^(\S+)\tEQU\t\$([0-9A-F]+)$", asm, re.M)
-    }
-
-
-def _layout_of(asm: str) -> RuntimeLayout:
-    e = _equ(asm)
-    return RuntimeLayout(
-        ssp=e["SSP"], fp=e["FP"], hargs=e["HARGS"], dptr=e["DPTR"],
-    )
 
 
 # The Monitor's zero-page bytes in the unenhanced Apple IIe F8 ROM,
@@ -46,68 +21,6 @@ _MONITOR = (
     "extern volatile unsigned char monitor_zp "
     "[[c6502::address(0x1F)]][0x2B];\n"
 )
-
-
-class TestHargsSize(unittest.TestCase):
-
-    def test_relocated_hargs_fits_the_program(self) -> None:
-        cases = {
-            "no helper": ("int f(int a) { return a + 1; }\n", 1),
-            # An `unsigned char` product is promoted to `int` and
-            # done by an inline loop, so the one-byte `mul8` comes from
-            # an `unsigned _BitInt(8)`.
-            "8-bit multiply":
-                ("unsigned _BitInt(8) f(unsigned _BitInt(8) a, "
-                 "unsigned _BitInt(8) b) { return a * b; }\n", 5),
-            "32-bit divide":
-                ("long f(long a, long b) { return a / b; }\n", 22),
-        }
-        for label, (src, size) in cases.items():
-            with self.subTest(label):
-                asm = _codegen(_MONITOR + src)
-                layout = _layout_of(asm)
-                hargs = layout.hargs
-                # HARGS is the program's need, placed clear of the
-                # Monitor's bytes and of the other three.
-                others = RuntimeLayout(
-                    ssp=layout.ssp, fp=layout.fp, dptr=layout.dptr,
-                    hargs=hargs, hargs_size=size,
-                ).bytes()
-                self.assertFalse(others & set(range(0x1F, 0x4A)))
-                self.assertEqual(len(others), 6 + size)
-
-
-class TestCodegen(unittest.TestCase):
-
-    def test_classic_equs(self) -> None:
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _codegen("int main(void) { return 0; }\n", optimize)
-                self.assertEqual(_layout_of(asm), CLASSIC)
-                # The four runtime lines start the output.
-                self.assertTrue(asm.startswith(
-                    "SSP\tEQU\t$00\nFP\tEQU\t$02\nHARGS\tEQU\t$04\n"
-                    "DPTR\tEQU\t$24\n"
-                ))
-
-    def test_cursor_reserved(self) -> None:
-        # Declaring the Monitor's cursor moves DPTR off $24-$25, and a
-        # zero-page global goes in the bytes left over.
-        asm = _codegen(
-            "extern unsigned char CH [[c6502::address(0x24)]];\n"
-            "extern unsigned char CV [[c6502::address(0x25)]];\n"
-            "unsigned char g [[c6502::zeropage]];\n"
-            "unsigned char peek(unsigned char *p) { return *p + CH + g; }\n",
-            optimize=False,
-        )
-        equ = _equ(asm)
-        self.assertEqual((equ["CH"], equ["CV"]), (0x24, 0x25))
-        # No helper is called, so HARGS gets one byte. HARGS, SSP, FP,
-        # and DPTR take the lowest free runs, and g the next byte.
-        self.assertEqual(
-            [equ[n] for n in ("HARGS", "SSP", "FP", "DPTR", "g")],
-            [0x00, 0x01, 0x03, 0x05, 0x07],
-        )
 
 
 class TestSim(unittest.TestCase):
@@ -182,20 +95,6 @@ class TestMonitorHeaders(unittest.TestCase):
             ("#include <apple2/interactive_monitor.h>\n", _ALL_BYTES),
     }
 
-    def test_layout_clear_of_the_reserved_bytes(self) -> None:
-        for header, (include, reserved) in self._HEADERS.items():
-            for optimize in (False, True):
-                with self.subTest(header, optimize=optimize):
-                    asm = _codegen(include + TestSim._SRC, optimize)
-                    equ = _equ(asm)
-                    self.assertEqual(
-                        (equ["CH"], equ["CSW"]), (0x24, 0x36),
-                    )
-                    for name in ("SSP", "FP", "DPTR"):
-                        self.assertFalse(
-                            {equ[name], equ[name] + 1} & set(reserved),
-                        )
-
     def test_reserved_bytes_untouched(self) -> None:
         for header, (include, reserved) in self._HEADERS.items():
             for optimize in (False, True):
@@ -213,98 +112,6 @@ class TestMonitorHeaders(unittest.TestCase):
                          if result.memory[a] != v],
                         [],
                     )
-
-    def test_routine_header_leaves_tool_bytes_free(self) -> None:
-        # With only monitor_io.h, a zero-page global can go in a byte only
-        # the interactive Monitor uses, such as $00 or $2F.
-        asm = _codegen(
-            "#include <apple2/monitor_io.h>\n"
-            "unsigned char g [[c6502::zeropage(0x2F)]];\n"
-            "unsigned char h [[c6502::zeropage(0x00)]];\n"
-            "int main(void) { return g + h; }\n",
-        )
-        self.assertEqual((_equ(asm)["g"], _equ(asm)["h"]), (0x2F, 0x00))
-        with self.assertRaises(TypeCheckError):
-            _codegen(
-                "#include <apple2/interactive_monitor.h>\n"
-                "unsigned char g [[c6502::zeropage(0x2F)]];\n"
-                "int main(void) { return g; }\n",
-            )
-
-
-class TestLink(unittest.TestCase):
-
-    def _compile(self, src: str, path: Path) -> None:
-        from compile import main as compile_main
-        with patch("sys.stdin", io.StringIO(src)):
-            self.assertEqual(compile_main([
-                "compile.py", "-", "-S", "-O",
-                "-o", str(path),
-            ]), 0)
-
-    def _link(self, paths, out: Path) -> tuple[int, str]:
-        from tests.link_helpers import link_capture_stderr
-        return link_capture_stderr(paths, out)
-
-    def test_layout_bound_once(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o"))
-            self._compile("int g(int x);\n"
-                          "int main(void) { return g(2); }\n", a)
-            self._compile("int g(int x) { return x + 1; }\n", b)
-            rc, err = self._link([a, b], out)
-            self.assertEqual(rc, 0, err)
-            from tests.link_helpers import linked_text
-            text = linked_text(out)
-            self.assertEqual(text.count("DPTR\tEQU\t$24"), 1)
-            self.assertEqual(text.count("SSP\tEQU\t$00"), 1)
-
-    def test_units_without_a_need(self) -> None:
-        # A unit that doesn't say how much of HARGS it uses is taken to
-        # use the classic block's, and its own EQUs for the runtime's
-        # names don't bind them: the linker chooses the layout.
-        with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o"))
-            self._compile("int main(void) { return 0; }\n", a)
-            self._compile("int g(int x) { return x + 1; }\n", b)
-            for path in (a, b):
-                path.write_text(re.sub(
-                    r" hargs_need=\d+", "", path.read_text(),
-                ))
-            b.write_text(b.read_text().replace(
-                "DPTR\tEQU\t$24", "DPTR\tEQU\t$30",
-            ))
-            rc, err = self._link([a, b], out)
-            self.assertEqual(rc, 0, err)
-            from tests.link_helpers import symbols
-            self.assertEqual(symbols(out)["DPTR"], CLASSIC.dptr)
-
-    def test_layout_chosen_for_the_program(self) -> None:
-        # One unit uses the Monitor's zero page, which moves the block;
-        # the other doesn't, and needs more of HARGS (a 16-bit
-        # multiply). The linker chooses one layout for both.
-        with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.asm", "b.asm", "o"))
-            self._compile(
-                "#include <apple2/monitor_io.h>\n"
-                "int mul(int x, int y);\n"
-                "int main(void) { CH = 3; return mul(6, 7); }\n", a,
-            )
-            self._compile("int mul(int x, int y) { return x * y; }\n", b)
-            rc, err = self._link([a, b], out)
-            self.assertEqual(rc, 0, err)
-            from tests.link_helpers import linked_text, symbols
-            equ = symbols(out)
-            runtime = [equ[n] for n in ("SSP", "FP", "HARGS", "DPTR")]
-            self.assertNotIn(0x24, runtime)
-            need = int(re.search(
-                r"hargs_need=(\d+)", b.read_text(),
-            ).group(1))
-            self.assertGreater(need, 1)
-            size = int(re.search(
-                r"; runtime hargs_size=(\d+)", linked_text(out),
-            ).group(1))
-            self.assertGreaterEqual(size, need)
 
 
 if __name__ == "__main__":

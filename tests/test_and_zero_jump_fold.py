@@ -19,6 +19,8 @@ programs with the idiom in the simulator under `-O` and check the
 value each returns. `test_sim_differential` checks that the optimized
 and unoptimized pipelines agree, and these catch a regression before
 the full chapter sweep runs.
+
+The `-S` text is checked in cpp/tests/test_and_zero_jump_fold.cpp.
 """
 from __future__ import annotations
 
@@ -121,13 +123,6 @@ class TestWideMaskInOneByte(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 got = build_sim(self._SRC, optimize=optimize).run().return_int()
                 self.assertEqual(got, want)
-
-    def test_byte_tested(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        body = asm.split("\nhi:\n")[1].split("RTS")[0]
-        self.assertIn("LDA   w+1", body)
-        self.assertNotIn("ORA", body)
 
 if __name__ == "__main__":
     unittest.main()

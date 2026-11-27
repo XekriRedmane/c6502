@@ -3328,6 +3328,18 @@ the command's exit status and its stderr.
 With the comparisons gone, nothing checks that examples/*.asm still
 equals the compiler's output, which is an open question below.
 
+G1 checked this evidence again before the drop, by script, and three
+findings differ from the survey's. Chapter 18's pins were compared file
+by file: its harness requires every `valid/` program to fail except
+those of `_VALID_PASSES_TODAY`, and the status of each of the 60 it
+governs matches. Of chapter_19's 167 programs, 132 give upstream's
+value, 20 the override's, and 15 are `_NEEDS_LIBC`'s, of which
+`whole_pipeline/all_types/fold_cast_to_double.c` returns 4 without
+reaching its call of `copysign`, so 14 are errors. And golden/ holds
+no copy of examples/zork/interpreter.asm, so the Zork test's comparison
+of objdump's listing with it moved to
+cpp/tests/test_zork_interpreter.cpp rather than going.
+
 ### The checks
 
 `check-golden`, `check-frozen`, and the C++ tests stay the checks of
@@ -4855,3 +4867,183 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   splits the step into the groups G1 to G6 and R, each run on his
   go-ahead after the one before it, and lists seven questions for
   him.
+- 26 Nov 2026: group G1 of step 9 is done. The C++ tests have a library
+  of whole compiles, cpp/tests/compile_case.h (cpp/README.md, "The tests
+  of whole compiles"), which runs the stages of compile.py's
+  `_run_source`, compile.py's, nm's, and objdump's command lines, the
+  TAC interpreter, and the links of tests/link_helpers.py in process,
+  through the functions that `backend::respond` and
+  `tac_sim_modes::respond` call. `passes::tac_stage` and
+  `tac_sim_modes::translate` became public for it. CPython 3.11's
+  `random.Random` is src/py_random.h, with SHA-512 for its string seeds
+  (src/sha512.h), and matches CPython on all 2,044 calls on 28 seeds
+  that tools/py_random_vectors.py froze in cpp/tests/frozen/py_random.txt.
+  Of the suite's 1,325 tests, 495 were ported to doctest cases, each
+  checking every assertion of the test it replaced, 64 were dropped by
+  decision 4, and 766 are left for the later groups. The suite then
+  gave 766 passed and 22 skipped, with `C6502_CHECK_IR=1` and the games'
+  files present, so the 559 tests that went account for the whole
+  difference. test_golden.py's two tests became the ctest entries
+  `check_golden` and `check_frozen`. The lead ported the library, the
+  random port, test_cli_errors.py, test_optimization_docs.py,
+  test_ir_dump.py's round trip, test_golden.py, the Zork checks, and the
+  drops, and five agents in worktrees of their own ported the rest in
+  five batches, which were cherry-picked onto the lead's branch in
+  order. No bug was found in the compiler. The fresh MSVC build gave
+  10,427 doctest cases passed (87,560 assertions), `check-golden` 19,678
+  jobs with 0 differing, `check-frozen` no difference, and ctest 3 of 3,
+  and a fresh GCC 12.2 build in WSL passed the same 10,427 cases, with
+  the dasm cases passing by their message, since WSL has no dasm.
+
+  The plan changed in four places once the code was read.
+  - The plan's 476 text tests and 19 TAC tests were a static count. The
+    ported tests number 495 with test_optimization_docs.py, test_ir_dump.py's
+    round trip, test_golden.py, and test_zork_interpreter.py's
+    `test_no_runtime_helpers`, and a reading of each test moved a few
+    whose helpers reach the simulator to G4, as in test_runtime_library.py,
+    test_leaf_zp_abi.py, and test_register_keyword_sim.py.
+  - golden/ holds no copy of examples/zork/interpreter.asm, so the
+    comparison of objdump's listing of the linked Zork with it moved to
+    cpp/tests/test_zork_interpreter.cpp, where the plan had it dropped
+    with the rest of `TestGoldOutputs`. The note above gives the evidence
+    checked again before the drops.
+  - test_binutils.py's `TestElf` tests binutils/elf.py, which the
+    simulator still reads, so it stays for R. Its checks and damaged
+    inputs were compared one by one with cpp/tests/test_binutils.cpp,
+    which gained cases for the inputs and checks it lacked: a section
+    names' index of $7FFF, a section size past the end of the file, the
+    round trip of an assembled object, the EM_MOS bytes, a file that
+    isn't ELF at all, and nm on a damaged file. `TestAgainstDasm` became
+    doctest cases that pass with a message when dasm isn't on the PATH,
+    in place of a ctest entry, so that one `c6502_tests` run holds them.
+  - test_stdbit.py's `TestModel` checked the Python model against a
+    model written from the standard's bit-by-bit definitions. Its C++
+    form checks `builtin_functions::stdbit` against that model in C++,
+    with the sweep's values drawn from py_random on the same seeds.
+
+  Where a C++ case can't check an assertion exactly as Python did, the
+  difference is in the commit that ports it. The checks of no
+  "Traceback" check for no "internal error". The two parser tests that
+  accepted Lark's `VisitError` accept only the C++ parser's class.
+  Patterns written with Python's `re.M` match line by line or with
+  `\n` in place of `^`, and some cases match with py_regex, the C++
+  port of Python's `re`. A `subTest` loop
+  becomes a loop with `INFO`, which a thrown exception ends where Python
+  went on to the next subtest. Values that the Python tests computed
+  with builtin_functions.py are frozen as constants where the C++ model
+  is the one the compiler folds with. The tally by module:
+
+  | Module | Ported | Dropped | Left in Python |
+  |---|---|---|---|
+  | test_address_attr.py | 7 | 0 | 8 G4 |
+  | test_address_taken_zp.py | 2 | 0 | none |
+  | test_ali_baba.py | 0 | 1 | 17 G5 |
+  | test_and_zero_jump_fold.py | 1 | 0 | 5 G4 |
+  | test_asm_regalloc.py | 1 | 0 | 2 G4 |
+  | test_auto.py | 1 | 0 | 1 G4 |
+  | test_bcd_builtins.py | 10 | 0 | 2 G3, 2 G4 |
+  | test_bin_to_bcd.py | 5 | 0 | 24 G4 |
+  | test_binutils.py | 8 | 0 | 1 G4, 4 R |
+  | test_bool.py | 2 | 0 | 1 G4 |
+  | test_branch_through_jump.py | 1 | 0 | 1 G4 |
+  | test_c23_bool.py | 6 | 0 | 1 G4 |
+  | test_c23_nullptr.py | 3 | 0 | 1 G4 |
+  | test_call_through_expression.py | 3 | 0 | 5 G4 |
+  | test_carry_halve.py | 1 | 0 | 1 G4 |
+  | test_carry_in_add.py | 1 | 0 | 1 G4 |
+  | test_carry_return.py | 13 | 0 | 13 G4 |
+  | test_chapter_1.py to test_chapter_19.py | 0 | 42 | none |
+  | test_cli_errors.py | 7 | 0 | none |
+  | test_cmp_zero_jump_fold.py | 6 | 0 | 9 G4 |
+  | test_coalescing.py | 1 | 0 | 2 G4 |
+  | test_compare_subtract.py | 1 | 0 | 2 G4 |
+  | test_compile.py | 69 | 0 | none |
+  | test_compound_literal.py | 1 | 0 | 2 G4 |
+  | test_const_qualifier.py | 5 | 0 | 17 G4 |
+  | test_const_static_fold.py | 8 | 0 | 4 G4 |
+  | test_constant_store_order.py | 1 | 0 | 2 G4 |
+  | test_constexpr.py | 2 | 0 | 4 G4 |
+  | test_copy_folding.py | 2 | 0 | none |
+  | test_counter_to_index_reg.py | 1 | 0 | 1 G4 |
+  | test_designated_init.py | 1 | 0 | 2 G4 |
+  | test_direct_index_load.py | 1 | 0 | 1 G4 |
+  | test_direct_member_access.py | 3 | 0 | 6 G4 |
+  | test_divide_shapes.py | 3 | 0 | 2 G4 |
+  | test_element_rmw.py | 1 | 0 | 3 G4 |
+  | test_empty_initializer.py | 3 | 0 | 3 G4 |
+  | test_enum.py | 1 | 0 | 1 G4 |
+  | test_example_outputs.py | 0 | 1 | none |
+  | test_flag_compares.py | 5 | 0 | 1 G4 |
+  | test_golden.py | 2 | 0 | none |
+  | test_hwreg_pinning.py | 1 | 0 | none |
+  | test_in_place_member_update.py | 4 | 0 | 7 G4 |
+  | test_inc_peephole.py | 1 | 0 | 5 G4 |
+  | test_indexed_load.py | 4 | 0 | 4 G4 |
+  | test_indexed_symbol_store.py | 4 | 0 | 3 G4 |
+  | test_inline_shift_direct.py | 2 | 0 | 6 G4 |
+  | test_invalid_programs.py | 0 | 17 | none |
+  | test_ir_dump.py | 1 | 0 | 11 R |
+  | test_jump_table.py | 1 | 0 | 1 G4 |
+  | test_known_compare_thread.py | 1 | 0 | 2 G4 |
+  | test_leaf_zp_abi.py | 4 | 0 | 5 G4 |
+  | test_limits_h.py | 1 | 0 | 15 G4 |
+  | test_linker.py | 15 | 0 | 10 G4 |
+  | test_linker_script.py | 16 | 0 | 3 G4 |
+  | test_lnot_jump_fold.py | 1 | 0 | 4 G4 |
+  | test_lode_runner.py | 0 | 1 | 3 G5 |
+  | test_narrow_byte_bitwise.py | 1 | 0 | 1 G4 |
+  | test_narrow_byte_range.py | 7 | 0 | none |
+  | test_narrow_widened_arith.py | 2 | 0 | 2 G4 |
+  | test_negate_lowering.py | 1 | 0 | 1 G4 |
+  | test_noreturn_call.py | 4 | 0 | 3 G4 |
+  | test_object_byte_view.py | 10 | 0 | 5 G4 |
+  | test_optimization.py | 2 | 0 | none |
+  | test_optimization_docs.py | 7 | 0 | none |
+  | test_param_registers.py | 7 | 0 | 6 G4 |
+  | test_parser.py | 69 | 0 | none |
+  | test_pointer_member_access.py | 8 | 0 | 9 G4 |
+  | test_pointer_return.py | 1 | 0 | 1 G4 |
+  | test_preserves.py | 12 | 0 | 4 G4 |
+  | test_prune_unused_slots.py | 1 | 0 | none |
+  | test_recognize_indexed_store.py | 3 | 0 | 4 G4 |
+  | test_recognize_indirect_indexed.py | 4 | 0 | 9 G4 |
+  | test_recursion_saves.py | 7 | 0 | 1 G4 |
+  | test_redundant_load_after_rmw.py | 1 | 0 | 1 G4 |
+  | test_register_arguments.py | 3 | 0 | 1 G4 |
+  | test_register_keyword_sim.py | 6 | 0 | 5 G4 |
+  | test_ret_slot_coalescing.py | 1 | 0 | 1 G4 |
+  | test_return_in_zero_page.py | 1 | 0 | 1 G4 |
+  | test_runtime_layout.py | 8 | 0 | 3 G4 |
+  | test_runtime_library.py | 4 | 0 | 26 G4 |
+  | test_short_and_unary_plus.py | 1 | 0 | 1 G4 |
+  | test_short_circuit_jump_fold.py | 2 | 0 | 5 G4 |
+  | test_sign_test_lowering.py | 2 | 0 | 3 G4 |
+  | test_signed_positive_branch.py | 1 | 0 | 1 G4 |
+  | test_significant_bytes.py | 5 | 0 | 8 G4 |
+  | test_sim_chapters.py | 0 | 1 | none |
+  | test_sim_miscompile_regressions.py | 2 | 0 | 1 G4 |
+  | test_sink_increment.py | 1 | 0 | 3 G4 |
+  | test_slot_coalescing.py | 1 | 0 | 1 G4 |
+  | test_slot_sharing.py | 10 | 0 | 14 G4 |
+  | test_statement_attributes.py | 1 | 0 | 1 G4 |
+  | test_static_const_fold.py | 3 | 0 | 4 G4 |
+  | test_stdbit.py | 11 | 0 | 7 G4 |
+  | test_strength_reduction.py | 1 | 0 | 12 G4 |
+  | test_tac_sim_optimized.py | 3 | 0 | none |
+  | test_three_way_compare.py | 2 | 0 | 1 G4 |
+  | test_truncate_extend_fold.py | 1 | 0 | 1 G4 |
+  | test_type_checking.py | 2 | 0 | 5 R |
+  | test_typed_enum.py | 1 | 0 | 2 G4 |
+  | test_typeof.py | 1 | 0 | 1 G4 |
+  | test_unroll.py | 3 | 0 | none |
+  | test_volatile_named.py | 4 | 0 | 9 G4 |
+  | test_zork_interpreter.py | 1 | 1 | 2 G5 |
+  | test_zp_globals.py | 19 | 0 | 8 G4 |
+  | test_zp_local_allocation.py | 2 | 0 | 3 G4 |
+
+  G1 left the other 64 modules alone: 309 simulator tests for G4 (64
+  of them the shards that test_bitint_sim.py, test_op_matrix_sim.py,
+  test_sim_asm.py, and test_sim_differential.py add with `setattr`),
+  test_asdl.py's 32 for R, test_asdl_cpp.py's 7 and
+  test_rtlib_table.py's 5 for G2, and test_fuzz_tools.py's 5 for G6. In
+  all, G4 takes 673 tests, G5 22, R 52, G2 12, G6 5, and G3 2.

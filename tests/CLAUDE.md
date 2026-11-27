@@ -38,6 +38,13 @@ built, since compile.py, nm.py, and objdump.py are shims over it. A
 test that skips itself, or combines the condition with another, reads
 `cpp_build.BUILT` and `cpp_build.REASON`.
 
+Step 9 of the port moves the suite to C++. Its group G1 moved the
+tests that run no simulator, the TAC interpreter's among them, to
+doctest cases in cpp/tests (cpp/README.md, "The tests of whole
+compiles"), and the tests left here run the simulator, the games'
+machines, or a Python module that a later group ports. A new test of
+a compile's text, its errors, or its command line is a doctest case.
+
 A test that compiles a source text calls `compile._run_source(stage,
 source, ...)`, which sends c6502cpp the text and has it preprocessed in
 the same request as the compile, and a test that has the
@@ -86,13 +93,14 @@ cpp/tests/test_binutils_source.cpp and test_binutils_assembler.cpp.
 
 `test_zork_interpreter.py`, `test_lode_runner.py`, and
 `test_ali_baba.py` cover the three programs in `examples/` that are
-linked from several units with a linker script. Each compiles every unit with `-O` and compares the
-output with its checked-in `.asm` file, which runs everywhere. The
-runs of the programs need files from the reverse-engineering projects,
-which aren't in this repository, and are skipped without them. On
-Robert's machine those projects are cloned in F:/Projects, and the
-full suite runs with these set, and with dasm (`F:/dasm-2.20.14.1-win-x64`)
-on the PATH:
+linked from several units with a linker script. golden/O.txt holds
+each unit's `-S -O` text and golden/links.txt each linked program's
+digest, so these modules hold only the runs of the programs, which
+need files from the reverse-engineering projects, aren't in this
+repository, and are skipped without them. On Robert's machine those
+projects are cloned in F:/Projects, and the full suite runs with these
+set (and c6502_tests runs its comparisons with dasm when
+`F:/dasm-2.20.14.1-win-x64` is on the PATH):
 
 ```sh
 ZORK_DSK="F:/Projects/zorki-r15-reveng/Zork I r15 (4am crack).dsk"
@@ -101,9 +109,9 @@ LODE_RUNNER_DIR=F:/Projects/lode_runner_reveng
 ALI_BABA_DIR=F:/Projects/ali_baba_reveng
 ```
 
-- `test_zork_interpreter.py` also compares the linked program's
+- cpp/tests/test_zork_interpreter.cpp compares the linked program's
   `objdump.py -D` listing with its checked-in copy. With `ZORK_DSK`
-  set to Zork I's disk image, it plays two sessions on the C
+  set to Zork I's disk image, test_zork_interpreter.py plays two sessions on the C
   interpreter and on Zork's own, read from the same image, and
   compares every Monitor and RWTS call.
 - `test_lode_runner.py` builds the program in `setUpClass`. With
@@ -120,8 +128,7 @@ ALI_BABA_DIR=F:/Projects/ali_baba_reveng
   from. The demo, which runs both programs for about four minutes, is
   the slowest test of the suite, so each script is a test method of
   its own, which a worker of `-n auto` takes alone.
-- `test_ali_baba.py` checks each unit's output against its `.asm`
-  file and round-trips disk images through `sim/disk2.py`. With
+- `test_ali_baba.py` round-trips disk images through `sim/disk2.py`. With
   `ALI_BABA_DIR` set to the ali_baba_reveng directory (after its
   `build.py`), `TestOriginal` plays six scripts on the original
   (the attract mode, a game, a save to a blank disk, a load, a visit

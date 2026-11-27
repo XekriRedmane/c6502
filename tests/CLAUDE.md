@@ -50,7 +50,7 @@ expects a compile error catches its class from errors.py.
 `tests/test_<topic>.py` is one harness per topic. The two main
 categories:
 
-- **Per-pass / per-module tests** (e.g. `test_parser.py`,
+- **Per-pass / per-module tests** (e.g. `test_inline_functions.py`,
   `test_type_checking.py`, `test_redundant_load.py`) — end-to-end tests
   of what the pass of the same name does, through compile.py or the
   simulator. Step 8 of the C++ port moved the tests that called a

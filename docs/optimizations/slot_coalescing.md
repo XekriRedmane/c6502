@@ -88,9 +88,9 @@ its copy in `__local_mul__a_0` and `__local_mul__a_1` stays, and only
 - The slot isn't in a share ([values kept in a callee's parameter
   bytes](slot_sharing.md)). A share keeps a caller's value in the
   slot across the call, which the function's copy leaves alone, and
-  saves the caller a copy before each call. In
-  `tests/test_slot_sharing.py`, `main` passes one pointer to `sum`
-  twice and keeps it in `sum`'s slot, so `sum` keeps its copy.
+  saves the caller a copy before each call. In a program of
+  cpp/tests/test_slot_sharing_sim.cpp, `main` passes one pointer to
+  `sum` twice and keeps it in `sum`'s slot, so `sum` keeps its copy.
 - The local is one of the function's `__local_F__*` bytes. Neither
   byte's address is taken in the unit
   (`asm_aliasing.unreachable_by_pointer`), and neither is reached by
@@ -176,7 +176,7 @@ function writes the callee's slot as it writes any argument.
 After the promotions and peepholes that look for `__local_*` slots,
 such as [loop-carried value in A](promote_loop_carried_to_a.md).
 When the pass ran before them, `while (s >= k) s -= k;` lost `s` in A
-across its loop (`tests/test_compare_subtract.py`). The peephole fixed
+across its loop (cpp/tests/test_compare_subtract_sim.cpp). The peephole fixed
 points after [loop test at the bottom](rotate_loop_test.md) drop the
 loads the copies leave.
 

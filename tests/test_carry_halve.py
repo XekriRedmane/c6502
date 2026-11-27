@@ -3,14 +3,15 @@ from the carry of its low byte's add.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_carry_halve_source.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.no_inlining import no_inlining
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -54,14 +55,6 @@ class TestRuns(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 r = build_sim(_SRC, optimize=optimize).run()
                 self.assertEqual(r.return_int(), _expected())
-
-    @no_inlining()
-    def test_no_high_byte(self):
-        from compile import _run_source
-        asm = _run_source("codegen", _SRC, optimize=True)
-        body = asm[asm.index("\nhalf:"):asm.index("\nmain:")]
-        self.assertNotIn("LSR", body)
-        self.assertEqual(body.count("ROR"), 3)
 
 
 if __name__ == "__main__":

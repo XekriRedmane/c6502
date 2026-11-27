@@ -2998,12 +2998,16 @@ every place in tac_sim.py that raises, with Python's message for the
 same hand-built TAC, but for the five that the C++ IR's closed variants
 can't reach (a constant, a static initializer, an instruction, an
 operand, or an integer operator of a class Python doesn't know).
-tests/test_tac_sim_optimized.cpp holds tests/test_tac_sim_optimized.py's
-two tests of the interpreter on the TAC optimizer's output and on a
-function in SSA form, written again by hand in step 8's group G9: each
+tests/test_tac_sim_optimized.cpp holds the two tests of the interpreter
+on the TAC optimizer's output and on a function in SSA form, written
+again by hand from tests/test_tac_sim_optimized.py in step 8's group
+G9: each
 of six programs gives the instruction it is named for after
 `optimize_program` and the same result as before, and a loop's SSA form
 from `to_ssa` has a Phi and gives the result of the TAC before it.
+tests/test_tac_sim_optimized_source.cpp holds that module's other
+three tests, which step 9 ported: `tac-observe` names no step for
+three programs that the TAC optimizer compiles correctly.
 
 The backend's modes `tac-run`, `tac-observe`, and `tac-falls-off`
 (`src/tac_sim_modes.h`) run the front end of
@@ -3031,8 +3035,9 @@ and `first_changing_pass` call cpp_backend.py's `tac_main`,
 import none of the Python front end, `c99_to_tac`, the TAC optimizer,
 or tac_sim.py. The interpreter's `TacSimError` is then
 `cpp_backend.TacSimError`, a class of the same name.
-`TestTacPasses.test_names_the_pass` in tests/test_tac_sim_optimized.py
-breaks a Python pass, so it is skipped under the variable. The same
+`TestTacPasses.test_names_the_pass`, which tests/test_tac_sim_optimized.py
+had before step 9, broke a Python pass, so it was skipped under the
+variable. The same
 breakage in C++, `var_unchanged` of src/passes/optimization/
 narrow_widened_arith.cpp returning true, made `tac-observe` give that
 test's `("main", "NarrowWidenedArith", 12, 79)` on its program. That

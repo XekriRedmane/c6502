@@ -1,9 +1,7 @@
-// The two tests of tests/test_tac_sim_optimized.py's `TestOptimizedTac`,
-// ported by hand: the TAC interpreter (src/tac_sim.h) on the TAC
-// optimizer's output, which holds the instructions the optimizer makes
-// and c99_to_tac doesn't, and on a function in SSA form. Each program is
-// compiled as fuzz/tac_passes.py's `_front_end` compiles it, without the
-// preprocessor, which none of them needs.
+// The TAC interpreter (src/tac_sim.h) on the TAC optimizer's output,
+// which holds the instructions the optimizer makes and c99_to_tac
+// doesn't, and on a function in SSA form. Each program is compiled
+// without the preprocessor, which none of them needs.
 #include <optional>
 #include <string>
 #include <utility>

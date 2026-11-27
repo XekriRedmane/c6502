@@ -434,7 +434,8 @@ TEST_CASE("tac_sim: the backend's modes") {
         prefix + "result {\"value\": 10}\noptimized {\"value\": 10}\n");
   CHECK(c6502::backend::respond(tac_request("tac-run", "int main(void) { return x; }")).find(
             "error {\"type\": \"IdentifierResolutionError\"") == prefix.size());
-  // tests/test_tac_sim_optimized.py's program, which no pass changes.
+  // The program of test_tac_sim_optimized_source.cpp's first case, which
+  // no pass changes.
   const std::string observed =
       "unsigned char g = 10;\n"
       "unsigned char h(void) { g = 77; return 1; }\n"

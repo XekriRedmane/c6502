@@ -444,7 +444,7 @@ int ret_size(const ir::Ret& r) {
   return size + 1;  // RTS
 }
 
-constexpr int kJumpTableCode = 11;
+int jump_table_dispatch_size();
 
 int Sizer::instr_size(const ir::Type_instruction& instr) const {
   const ir::Type_operand a = ir::Reg{.reg = ir::A{}};
@@ -497,7 +497,7 @@ int Sizer::instr_size(const ir::Type_instruction& instr) const {
     case ir::Kind_instruction::Jump:
       return 3;  // JSR abs, JMP abs
     case ir::Kind_instruction::JumpTable:
-      return kJumpTableCode + 2 * static_cast<int>(std::get<ir::JumpTable>(instr).targets.size());
+      return jump_table_dispatch_size() + 2 * static_cast<int>(std::get<ir::JumpTable>(instr).targets.size());
     case ir::Kind_instruction::Branch:
       return 2;  // Bxx rel
     case ir::Kind_instruction::Label:
@@ -558,6 +558,7 @@ class Emitter {
 
   void instr(const ir::Type_instruction& instr, std::int64_t addr, Bytes& out) const;
   void init(const ir::Type_static_init& item, Bytes& out) const;
+  static void jump_table_dispatch(const std::string& index, Int index_0_entry, Bytes& out);
 
  private:
   std::int64_t lookup(const std::string& name, const char* what = "undefined symbol ") const {
@@ -971,20 +972,32 @@ void Emitter::shift(std::string_view mn, const ir::Type_operand& dst, Bytes& out
   }
 }
 
+void Emitter::jump_table_dispatch(const std::string& index, Int index_0_entry, Bytes& out) {
+  const ir::Type_reg reg = index == "X" ? ir::Type_reg{ir::X{}} : ir::Type_reg{ir::Y{}};
+  out.push_back(op_code("ASL", Mode::kAcc));
+  out.push_back(implied("TA" + index));
+  abs_indexed("LDA", index_0_entry + 1, reg, out);
+  out.push_back(implied("PHA"));
+  abs_indexed("LDA", index_0_entry, reg, out);
+  out.push_back(implied("PHA"));
+  out.push_back(implied("RTS"));
+}
+
+int jump_table_dispatch_size() {
+  static const int size = [] {
+    Bytes dispatch;
+    Emitter::jump_table_dispatch("X", 0, dispatch);
+    return static_cast<int>(dispatch.size());
+  }();
+  return size;
+}
+
 void Emitter::jump_table(std::int64_t addr, const ir::JumpTable& jt, Bytes& out) const {
-  const std::int64_t start = addr + kJumpTableCode;
+  const std::int64_t start = addr + jump_table_dispatch_size();
   if (const auto it = syms_.find(jt.table); it != syms_.end() && it->second != start) {
     fail("jump table " + pyrepr::string(jt.table) + " isn't where expected");
   }
-  const Int at = Int(start) - jt.base * 2;
-  const ir::Type_reg reg = jt.index == "X" ? ir::Type_reg{ir::X{}} : ir::Type_reg{ir::Y{}};
-  out.push_back(op_code("ASL", Mode::kAcc));
-  out.push_back(implied("TA" + jt.index));
-  abs_indexed("LDA", at + 1, reg, out);
-  out.push_back(implied("PHA"));
-  abs_indexed("LDA", at, reg, out);
-  out.push_back(implied("PHA"));
-  out.push_back(implied("RTS"));
+  jump_table_dispatch(jt.index, Int(start) - jt.base * 2, out);
   for (const std::string& t : jt.targets) {
     abs_word((Int(lookup(t)) - 1) & Int(0xFFFF), out);
   }

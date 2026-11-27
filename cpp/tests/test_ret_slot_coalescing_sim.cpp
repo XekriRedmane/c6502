@@ -10,7 +10,6 @@ namespace c6502::suite {
 
 namespace {
 
-// What the program returns: its walks over `text`, done on the host.
 std::int64_t expected() {
   std::int64_t total = 0;
   const auto add = [&total](int c) { total = (total * 3 + c) & 0xFFFF; };

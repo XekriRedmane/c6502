@@ -41,7 +41,6 @@ std::int64_t run_of(const std::string& src, bool optimize, bool inline_calls = t
   return build_sim(src, options).run().return_int();
 }
 
-// The `share` link-metadata records of the `-S` text.
 std::vector<std::string> shares(const std::string& asm_text) {
   const std::string prefix = "; share ";
   std::vector<std::string> out;
@@ -58,9 +57,6 @@ bool any_holds_main(const std::vector<std::string>& records) {
   return false;
 }
 
-// The instruction lines of `fn`'s body, each with its runs of spaces
-// made one, up to the first line that starts in the first column with
-// anything but a local label.
 std::vector<std::string> body(const std::string& asm_text, const std::string& fn) {
   const std::string head = "\n" + fn + ":\n";
   const std::size_t at = asm_text.find(head);
@@ -86,7 +82,6 @@ std::vector<std::string> body(const std::string& asm_text, const std::string& fn
   return out;
 }
 
-// The text's `NAME<tab>EQU<tab>$HEX` lines, by name.
 std::map<std::string, std::int64_t> equs(const std::string& asm_text) {
   static const std::regex re(R"(^(\S+)\tEQU\t\$([0-9A-F]+)$)");
   std::map<std::string, std::int64_t> out;
@@ -111,8 +106,6 @@ struct Linked {
   std::string exe;
 };
 
-// Compiles each source with -O to an object and links them, as the
-// Python test's `_link` did.
 Linked link_units(const std::vector<std::string>& sources, bool inline_calls = true) {
   TempDir tmp;
   std::vector<std::string> paths;

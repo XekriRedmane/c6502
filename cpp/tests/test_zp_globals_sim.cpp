@@ -153,12 +153,7 @@ uint8_t sum(uint8_t n) {
 }
 )c";
 namespace linking {
-// Linking places the zero-page objects of every unit for the whole
-// program and merges their `__zp_init`s.
 
-// Compiles each source with `-O` to an object, links them, and returns
-// what `main` of the linked program returns. Fails the case when the
-// link fails.
 std::int64_t link_and_run(const std::vector<std::string>& sources) {
   TempDir tmp;
   std::vector<std::string> paths;

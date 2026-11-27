@@ -13,7 +13,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Returns `main`'s signed `int` result without -O and with it.
 std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
   return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
 }
@@ -22,8 +21,7 @@ std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
 
 TEST_CASE("strength_reduction sim: two multiplies into one global") {
   // A global keeps its name in SSA form, so each multiply's temporaries
-  // need names of their own (fuzzer stmts22250). The IR checks, which
-  // the Python test turned on for this case, are on for every case here.
+  // need names of their own (fuzzer stmts22250).
   const auto [a, b] = both_paths(R"c(
         unsigned long z [[c6502::zeropage]] = 128;
         int main(void) {

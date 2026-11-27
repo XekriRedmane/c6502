@@ -1,5 +1,4 @@
-// The asm tests of tests/test_rotate_loop_test.py, ported. The
-// simulator's runs are in test_rotate_loop_test_sim.cpp.
+// The asm tests of tests/test_rotate_loop_test.py, ported.
 #include <algorithm>
 #include <vector>
 

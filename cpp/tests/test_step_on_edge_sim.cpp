@@ -35,7 +35,6 @@ int main(void) {
     return n;
 }
 )c";
-// Returns the bytes `main` stores in `seen`.
 Bytes model(int a, int b, int c, int d) {
   Bytes out;
   int i = b;

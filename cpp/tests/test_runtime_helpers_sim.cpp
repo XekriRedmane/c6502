@@ -17,7 +17,6 @@ namespace {
 
 std::int64_t signed_byte(std::int64_t v) { return v & 0x80 ? v - 0x100 : v; }
 
-// Returns the 4-byte Long return at HARGS+8..11, with HARGS at $04.
 std::uint64_t read_long(const Bytes& memory) {
   std::uint64_t v = 0;
   for (int i = 0; i < 4; ++i) v |= std::uint64_t{memory[0x04 + 8 + i]} << (i * 8);
@@ -25,13 +24,9 @@ std::uint64_t read_long(const Bytes& memory) {
 }
 
 namespace mul8 {
-// 8-bit multiply via char-typed arithmetic. Note: post the C99
-// width refresh, char operands integer-promote to int (now 16-bit)
-// before multiplication, so the underlying helper is `mul16`, not
-// `mul8`. The 8-bit wrap behavior is still observable because
-// storing the int result back into a char-typed return-value
-// truncates to 1 byte. Same byte-level semantics for signed and
-// unsigned char per §6.5.5.4 modular wrap.
+// The `char` operands promote to `int`, so the multiply calls
+// `mul16`, and the `char` return keeps the product's low byte. The
+// wrap is the same for signed and unsigned char (§6.5.5.4).
 void check_case(const auto& src, const auto& expected) {
   auto res = run_c_program(src);
   auto got = signed_byte(res.a);
@@ -74,8 +69,6 @@ TEST_CASE("runtime_helpers: mul8: neg pos") {
 }  // namespace mul8
 
 namespace mul16 {
-// 16-bit unsigned multiply (low 2 bytes) — exercised by `int *
-// int` arithmetic now that Int is 2 bytes.
 auto int_of(const auto& src) {
   auto res = run_c_program(src);
   return res.return_int();
@@ -108,9 +101,6 @@ TEST_CASE("runtime_helpers: mul16: exact high byte value") {
 }  // namespace mul16
 
 namespace mul32 {
-// 32-bit unsigned multiply (low 4 bytes) — exercised by `long *
-// long` arithmetic now that Long is 4 bytes. Long returns sit at
-// HARGS+8..11 (the 4-byte slot).
 auto l(const auto& src) {
   auto res = run_c_program(src);
   return read_long(res.memory);
@@ -133,19 +123,15 @@ TEST_CASE("runtime_helpers: mul32: modular wrap") {
 TEST_CASE("runtime_helpers: mul32: max x max") {
   // 0xFFFFFFFF * 0xFFFFFFFF mod 2^32 = 1
   // (since (2^32 - 1)^2 = 2^64 - 2^33 + 1, mod 2^32 = 1).
-  // Use unsigned long to avoid the 0xFFFFFFFFL parser promoting
-  // to signed.
   CHECK(l("long main(void) { unsigned long x = 0xFFFFFFFFUL; return (long)(x * x); }") == 1);
 }
 
 }  // namespace mul32
 
 namespace shifts8 {
-// 8-bit asl / asr / lsr exercised via char-typed arithmetic.
-// Like TestMul8, the underlying helper is the int-width one
-// (asl16/asr16/lsr16) — char operands integer-promote before the
-// shift, then the result truncates back to 1 byte at the
-// char-typed return.
+// The `char` operands promote to `int` before the shift, so the
+// shifts call asl16, asr16, and lsr16, and the `char` return keeps
+// the result's low byte.
 auto i(const auto& src) {
   auto res = run_c_program(src);
   return signed_byte(res.a);
@@ -185,8 +171,6 @@ TEST_CASE("runtime_helpers: shifts8: asr negative saturates to minus one") {
 }  // namespace shifts8
 
 namespace shifts16 {
-// 16-bit asl / asr / lsr — multi-byte ROR/ROL chain. Exercised
-// via int-typed arithmetic now that Int is 2 bytes.
 auto i(const auto& src) {
   auto res = run_c_program(src);
   auto v = res.return_int();
@@ -216,8 +200,6 @@ TEST_CASE("runtime_helpers: shifts16: asr positive") { CHECK(i("int main(void) {
 }  // namespace shifts16
 
 namespace shifts32 {
-// 32-bit asl / asr / lsr — 4-byte ROR/ROL chain. Exercised via
-// long-typed arithmetic now that Long is 4 bytes.
 auto l(const auto& src) {
   auto res = run_c_program(src);
   const auto v = static_cast<std::int64_t>(read_long(res.memory));
@@ -250,11 +232,8 @@ TEST_CASE("runtime_helpers: shifts32: asr large count saturates") {
 }  // namespace shifts32
 
 namespace udivmod8 {
-// Unsigned 8-bit divmod via char-typed arithmetic. The
-// underlying helper is now udivmod16 (char promotes to int before
-// division), but the result is truncated to 1 byte at the
-// char-typed return — so 8-bit semantics are still observable
-// through this test class.
+// The `char` operands promote to `int`, so the division calls
+// udivmod16, and the `char` return keeps the result's low byte.
 void check_case(const auto& src, const auto& expected) {
   auto res = run_c_program(src);
   auto got = signed_byte(res.a);
@@ -289,11 +268,9 @@ TEST_CASE("runtime_helpers: udivmod8: max unsigned") {
 }  // namespace udivmod8
 
 namespace sdivmod8 {
-// Signed 8-bit divmod via signed-char arithmetic. C99 trunc-
-// toward-zero — the underlying helper is now sdivmod16 since
-// char operands promote to int before division, but truncating
-// the result to a signed char still exhibits 8-bit edge cases
-// like the -128 / -1 wrap.
+// The `signed char` operands promote to `int`, so the division calls
+// sdivmod16 and truncates toward zero, and the `signed char` return
+// keeps the result's low byte, which shows the -128 / -1 wrap.
 void check_case(const auto& src, const auto& expected) {
   auto res = run_c_program(src);
   auto got = signed_byte(res.a);
@@ -306,7 +283,7 @@ TEST_CASE("runtime_helpers: sdivmod8: pos pos") {
 }
 
 TEST_CASE("runtime_helpers: sdivmod8: neg pos div truncates toward zero") {
-  // C99: -12 / 5 = -2 (not -3 as Python's // would give).
+  // C99 division truncates toward zero, so -12 / 5 = -2.
   check_case("char main(void) { return (signed char)((-12) / 5); }", -2);
   // Remainder follows dividend sign: -12 % 5 = -2.
   check_case("char main(void) { return (signed char)((-12) % 5); }", -2);
@@ -359,7 +336,6 @@ TEST_CASE("runtime_helpers: sdivmod8: remainder round trip") {
   for (const auto& a : {-100, -50, -1, 0, 1, 7, 50, 100}) {
     for (const auto& b : {-7, -3, -1, 1, 3, 7}) {
       auto expected = a;
-      // the identity
       auto src = cat("char main(void) { signed char a = ", a, "; signed char b = ", b,
                      "; return (signed char)((a / b) * b + (a % b)); }");
       check_case(src, expected);
@@ -370,8 +346,6 @@ TEST_CASE("runtime_helpers: sdivmod8: remainder round trip") {
 }  // namespace sdivmod8
 
 namespace udivmod16 {
-// 16-bit unsigned divmod via shift-and-subtract — exercised via
-// `unsigned int` arithmetic now that Int is 2 bytes.
 auto i(const auto& src) {
   auto res = run_c_program(src);
   auto v = res.return_int();
@@ -395,8 +369,6 @@ TEST_CASE("runtime_helpers: udivmod16: dividend smaller than divisor") {
 }  // namespace udivmod16
 
 namespace sdivmod16 {
-// 16-bit signed divmod with C99 trunc-toward-zero — exercised
-// via int-typed arithmetic now that Int is 2 bytes.
 auto i(const auto& src) {
   auto res = run_c_program(src);
   auto v = res.return_int();
@@ -443,8 +415,6 @@ TEST_CASE("runtime_helpers: sdivmod16: round trip identity") {
 }  // namespace sdivmod16
 
 namespace udivmod32 {
-// 32-bit unsigned divmod — exercised via `unsigned long`
-// arithmetic now that Long is 4 bytes.
 auto l(const auto& src) {
   auto res = run_c_program(src);
   const auto v = static_cast<std::int64_t>(read_long(res.memory));
@@ -463,8 +433,6 @@ TEST_CASE("runtime_helpers: udivmod32: large unsigned") {
 }  // namespace udivmod32
 
 namespace sdivmod32 {
-// 32-bit signed divmod — exercised via `long` arithmetic now
-// that Long is 4 bytes.
 auto l(const auto& src) {
   auto res = run_c_program(src);
   const auto v = static_cast<std::int64_t>(read_long(res.memory));

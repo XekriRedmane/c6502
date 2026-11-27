@@ -76,7 +76,6 @@ const std::vector<std::pair<std::string, std::string>> kShapes = {
         return 3;)c"},
 };
 
-// Returns what shape `name`'s `f` returns for `a` and `b`.
 int predicted(const std::string& name, int a, int b) {
   if (name == "constant") return classify(a, 0x1234);
   if (name == "widened_byte") return classify(a & 0xFF, b);

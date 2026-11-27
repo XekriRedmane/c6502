@@ -144,10 +144,8 @@ struct Frozen {
   std::uint32_t results_crc;
 };
 
-// Checks every function on the values of `type` against
-// `builtin_functions::stdbit`, in both pipelines. Each 8-byte program
-// has half the functions, since the unoptimized pipeline's frame for all
-// 14 would pass 253 bytes.
+// Each 8-byte program has half the functions, since the unoptimized
+// pipeline's frame for all 14 would pass 253 bytes.
 void check_sweep(const ValueType& type, const Frozen& frozen) {
   std::vector<asdl::Int> values;
   if (type.width == 1) {

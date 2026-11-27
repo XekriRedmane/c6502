@@ -27,7 +27,6 @@ TEST_CASE("sim_smoke sim: subtract") {
 }
 
 TEST_CASE("sim_smoke sim: a multiply through the helper") {
-  // The multiply runs the mul8 hook and returns through its RTS.
   CHECK(run_c_program("int main(void) { return 6 * 7; }").return_int() == 42);
 }
 

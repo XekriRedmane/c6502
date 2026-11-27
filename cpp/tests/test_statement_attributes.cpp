@@ -1,6 +1,5 @@
 // `[[c6502::keep]]` keeps a delay loop in the `--tac -O` text, from
-// tests/test_statement_attributes.py. The simulator's runs are in
-// test_statement_attributes_sim.cpp.
+// tests/test_statement_attributes.py.
 #include <string>
 #include <utility>
 

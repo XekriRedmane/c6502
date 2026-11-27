@@ -14,7 +14,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, C source, expected int return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {{"unary_plus", R"c(
         unsigned char c = 200;
         signed char s = -5;

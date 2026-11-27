@@ -80,10 +80,8 @@ int main(void) {
 )c";
 // All 12 slots in the test setup are visible (delta = 10 <
 // 0x2F), so refresh_hit_entities must call draw_sprite_opaque
-// exactly 12 times. The optimized pipeline promotes the loop
-// counter to X with Y-pivot and STX/LDX save/restore around the
-// JSR — verifying that 12 calls land confirms the promotion's
-// correctness.
+// exactly 12 times. The optimized pipeline keeps the loop counter
+// in X, saved with STX and restored with LDX around the JSR.
 auto calls(const auto& optimize) {
   auto s = build_sim(kProgram, optimize);
   auto result = s.run(500'000);
@@ -93,9 +91,9 @@ auto calls(const auto& optimize) {
   return result.return_int() & 0xFFFF;
 }
 
-TEST_CASE("refresh_hit_entities_sim: unoptimized produces 12 calls") { CHECK(calls(/*optimize=*/false) == 12); }
+TEST_CASE("refresh_hit_entities_sim: unoptimized produces 12 calls") { CHECK(calls(false) == 12); }
 
-TEST_CASE("refresh_hit_entities_sim: optimized produces 12 calls") { CHECK(calls(/*optimize=*/true) == 12); }
+TEST_CASE("refresh_hit_entities_sim: optimized produces 12 calls") { CHECK(calls(true) == 12); }
 
 TEST_CASE("refresh_hit_entities_sim: optimized is faster") {
   auto unopt = build_sim(kProgram, false).run(500'000);

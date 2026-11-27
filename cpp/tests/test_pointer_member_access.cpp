@@ -1,6 +1,5 @@
 // The `compile.py -S -O` text of tests/test_pointer_member_access.py's
-// accesses of struct members through pointers. The simulator's runs are
-// in test_pointer_member_access_sim.cpp.
+// accesses of struct members through pointers.
 #include <cctype>
 #include <sstream>
 #include <stdexcept>

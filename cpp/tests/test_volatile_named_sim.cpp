@@ -32,8 +32,6 @@ sim::SimResult run(const std::string& src, bool optimize, const std::map<int, in
   return max_cycles ? s.run(*max_cycles) : s.run();
 }
 
-// Returns how many instructions of `asm_text` read `name`: LDA, CMP, BIT,
-// or an ALU instruction such as `ADC g`, which reads it in place.
 int reads(const std::string& asm_text, const std::string& name) {
   const std::regex re("\\s+(LDA|CMP|BIT|ADC|SBC|AND|ORA|EOR)\\s+" + name);
   int n = 0;
@@ -123,10 +121,10 @@ int main(void) { return set(); }
 }
 
 TEST_CASE("volatile_named sim: widening a qualified signed char keeps its sign") {
-  // `_emit_cast` tested the source type as written, so a `const` or
-  // `volatile` `signed char` didn't match `SChar` and was zero-extended,
-  // and -1 read back as 255. fuzz.stmts found it once it declared
-  // objects `volatile`.
+  // The cast lowering tested the source type as written, so a `const`
+  // or `volatile` `signed char` didn't match `SChar` and was
+  // zero-extended, and -1 read back as 255. fuzz.stmts found it once it
+  // declared objects `volatile`.
   const auto source = [](const std::string& qual) {
     return qual + " signed char g = -1;\n"
                   "int f(" + qual + " signed char p) { return p; }\n"

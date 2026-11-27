@@ -86,7 +86,6 @@ std::string truncated_shift_program(const std::string& c_type, const std::vector
   return join_lines(lines);
 }
 
-// The counts in [lo, hi) that aren't a multiple of 8.
 std::vector<int> counts_off_bytes(int lo, int hi) {
   std::vector<int> out;
   for (int k = lo; k < hi; ++k) {

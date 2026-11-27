@@ -24,7 +24,6 @@ struct rec r[4] = {
     {{16, 17, 18, 19, 20}, 4000, 10},
 };
 )c";
-// Returns the `-S -O` text of `src`.
 std::string codegen_o(const std::string& src) { return codegen(src, true); }
 
 void check(const auto& src, const auto& expected) {

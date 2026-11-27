@@ -7,8 +7,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Runs `src` in both pipelines and checks that `main` returns `expected`
-// as a signed int.
 void check_returns(const char* src, std::int64_t expected) {
   for (const bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

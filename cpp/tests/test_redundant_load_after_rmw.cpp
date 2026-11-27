@@ -1,5 +1,4 @@
-// The unit tests of tests/test_redundant_load_after_rmw.py, ported. The
-// simulator's runs are in test_redundant_load_after_rmw_sim.cpp.
+// The unit tests of tests/test_redundant_load_after_rmw.py, ported.
 #include <string>
 
 #include "asm_text.h"

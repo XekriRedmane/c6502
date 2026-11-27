@@ -19,8 +19,6 @@ std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
   return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
 }
 
-// Returns the lines from `<name>:` up to the next top-level label, one
-// in column 1 that ends with `:` and doesn't start with `.`.
 std::string extract_function_body(const std::string& text, const std::string& name) {
   std::string out;
   bool in_fn = false;

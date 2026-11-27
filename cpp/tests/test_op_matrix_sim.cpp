@@ -61,8 +61,8 @@ const char* const kStorage[] = {"local", "static", "global", "zp", "ptr", "array
 
 struct Op {
   const char* name;
-  const char* text;  // applied to `X`
-  const char* kind;  // of the starting value
+  const char* text;
+  const char* kind;
 };
 
 const Op kOps[] = {
@@ -101,7 +101,6 @@ Int hex_repeat(const std::string& head, const std::string& unit, int n) {
   return v;
 }
 
-// The starting value, as a bit pattern of `size` bytes.
 Int start_value(const std::string& kind, int size) {
   const int bits = size * 8;
   if (kind == "carry") return size > 1 ? (Int(1) << (bits - 8)) - 1 : 0xFF;
@@ -111,9 +110,6 @@ Int start_value(const std::string& kind, int size) {
   return hex_repeat("", "A5", size);
 }
 
-// Returns (the expression's value, the object afterwards), both as
-// values of the object's type. A char operand is promoted to the
-// 16-bit int (C99 6.3.1.1).
 std::pair<Int, Int> apply(const std::string& op, Int x, int size, bool is_signed) {
   const Int p = size == 1 ? wrap(x, 2, true) : wrap(x, size, is_signed);
   const auto w = [&](Int v) { return wrap(v, size, is_signed); };
@@ -143,8 +139,8 @@ struct Case {
   const Op* op;
   std::string use;
   Int start;
-  Int want;      // as a value of the function's return type
-  int ret_size;  // bytes of the function's return value
+  Int want;
+  int ret_size;
 
   std::string describe() const {
     char buf[40];
@@ -195,7 +191,6 @@ std::string replace_x(const std::string& text, const std::string& obj) {
   return out;
 }
 
-// The file-scope declarations and the function of case `c`.
 std::pair<std::vector<std::string>, std::string> function(const Case& c) {
   const std::string t = c.type.c;
   const std::string init = literal(c.start, c.type.is_signed);

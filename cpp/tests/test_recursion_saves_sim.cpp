@@ -20,7 +20,6 @@ namespace {
 // The attribute, before a statement or declaration. In the programs
 // below, `SAVE ` stands where it goes.
 const std::string kSave = "[[c6502::save_hardware_stack]] ";
-// (name, source)
 const std::vector<std::pair<std::string, std::string>> kPrograms = {
     {"globals", R"c(
 unsigned char level;
@@ -175,7 +174,6 @@ int main(void) { return ping(5); }
 TEST_CASE("recursion_saves: programs") {
   for (const auto& [name, marked] : kPrograms) {
     const std::string src = replace_all(marked, "SAVE ", kSave);
-    // main()'s result on the unoptimized TAC.
     const std::optional<asdl::Int> tac = run_program(src);
     REQUIRE(tac.has_value());
     const std::int64_t expected = static_cast<std::int64_t>(*tac) & 0xFFFF;

@@ -15,10 +15,8 @@
 namespace c6502::suite {
 namespace {
 
-// Returns the `-S -O` text of `src`.
 std::string codegen_o(const std::string& src) { return codegen(src, true); }
 
-// Programs that read split tables, run in both pipelines.
 void check(const auto& src, const auto& expected) {
   for (bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

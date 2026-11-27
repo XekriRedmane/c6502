@@ -25,7 +25,7 @@ uint8_t f(uint8_t a, uint8_t b) {
 }
 int main(void) { pool[0] = f(3, 4); return pool[0]; }
 )c";
-// `_FULL_POOL` with a byte `d` in X before the parameters of `f` and
+// `kFullPool` with a byte `d` in X before the parameters of `f` and
 // `g`, so that `a`, `b`, and `x` arrive in slots. Without a register
 // named in the declaration, `a` and `b` arrive in A and X, and so does
 // `x`.
@@ -106,7 +106,7 @@ int main(void) {
 )c";
 namespace pool_growth {
 // A function whose final register allocation spills a value the
-// preliminary one didn't gets a larger pool (`compile._pool_shortfalls`).
+// preliminary one didn't gets a larger pool.
 TEST_CASE("zp_local_allocation: pool growth: runs") {
   for (bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

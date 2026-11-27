@@ -65,8 +65,6 @@ TEST_CASE("preserves: the declaration is trusted") {
 }  // namespace count_up_loop
 
 auto run_total(const auto& src, const auto& standin, const auto& optimize) {
-  // Run `src` with `standin` at $D000 and return the byte at
-  // `_TOTAL` it accumulates.
   auto s = build_sim(src, optimize);
   poke(s.cpu.memory, 0xD000, standin);
   s.cpu.memory[kTotal] = 0;

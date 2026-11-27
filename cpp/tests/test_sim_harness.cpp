@@ -103,8 +103,6 @@ TEST_CASE("sim harness: a hook's failure ends the run with Python's exception") 
 
 namespace {
 
-// Runs the hook `name` on HARGS at $04 holding `in`, and returns the
-// `out_size` bytes at HARGS+`out`, low byte first.
 std::uint64_t hook_result(const char* name, const std::vector<std::uint64_t>& in, int in_size, int out,
                           int out_size) {
   std::vector<std::uint8_t> mem(0x10000);
@@ -123,23 +121,17 @@ constexpr std::uint64_t kDoubleInf = 0x7FF0000000000000;
 
 }  // namespace
 
-// sim/runtime.py's hooks computed on the host's floating point and
-// differed from fp_arith in four ways, and the C++ hooks follow
-// fp_arith (decision 1 of step 9 of the port). No run of the Python
-// suite reached a difference.
 TEST_CASE("sim harness: a float result too large for a single is an infinity") {
-  // 3e38 * 2 and the double 1e39 converted to a float, where Python's
-  // `struct.pack` raised OverflowError.
+  // 3e38 * 2, and the double 1e39 converted to a float.
   CHECK(hook_result("fmul", {0x7F61B1E6, 0x40000000}, 4, 8, 4) == kSingleInf);
   CHECK(hook_result("d2f", {0x48078287F49C4A1DULL}, 8, 8, 4) == kSingleInf);
 }
 
 TEST_CASE("sim harness: division by zero follows IEEE 754") {
-  // 1.0 / -0.0, which the Python hook made plus infinity.
+  // 1.0 / -0.0.
   CHECK(hook_result("fdiv", {0x3F800000, 0x80000000}, 4, 8, 4) == 0xFF800000);
   CHECK(hook_result("ddiv", {0x3FF0000000000000ULL, 0x8000000000000000ULL}, 8, 16, 8) == 0xFFF0000000000000ULL);
-  // A NaN divided by 0 is the NaN, where the Python hook gave plus
-  // infinity, and 0 / 0 is a NaN.
+  // A NaN divided by 0 is the NaN, and 0 / 0 is a NaN.
   CHECK(hook_result("fdiv", {0x7FC00001, 0x00000000}, 4, 8, 4) == 0x7FC00001);
   CHECK((hook_result("fdiv", {0x00000000, 0x00000000}, 4, 8, 4) & 0x7F800000) == 0x7F800000);
   CHECK(hook_result("ddiv", {0x3FF0000000000000ULL, 0}, 8, 16, 8) == kDoubleInf);
@@ -147,8 +139,7 @@ TEST_CASE("sim harness: division by zero follows IEEE 754") {
 
 TEST_CASE("sim harness: a NaN operand gives the first NaN operand, made quiet") {
   // A signaling NaN first and a quiet one second: fp_arith gives the
-  // first, quiet, where the Python hook, on the host's unit, gave the
-  // second, 0xFFC00002.
+  // first, quiet.
   CHECK(hook_result("fadd", {0x7F800001, 0xFFC00002}, 4, 8, 4) == 0x7FC00001);
   CHECK(hook_result("dmul", {0x7FF0000000000001ULL, 0x3FF0000000000000ULL}, 8, 16, 8) == 0x7FF8000000000001ULL);
   CHECK(hook_result("flt", {kSingleNan, 0x3F800000}, 4, 8, 1) == 0);
@@ -157,7 +148,6 @@ TEST_CASE("sim harness: a NaN operand gives the first NaN operand, made quiet") 
 }
 
 TEST_CASE("sim harness: converting a NaN or an infinity to an integer fails as the TAC interpreter does") {
-  // The Python hooks wrote 0.
   const auto fails = [](const char* name, std::uint64_t bits, int size) {
     try {
       hook_result(name, {bits}, size, size, 2);
@@ -168,7 +158,7 @@ TEST_CASE("sim harness: converting a NaN or an infinity to an integer fails as t
   };
   CHECK(fails("f2i", kSingleNan, 4) == "ValueError: cannot convert float NaN to integer");
   CHECK(fails("d2ul", kDoubleInf, 8) == "OverflowError: cannot convert float infinity to integer");
-  // A finite value out of range wraps modulo 2^N, as before: 70000.0.
+  // A finite value out of range wraps modulo 2^N: 70000.0.
   CHECK(hook_result("f2u", {0x4788B800}, 4, 4, 2) == 70000 - 65536);
 }
 

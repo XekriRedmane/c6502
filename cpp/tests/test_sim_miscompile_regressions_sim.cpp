@@ -15,7 +15,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, C source, expected int return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kCases = {
     // from_ssa placed the copies for a conditional jump's taken edge
     // after the jump, on the fall-through, when the fall-through edge

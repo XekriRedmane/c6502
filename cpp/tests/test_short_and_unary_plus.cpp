@@ -1,5 +1,4 @@
 // tests/test_short_and_unary_plus.py's programs on the TAC interpreter.
-// The simulator's runs are in test_short_and_unary_plus_sim.cpp.
 #include <string>
 #include <vector>
 

@@ -37,12 +37,9 @@ constexpr std::int64_t kWant = ((100000 * 3 / 7) & 0x7FFF) + 84 + 55;
 
 struct Run {
   std::int64_t value;
-  // The bytes of the pattern the run changed.
   std::vector<int> changed;
 };
 
-// Builds `src`, fills each of `bytes` with `seed ^ address` before the
-// run, and returns main's result and the bytes that the run changed.
 Run run(const std::string& src, bool optimize, const std::vector<int>& bytes, int seed) {
   sim::Simulation s = build_sim(src, optimize);
   for (int a : bytes) s.cpu.memory[a] = static_cast<std::uint8_t>((seed ^ a) & 0xFF);

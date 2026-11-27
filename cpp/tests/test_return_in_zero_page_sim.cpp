@@ -15,7 +15,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, C source, expected int return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kCases = {
     // The result read right after the call, kept across a second
     // call (so it has to be copied out of `F@ret`), stored into a

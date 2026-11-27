@@ -1,6 +1,5 @@
 // The `-S -O` text of tests/test_recognize_indirect_indexed.py's
-// accesses through a pointer at a byte index, which are `(p),Y`. The
-// simulator's runs are in test_recognize_indirect_indexed_sim.cpp.
+// accesses through a pointer at a byte index, which are `(p),Y`.
 #include <stdexcept>
 #include <string>
 

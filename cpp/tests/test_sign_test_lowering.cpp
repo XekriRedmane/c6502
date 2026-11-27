@@ -1,7 +1,6 @@
 // The `-S -O` text of tests/test_sign_test_lowering.py's compares kept
 // as values: a signed `x < 0` or `x >= 0` takes the sign bit into C,
-// and an unsigned ordering is a subtract. The simulator's runs are in
-// test_sign_test_lowering_sim.cpp.
+// and an unsigned ordering is a subtract.
 #include <string>
 
 #include "compile_case.h"

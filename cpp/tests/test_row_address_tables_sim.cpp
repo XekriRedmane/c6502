@@ -16,20 +16,14 @@
 namespace c6502::suite {
 namespace {
 
-// Returns the `-S -O` text of `src`.
 std::string codegen_o(const std::string& src) { return codegen(src, true); }
 
 auto cell(const auto& r, const auto& c) {
-  // What `_FILL` stores in row `r`, column `c`.
   return (r * 16 + c) & 0xFF;
 }
 
-// Programs that index 2-D arrays through row tables, run in both
-// pipelines. Each program reads its array often enough that the
-// accesses save more than the tables cost, so that `-O` makes them.
-// (Until step 8 of the port, these tests replaced the Python pass's
-// estimate to force the tables, which the C++ pass's doctest cases now
-// do with `fixed_saving`.)
+// Each program reads its array often enough that the accesses save
+// more than the tables cost, so that `-O` makes them.
 void check(const auto& src, const auto& expected, const auto& table) {
   CHECK(contains(codegen_o(src), cat("\n", table, "@lo:\n")));
   for (bool optimize : {false, true}) {

@@ -1,6 +1,5 @@
 // The tests of tests/test_sim_miscompile_regressions.py that run the
-// TAC interpreter or read the `-S` text. The simulator's runs are in
-// test_sim_miscompile_regressions_sim.cpp.
+// TAC interpreter or read the `-S` text.
 #include <string>
 #include <vector>
 

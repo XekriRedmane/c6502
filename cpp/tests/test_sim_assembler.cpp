@@ -26,7 +26,6 @@ ir::Type_instruction lda_imm(int v) {
   return ir::Mov{.src = ir::Imm{.value = v}, .dst = ir::Reg{.reg = ir::A{}}};
 }
 
-// `n` two-byte instructions.
 std::vector<ir::Type_instruction> filler(int n) { return std::vector<ir::Type_instruction>(n, lda_imm(1)); }
 
 std::string error_of(const std::vector<ir::Type_top_level>& top) {

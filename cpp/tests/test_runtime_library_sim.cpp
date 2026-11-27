@@ -33,8 +33,6 @@ namespace elf = c6502::binutils::elf;
 namespace sim = c6502::sim;
 using c6502::asdl::Int;
 
-// A C integer type: its spelling, its width in bytes, and whether it's
-// signed.
 struct Type {
   const char* c;
   int size;
@@ -42,14 +40,12 @@ struct Type {
 
   int bits() const { return 8 * size; }
 
-  // `v` converted to this type.
   Int wrap(Int v) const {
     v &= (Int(1) << bits()) - 1;
     if (is_signed && (v >> (bits() - 1)) != 0) v -= Int(1) << bits();
     return v;
   }
 
-  // `v` as a C expression of a value of this type.
   std::string literal(Int v) const {
     if (v == -(Int(1) << (bits() - 1))) return "(" + c6502::asdl::int_to_string(v + 1) + " - 1)";
     const std::string suffix = !is_signed && size == 4 ? "UL" : "";
@@ -137,8 +133,6 @@ struct Exe {
   elf::ElfFile elf;
 };
 
-// The executable that `source` compiles and links to with no `--defsym`
-// but those in `extra`, linked by `script` when one is given.
 Exe build(const std::string& src, const std::vector<std::string>& extra = {},
           const std::optional<std::string>& script = std::nullopt) {
   const suite::TempDir tmp;
@@ -158,7 +152,6 @@ Exe build(const std::string& src, const std::vector<std::string>& extra = {},
   return exe;
 }
 
-// The helpers the executable holds in its own sections, by address.
 std::map<std::string, std::int64_t> own_helpers(const elf::ElfFile& exe) {
   const std::set<std::string> names = helper_names();
   std::map<std::string, std::int64_t> out;
@@ -180,8 +173,6 @@ struct Ran {
   std::map<std::string, std::int64_t> symbols;
 };
 
-// Runs `exe` on the simulator with the simulator's own helpers removed:
-// no hook and no copy of the 6502 helpers at $E000.
 Ran run(const Exe& exe) {
   sim::Simulation s = sim::build_linked_sim(exe.bytes);
   std::fill_n(s.cpu.memory.begin() + s.runtime.helper_origin, s.runtime.helper_image.size(), std::uint8_t{0});
@@ -208,7 +199,6 @@ using Fn = std::function<Int(Int, Int)>;
 
 constexpr std::size_t kN = 24;
 
-// Python's `repr` of the sorted list of names, for the seed.
 std::string names_repr(const std::set<std::string>& helpers) {
   std::string out = "[";
   for (const std::string& h : helpers) out += (out.size() > 1 ? ", '" : "'") + h + "'";
@@ -295,8 +285,7 @@ SECTIONS
 // Each helper, linked from the library and run, against C++ arithmetic.
 // A 1- or 2-byte shift by a variable count is an inline loop, so those
 // cases check the loop's results and that the shift helpers of those
-// widths aren't linked. The unsigned operands are never negative, so `/`
-// and `%` of them are Python's `//` and `%`.
+// widths aren't linked.
 TEST_CASE("runtime_library sim: mul8") { check({"mul8"}, U8, U8, {{"x * y", kMul}}); }
 TEST_CASE("runtime_library sim: udivmod8") {
   check({"udivmod8"}, UB8, UB8, {{"x / y", kDiv}, {"x % y", kFloorMod}}, true);

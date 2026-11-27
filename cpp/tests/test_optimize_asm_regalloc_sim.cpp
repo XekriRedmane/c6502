@@ -12,7 +12,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Runs `src` in both pipelines and checks that `main` returns `want`.
 void check_both(const char* src, std::int64_t want) {
   for (const bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

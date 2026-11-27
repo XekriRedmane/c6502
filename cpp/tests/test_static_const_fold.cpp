@@ -1,7 +1,6 @@
 // The `-S -O` text of tests/test_static_const_fold.py's reads of
 // `static const` scalars and arrays, which fold to immediates, with
-// their constant adds reassociated. The simulator's runs are in
-// test_static_const_fold_sim.cpp.
+// their constant adds reassociated.
 #include <string>
 
 #include "compile_case.h"

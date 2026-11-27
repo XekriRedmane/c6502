@@ -1,7 +1,6 @@
 // The `-S -O` text of tests/test_slot_coalescing.py's multiply, in
 // which a zero-page local holding a copy of a parameter takes the
-// parameter's own slot. The simulator's runs are in
-// test_slot_coalescing_sim.cpp.
+// parameter's own slot.
 #include <string>
 
 #include "compile_case.h"

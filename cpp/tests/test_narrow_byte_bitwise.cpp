@@ -1,6 +1,5 @@
 // The `-S -O` text of tests/test_narrow_byte_bitwise.py's program,
-// whose compares of a masked byte are byte compares. The simulator's
-// runs are in test_narrow_byte_bitwise_sim.cpp.
+// whose compares of a masked byte are byte compares.
 #include <string>
 
 #include "compile_case.h"

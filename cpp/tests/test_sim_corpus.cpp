@@ -22,8 +22,6 @@ namespace {
 constexpr std::uint64_t kMaxCycles = 5'000'000;
 constexpr int kShards = 4;
 
-// The files of `expected_returns` whose value fits an `int`, without
-// the skipped ones, in the table's order.
 std::vector<std::pair<std::string_view, std::int64_t>> int_range_cases() {
   std::vector<std::pair<std::string_view, std::int64_t>> out;
   for (const auto& [path, value] : expected_returns()) {
@@ -41,8 +39,6 @@ std::string state(const sim::SimResult& r) {
   return buf;
 }
 
-// Runs each case whose index is `shard` modulo `shards` in one pipeline
-// and checks its return.
 void check_returns(const std::vector<std::pair<std::string_view, std::int64_t>>& cases, bool optimize, int shard,
                    int shards) {
   REQUIRE(!cases.empty());

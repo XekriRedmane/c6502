@@ -1,6 +1,5 @@
 // A function returning a pointer returns it in A and X, from
-// tests/test_pointer_return.py. The simulator's runs are in
-// test_pointer_return_sim.cpp.
+// tests/test_pointer_return.py.
 #include <stdexcept>
 #include <string>
 

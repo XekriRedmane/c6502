@@ -1,7 +1,6 @@
 // tests/test_typed_enum.py's program of enumerations with a fixed
 // underlying type on the TAC interpreter. It returns 0 when every check
-// passes, and otherwise the number of the first check that fails. The
-// simulator's runs are in test_typed_enum_sim.cpp.
+// passes, and otherwise the number of the first check that fails.
 #include <string>
 
 #include "compile_case.h"

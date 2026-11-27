@@ -1,11 +1,10 @@
-// The comparison of the C++ harness with the Python one, for group G4 of
-// step 9 of the port. With C6502_SIM_RECORDS naming a directory of the
-// records that sim/harness.py wrote for each `Simulation.run` of the
-// Python suite (one JSON object a line, in `*.jsonl` files), this case
-// builds each program again in C++, compares the image and the symbols,
-// runs it from the same state, and compares the registers, the cycles,
-// the memory, and the hook's error. Without the variable it does
-// nothing. It goes with the Python harness, in group R.
+// The comparison of the C++ harness with the Python one. With
+// C6502_SIM_RECORDS naming a directory of the records that
+// sim/harness.py wrote for each `Simulation.run` of the Python suite
+// (one JSON object a line, in `*.jsonl` files), this case builds each
+// program again in C++, compares the image and the symbols, runs it
+// from the same state, and compares the registers, the cycles, the
+// memory, and the hook's error. Without the variable it does nothing.
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -61,7 +60,6 @@ struct Tally {
   std::map<std::string, int> hooks_called;
 };
 
-// Returns "" when the record's run matches, or what differs.
 std::string compare(const json::Value& rec, Tally& t) {
   const json::Value& build = *rec.get("build");
   const std::string kind = build.get("kind")->string;
@@ -102,7 +100,6 @@ std::string compare(const json::Value& rec, Tally& t) {
   } else {
     why += "symbols differ; ";
   }
-  // The hooks the Python run had, by name.
   std::map<std::int64_t, std::string> names;
   for (const auto& [name, addr] : s.runtime.symbols) names[addr] = name;
   std::vector<std::string> hooks;

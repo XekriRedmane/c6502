@@ -1,8 +1,7 @@
 // The tests of tests/test_significant_bytes.py that read the `-S` text
 // of shifts and compares of values with one significant byte, and the
 // arithmetic identity behind the closed form of Zork's
-// `please_insert_save_diskette`. The simulator's runs are in
-// test_significant_bytes_sim.cpp.
+// `please_insert_save_diskette`.
 #include <sstream>
 #include <string>
 #include <vector>

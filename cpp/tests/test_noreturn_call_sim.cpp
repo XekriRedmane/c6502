@@ -53,11 +53,6 @@ TEST_CASE("noreturn_call: a run stops in the call") {
   }
 }
 
-// The call graph and a call that abandons its caller
-// (cpp/src/passes/call_edges.h).
-
-// Returns the lines of function `name` in `asm_text`, up to the next
-// line that is a global label.
 std::string body(const std::string& asm_text, const std::string& name) {
   const std::vector<std::string> all = lines(asm_text);
   auto at = std::find(all.begin(), all.end(), name + ":");
@@ -71,7 +66,6 @@ std::string body(const std::string& asm_text, const std::string& name) {
   return out;
 }
 
-// Returns whether `text` reads or writes through SSP or FP.
 bool soft_stack(const std::string& text) {
   for (const std::string r : {"SSP", "FP"}) {
     if (contains(text, "(" + r + ")") || contains(text, "   " + r) || contains(text, r + "+")) return true;

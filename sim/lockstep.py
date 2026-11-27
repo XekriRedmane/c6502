@@ -1,5 +1,4 @@
-"""Runs py65 and the C++ CPU (cpp/src/sim/cpu.h) in lockstep, for the
-check of the CPU in step 9 of the port (docs/cpp_port.md, group G3).
+"""Runs py65 and the C++ CPU (cpp/src/sim/cpu.h) in lockstep.
 
 With `C6502_SIM_LOCKSTEP=1`, `Simulation.run` (sim/harness.py) runs the
 program on py65 as it always does, and records each segment between hook
@@ -13,10 +12,7 @@ on, found by replaying py65 from the start to it. The run's result is
 py65's, so a program runs as it would without the mode.
 
 With `C6502_SIM_LOCKSTEP_LOG` naming a directory too, each run appends
-`<instructions> <segments> <how it ended>` to `lockstep-<pid>.txt` there,
-which is how the counts of a run of the suite are taken.
-
-This module goes when py65 does.
+`<instructions> <segments> <how it ended>` to `lockstep-<pid>.txt` there.
 """
 from __future__ import annotations
 
@@ -38,9 +34,6 @@ def enabled() -> bool:
 
 
 class _RecordingMemory(bytearray):
-    """A copy of memory that records each write, as `(address, value)`,
-    in `log`."""
-
     def __init__(self, data) -> None:
         super().__init__(data)
         self.log: list[tuple[int, int]] = []
@@ -60,7 +53,6 @@ def _state(mpu) -> dict:
 
 
 def _hook_and_rts(mpu, hooks) -> None:
-    """`Simulation._hook_and_rts` on `mpu`."""
     hooks[mpu.pc](mpu.memory)
     sp = mpu.sp
     lo = mpu.memory[0x0100 + ((sp + 1) & 0xFF)]
@@ -70,8 +62,6 @@ def _hook_and_rts(mpu, hooks) -> None:
 
 
 class _Trace:
-    """What py65 did in each segment."""
-
     def __init__(self) -> None:
         self.segments: list[dict] = []
         self.digests: list[array.array] = []
@@ -79,16 +69,10 @@ class _Trace:
         self.stops: list[str] = []
         self.ends: list[tuple] = []
         self.error: BaseException | None = None
-        # With `_drive`'s `until`: the state before the instruction, the
-        # state after it, its writes, and memory at the segment's start.
         self.found: tuple | None = None
 
 
 def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) -> _Trace:
-    """Steps `mpu`, whose memory is a `_RecordingMemory`, as
-    `Simulation.run` does, recording each segment. With `until` as
-    `(k, i)`, stops after instruction i of segment k and keeps it in
-    `found`."""
     mem = mpu.memory
     log = mem.log
     trace = _Trace()
@@ -115,7 +99,7 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
             log.clear()
             try:
                 mpu.step()
-            except Exception as e:  # noqa: BLE001 - the C++ CPU must fail too
+            except Exception as e:
                 trace.error = e
                 stop = "error"
                 break
@@ -137,7 +121,7 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
         log.clear()
         try:
             _hook_and_rts(mpu, hooks)
-        except Exception as e:  # noqa: BLE001 - raised after the comparison
+        except Exception as e:
             trace.error = e
             return trace
         patches = [[a, v] for a, v in log]

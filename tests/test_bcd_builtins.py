@@ -1,11 +1,5 @@
 """Tests for the packed BCD builtins, `__c6502_bcd_add` and
 `__c6502_bcd_sub` (builtin_functions.py, docs/builtins.md).
-
-Both pipelines are checked here for the values the simulator computes.
-The tests of the arithmetic, of the constants the optimizer folds, and
-of the code the back end writes are doctest cases in
-cpp/tests/test_bcd_builtins.cpp, which runs the programs below on the
-TAC interpreter too.
 """
 from __future__ import annotations
 

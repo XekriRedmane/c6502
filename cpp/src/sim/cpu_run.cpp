@@ -147,8 +147,6 @@ std::string respond(const json::Value& kwargs, std::string_view image) {
     std::string stop;
     std::uint64_t instructions = 0;
     std::string error;
-    // `run` counts the instructions it executed, which a throw loses, so
-    // the digests count them.
     try {
       const Cpu::RunResult result = cpu.run(limits);
       stop = stop_name(result.stop);

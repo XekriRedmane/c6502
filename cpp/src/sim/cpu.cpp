@@ -5,44 +5,42 @@
 
 namespace c6502::sim {
 
-// py65's `cycletime` and `extracycles`, which cpp/tests/test_cpu.cpp
-// compares with the tables tools/py65_cpu_vectors.py froze.
 const std::uint8_t kCycleTime[256] = {
-    7, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 0, 4, 6, 0,  // $00
-    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,  // $10
-    6, 6, 0, 0, 3, 3, 5, 0, 4, 2, 2, 0, 4, 4, 6, 0,  // $20
-    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,  // $30
-    6, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 3, 4, 6, 0,  // $40
-    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,  // $50
-    6, 6, 0, 0, 0, 3, 5, 0, 4, 2, 2, 0, 5, 4, 6, 0,  // $60
-    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,  // $70
-    0, 6, 0, 0, 3, 3, 3, 0, 2, 0, 2, 0, 4, 4, 4, 0,  // $80
-    2, 6, 0, 0, 4, 4, 4, 0, 2, 5, 2, 0, 0, 5, 0, 0,  // $90
-    2, 6, 2, 0, 3, 3, 3, 0, 2, 2, 2, 0, 4, 4, 4, 0,  // $A0
-    2, 5, 0, 0, 4, 4, 4, 0, 2, 4, 2, 0, 4, 4, 4, 0,  // $B0
-    2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 3, 0,  // $C0
-    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,  // $D0
-    2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 6, 0,  // $E0
-    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,  // $F0
+    7, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 0, 4, 6, 0,
+    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    6, 6, 0, 0, 3, 3, 5, 0, 4, 2, 2, 0, 4, 4, 6, 0,
+    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    6, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 3, 4, 6, 0,
+    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    6, 6, 0, 0, 0, 3, 5, 0, 4, 2, 2, 0, 5, 4, 6, 0,
+    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    0, 6, 0, 0, 3, 3, 3, 0, 2, 0, 2, 0, 4, 4, 4, 0,
+    2, 6, 0, 0, 4, 4, 4, 0, 2, 5, 2, 0, 0, 5, 0, 0,
+    2, 6, 2, 0, 3, 3, 3, 0, 2, 2, 2, 0, 4, 4, 4, 0,
+    2, 5, 0, 0, 4, 4, 4, 0, 2, 4, 2, 0, 4, 4, 4, 0,
+    2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 3, 0,
+    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 6, 0,
+    2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
 };
 
 const std::uint8_t kExtraCycles[256] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $00
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,  // $10
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $20
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,  // $30
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $40
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,  // $50
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $60
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,  // $70
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $80
-    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $90
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $A0
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0,  // $B0
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $C0
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,  // $D0
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $E0
-    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,  // $F0
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
 };
 
 void Cpu::reset(std::uint16_t start) {
@@ -352,11 +350,8 @@ void Cpu::step() {
 }
 
 void Cpu::execute(std::uint8_t op) {
-  // The address of the operand of each mode, which leaves PC at the
-  // operand. The instruction then moves PC past it.
   const auto zp = [this] { return static_cast<std::uint16_t>(read(pc)); };
   const auto absolute = [this] { return word_at(pc); };
-  // A read-modify-write of memory.
   const auto rmw = [this](std::uint16_t addr, std::uint8_t (Cpu::*f)(std::uint8_t)) {
     write(addr, (this->*f)(read(addr)));
   };
@@ -383,7 +378,7 @@ void Cpu::execute(std::uint8_t op) {
     p |= v & (kNegative | kOverflow);
   };
   switch (op) {
-    case 0x00: {  // BRK
+    case 0x00: {
       const auto ret = static_cast<std::uint16_t>(pc + 1);
       push(static_cast<std::uint8_t>(ret >> 8));
       push(static_cast<std::uint8_t>(ret));
@@ -396,20 +391,20 @@ void Cpu::execute(std::uint8_t op) {
     case 0x01: ora(indirect_x()); ++pc; break;
     case 0x05: ora(zp()); ++pc; break;
     case 0x06: rmw(zp(), &Cpu::asl); ++pc; break;
-    case 0x08: push(static_cast<std::uint8_t>(p | kBreak | kUnused)); break;  // PHP
+    case 0x08: push(static_cast<std::uint8_t>(p | kBreak | kUnused)); break;
     case 0x09: ora(pc); ++pc; break;
     case 0x0A: a = asl(a); break;
     case 0x0D: ora(absolute()); pc += 2; break;
     case 0x0E: rmw(absolute(), &Cpu::asl); pc += 2; break;
-    case 0x10: branch((p & kNegative) == 0); break;  // BPL
+    case 0x10: branch((p & kNegative) == 0); break;
     case 0x11: ora(indirect_y()); ++pc; break;
     case 0x15: ora(zero_page_x()); ++pc; break;
     case 0x16: rmw(zero_page_x(), &Cpu::asl); ++pc; break;
-    case 0x18: p &= static_cast<std::uint8_t>(~kCarry); break;  // CLC
+    case 0x18: p &= static_cast<std::uint8_t>(~kCarry); break;
     case 0x19: ora(absolute_y()); pc += 2; break;
     case 0x1D: ora(absolute_x()); pc += 2; break;
     case 0x1E: rmw(absolute_x(), &Cpu::asl); pc += 2; break;
-    case 0x20: {  // JSR, which pushes before it reads its target
+    case 0x20: {
       const auto ret = static_cast<std::uint16_t>(pc + 1);
       push(static_cast<std::uint8_t>(ret >> 8));
       push(static_cast<std::uint8_t>(ret));
@@ -420,21 +415,21 @@ void Cpu::execute(std::uint8_t op) {
     case 0x24: bit(zp()); ++pc; break;
     case 0x25: and_(zp()); ++pc; break;
     case 0x26: rmw(zp(), &Cpu::rol); ++pc; break;
-    case 0x28: p = static_cast<std::uint8_t>(pop() | kBreak | kUnused); break;  // PLP
+    case 0x28: p = static_cast<std::uint8_t>(pop() | kBreak | kUnused); break;
     case 0x29: and_(pc); ++pc; break;
     case 0x2A: a = rol(a); break;
     case 0x2C: bit(absolute()); pc += 2; break;
     case 0x2D: and_(absolute()); pc += 2; break;
     case 0x2E: rmw(absolute(), &Cpu::rol); pc += 2; break;
-    case 0x30: branch((p & kNegative) != 0); break;  // BMI
+    case 0x30: branch((p & kNegative) != 0); break;
     case 0x31: and_(indirect_y()); ++pc; break;
     case 0x35: and_(zero_page_x()); ++pc; break;
     case 0x36: rmw(zero_page_x(), &Cpu::rol); ++pc; break;
-    case 0x38: p |= kCarry; break;  // SEC
+    case 0x38: p |= kCarry; break;
     case 0x39: and_(absolute_y()); pc += 2; break;
     case 0x3D: and_(absolute_x()); pc += 2; break;
     case 0x3E: rmw(absolute_x(), &Cpu::rol); pc += 2; break;
-    case 0x40: {  // RTI
+    case 0x40: {
       p = static_cast<std::uint8_t>(pop() | kBreak | kUnused);
       const std::uint8_t lo = pop();
       pc = static_cast<std::uint16_t>(lo | (pop() << 8));
@@ -443,21 +438,21 @@ void Cpu::execute(std::uint8_t op) {
     case 0x41: eor(indirect_x()); ++pc; break;
     case 0x45: eor(zp()); ++pc; break;
     case 0x46: rmw(zp(), &Cpu::lsr); ++pc; break;
-    case 0x48: push(a); break;  // PHA
+    case 0x48: push(a); break;
     case 0x49: eor(pc); ++pc; break;
     case 0x4A: a = lsr(a); break;
-    case 0x4C: pc = absolute(); break;  // JMP abs
+    case 0x4C: pc = absolute(); break;
     case 0x4D: eor(absolute()); pc += 2; break;
     case 0x4E: rmw(absolute(), &Cpu::lsr); pc += 2; break;
-    case 0x50: branch((p & kOverflow) == 0); break;  // BVC
+    case 0x50: branch((p & kOverflow) == 0); break;
     case 0x51: eor(indirect_y()); ++pc; break;
     case 0x55: eor(zero_page_x()); ++pc; break;
     case 0x56: rmw(zero_page_x(), &Cpu::lsr); ++pc; break;
-    case 0x58: p &= static_cast<std::uint8_t>(~kInterrupt); break;  // CLI
+    case 0x58: p &= static_cast<std::uint8_t>(~kInterrupt); break;
     case 0x59: eor(absolute_y()); pc += 2; break;
     case 0x5D: eor(absolute_x()); pc += 2; break;
     case 0x5E: rmw(absolute_x(), &Cpu::lsr); pc += 2; break;
-    case 0x60: {  // RTS
+    case 0x60: {
       const std::uint8_t lo = pop();
       pc = static_cast<std::uint16_t>((lo | (pop() << 8)) + 1);
       break;
@@ -465,17 +460,17 @@ void Cpu::execute(std::uint8_t op) {
     case 0x61: adc(read(indirect_x())); ++pc; break;
     case 0x65: adc(read(zp())); ++pc; break;
     case 0x66: rmw(zp(), &Cpu::ror); ++pc; break;
-    case 0x68: a = pop(); flags_nz(a); break;  // PLA
+    case 0x68: a = pop(); flags_nz(a); break;
     case 0x69: adc(read(pc)); ++pc; break;
     case 0x6A: a = ror(a); break;
-    case 0x6C: pc = wrap_at(absolute()); break;  // JMP ind
+    case 0x6C: pc = wrap_at(absolute()); break;
     case 0x6D: adc(read(absolute())); pc += 2; break;
     case 0x6E: rmw(absolute(), &Cpu::ror); pc += 2; break;
-    case 0x70: branch((p & kOverflow) != 0); break;  // BVS
+    case 0x70: branch((p & kOverflow) != 0); break;
     case 0x71: adc(read(indirect_y())); ++pc; break;
     case 0x75: adc(read(zero_page_x())); ++pc; break;
     case 0x76: rmw(zero_page_x(), &Cpu::ror); ++pc; break;
-    case 0x78: p |= kInterrupt; break;  // SEI
+    case 0x78: p |= kInterrupt; break;
     case 0x79: adc(read(absolute_y())); pc += 2; break;
     case 0x7D: adc(read(absolute_x())); pc += 2; break;
     case 0x7E: rmw(absolute_x(), &Cpu::ror); pc += 2; break;
@@ -483,19 +478,19 @@ void Cpu::execute(std::uint8_t op) {
     case 0x84: write(zp(), y); ++pc; break;
     case 0x85: write(zp(), a); ++pc; break;
     case 0x86: write(zp(), x); ++pc; break;
-    case 0x88: --y; flags_nz(y); break;  // DEY
-    case 0x8A: a = x; flags_nz(a); break;  // TXA
+    case 0x88: --y; flags_nz(y); break;
+    case 0x8A: a = x; flags_nz(a); break;
     case 0x8C: write(absolute(), y); pc += 2; break;
     case 0x8D: write(absolute(), a); pc += 2; break;
     case 0x8E: write(absolute(), x); pc += 2; break;
-    case 0x90: branch((p & kCarry) == 0); break;  // BCC
+    case 0x90: branch((p & kCarry) == 0); break;
     case 0x91: write(indirect_y(), a); ++pc; break;
     case 0x94: write(zero_page_x(), y); ++pc; break;
     case 0x95: write(zero_page_x(), a); ++pc; break;
     case 0x96: write(zero_page_y(), x); ++pc; break;
-    case 0x98: a = y; flags_nz(a); break;  // TYA
+    case 0x98: a = y; flags_nz(a); break;
     case 0x99: write(absolute_y(), a); pc += 2; break;
-    case 0x9A: sp = x; break;  // TXS
+    case 0x9A: sp = x; break;
     case 0x9D: write(absolute_x(), a); pc += 2; break;
     case 0xA0: load(y, pc); ++pc; break;
     case 0xA1: load(a, indirect_x()); ++pc; break;
@@ -503,20 +498,20 @@ void Cpu::execute(std::uint8_t op) {
     case 0xA4: load(y, zp()); ++pc; break;
     case 0xA5: load(a, zp()); ++pc; break;
     case 0xA6: load(x, zp()); ++pc; break;
-    case 0xA8: y = a; flags_nz(y); break;  // TAY
+    case 0xA8: y = a; flags_nz(y); break;
     case 0xA9: load(a, pc); ++pc; break;
-    case 0xAA: x = a; flags_nz(x); break;  // TAX
+    case 0xAA: x = a; flags_nz(x); break;
     case 0xAC: load(y, absolute()); pc += 2; break;
     case 0xAD: load(a, absolute()); pc += 2; break;
     case 0xAE: load(x, absolute()); pc += 2; break;
-    case 0xB0: branch((p & kCarry) != 0); break;  // BCS
+    case 0xB0: branch((p & kCarry) != 0); break;
     case 0xB1: load(a, indirect_y()); ++pc; break;
     case 0xB4: load(y, zero_page_x()); ++pc; break;
     case 0xB5: load(a, zero_page_x()); ++pc; break;
     case 0xB6: load(x, zero_page_y()); ++pc; break;
-    case 0xB8: p &= static_cast<std::uint8_t>(~kOverflow); break;  // CLV
+    case 0xB8: p &= static_cast<std::uint8_t>(~kOverflow); break;
     case 0xB9: load(a, absolute_y()); pc += 2; break;
-    case 0xBA: x = sp; flags_nz(x); break;  // TSX
+    case 0xBA: x = sp; flags_nz(x); break;
     case 0xBC: load(y, absolute_x()); pc += 2; break;
     case 0xBD: load(a, absolute_x()); pc += 2; break;
     case 0xBE: load(x, absolute_y()); pc += 2; break;
@@ -525,17 +520,17 @@ void Cpu::execute(std::uint8_t op) {
     case 0xC4: compare(zp(), y); ++pc; break;
     case 0xC5: compare(zp(), a); ++pc; break;
     case 0xC6: rmw(zp(), &Cpu::dec); ++pc; break;
-    case 0xC8: ++y; flags_nz(y); break;  // INY
+    case 0xC8: ++y; flags_nz(y); break;
     case 0xC9: compare(pc, a); ++pc; break;
-    case 0xCA: --x; flags_nz(x); break;  // DEX
+    case 0xCA: --x; flags_nz(x); break;
     case 0xCC: compare(absolute(), y); pc += 2; break;
     case 0xCD: compare(absolute(), a); pc += 2; break;
     case 0xCE: rmw(absolute(), &Cpu::dec); pc += 2; break;
-    case 0xD0: branch((p & kZero) == 0); break;  // BNE
+    case 0xD0: branch((p & kZero) == 0); break;
     case 0xD1: compare(indirect_y(), a); ++pc; break;
     case 0xD5: compare(zero_page_x(), a); ++pc; break;
     case 0xD6: rmw(zero_page_x(), &Cpu::dec); ++pc; break;
-    case 0xD8: p &= static_cast<std::uint8_t>(~kDecimal); break;  // CLD
+    case 0xD8: p &= static_cast<std::uint8_t>(~kDecimal); break;
     case 0xD9: compare(absolute_y(), a); pc += 2; break;
     case 0xDD: compare(absolute_x(), a); pc += 2; break;
     case 0xDE: rmw(absolute_x(), &Cpu::dec); pc += 2; break;
@@ -544,17 +539,17 @@ void Cpu::execute(std::uint8_t op) {
     case 0xE4: compare(zp(), x); ++pc; break;
     case 0xE5: sbc(read(zp())); ++pc; break;
     case 0xE6: rmw(zp(), &Cpu::inc); ++pc; break;
-    case 0xE8: ++x; flags_nz(x); break;  // INX
+    case 0xE8: ++x; flags_nz(x); break;
     case 0xE9: sbc(read(pc)); ++pc; break;
-    case 0xEA: break;  // NOP
+    case 0xEA: break;
     case 0xEC: compare(absolute(), x); pc += 2; break;
     case 0xED: sbc(read(absolute())); pc += 2; break;
     case 0xEE: rmw(absolute(), &Cpu::inc); pc += 2; break;
-    case 0xF0: branch((p & kZero) != 0); break;  // BEQ
+    case 0xF0: branch((p & kZero) != 0); break;
     case 0xF1: sbc(read(indirect_y())); ++pc; break;
     case 0xF5: sbc(read(zero_page_x())); ++pc; break;
     case 0xF6: rmw(zero_page_x(), &Cpu::inc); ++pc; break;
-    case 0xF8: p |= kDecimal; break;  // SED
+    case 0xF8: p |= kDecimal; break;
     case 0xF9: sbc(read(absolute_y())); pc += 2; break;
     case 0xFD: sbc(read(absolute_x())); pc += 2; break;
     case 0xFE: rmw(absolute_x(), &Cpu::inc); pc += 2; break;

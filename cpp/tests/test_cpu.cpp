@@ -1,7 +1,3 @@
-// The simulator's CPU (src/sim/cpu.h) against py65 1.2.0's results,
-// which tools/py65_cpu_vectors.py froze in cpp/tests/frozen/cpu, and
-// its callbacks, its run loop, and the backend mode `cpu-run`
-// (src/sim/cpu_run.h).
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -37,7 +33,6 @@ std::vector<std::string> words(const std::string& text) {
 
 unsigned hex(const std::string& s) { return static_cast<unsigned>(std::stoul(s, nullptr, 16)); }
 
-// The `addr:value` pairs of a vector's field.
 std::vector<std::pair<std::uint16_t, std::uint8_t>> pairs(const std::string& field) {
   std::vector<std::pair<std::uint16_t, std::uint8_t>> out;
   for (const std::string& w : words(field)) {
@@ -64,8 +59,6 @@ std::string pairs_text(const std::vector<std::pair<std::uint16_t, std::uint8_t>>
   return out;
 }
 
-// A CPU that runs `bytes` from `origin`, with its traps and callbacks
-// unset.
 Cpu cpu_with(std::uint16_t origin, const std::vector<std::uint8_t>& bytes) {
   Cpu cpu;
   for (std::size_t i = 0; i < bytes.size(); ++i) cpu.memory[(origin + i) & 0xFFFF] = bytes[i];
@@ -215,7 +208,6 @@ TEST_CASE("cpu: reset gives py65's state") {
 }
 
 TEST_CASE("cpu: the read and write callbacks see a read-modify-write's read before its write") {
-  // INC $C030; LDX #$09; LSR $C0E0,X; STA $C010; LDA $C000; LDA $C100
   Cpu cpu = cpu_with(0x0800, {0xEE, 0x30, 0xC0, 0xA2, 0x09, 0x5E, 0xE0, 0xC0, 0x8D, 0x10, 0xC0, 0xAD,
                               0x00, 0xC0, 0xAD, 0x00, 0xC1});
   cpu.memory[0xC030] = 0x55;
@@ -235,8 +227,6 @@ TEST_CASE("cpu: the read and write callbacks see a read-modify-write's read befo
         events.emplace_back(buf);
       });
   for (int i = 0; i < 6; ++i) cpu.step();
-  // INC writes the read's value plus one, LSR the read's value shifted,
-  // and the stores go to memory as well as to the callback.
   const std::vector<std::string> want = {"read C030", "write C030 82", "read C0E9", "write C0E9 40",
                                          "write C010 12", "read C000"};
   CHECK(events == want);
@@ -248,7 +238,6 @@ TEST_CASE("cpu: the read and write callbacks see a read-modify-write's read befo
 }
 
 TEST_CASE("cpu: run calls a trap before the fetch and returns from it as RTS would") {
-  // JSR $E000; LDA #$01; BRK
   Cpu cpu = cpu_with(0x0800, {0x20, 0x00, 0xE0, 0xA9, 0x01, 0x00});
   int calls = 0;
   cpu.set_trap(0xE000, [&](Cpu& c) {
@@ -264,12 +253,10 @@ TEST_CASE("cpu: run calls a trap before the fetch and returns from it as RTS wou
   CHECK(cpu.sp == 0xFF);
   CHECK(cpu.a == 0x01);
   CHECK(cpu.x == 0x42);
-  // The JSR's 6 and the LDA's 2, and nothing for the trap.
   CHECK(cpu.cycles == 8);
 }
 
 TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, and BRK") {
-  // LDA #$01; NOP; BRK
   Cpu cpu = cpu_with(0x0800, {0xA9, 0x01, 0xEA, 0x00});
   Cpu::Limits limits;
   limits.max_cycles = 2;
@@ -289,14 +276,12 @@ TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, an
   CHECK(r.stop == Cpu::Stop::kTrap);
   CHECK(cpu.pc == 0x0802);
 
-  // A trap that gives `kExecute` lets the instruction at PC run.
   cpu.set_trap(0x0802, [](Cpu&) { return Cpu::Action::kExecute; });
   r = cpu.run(limits);
   CHECK(r.stop == Cpu::Stop::kBrk);
   CHECK(r.instructions == 1);
   CHECK(cpu.pc == 0x0803);
 
-  // Without the stop at BRK, BRK runs and jumps through $FFFE.
   cpu.clear_trap(0x0802);
   cpu.memory[0xFFFE] = 0x00;
   cpu.memory[0xFFFF] = 0x09;
@@ -310,7 +295,6 @@ TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, an
 }
 
 TEST_CASE("cpu: before_instruction can skip an instruction or stop the run") {
-  // LDA #$01; LDA #$02; LDA #$03; BRK
   Cpu cpu = cpu_with(0x0800, {0xA9, 0x01, 0xA9, 0x02, 0xA9, 0x03, 0x00});
   std::vector<std::uint16_t> seen;
   cpu.before_instruction = [&](Cpu& c) {
@@ -359,12 +343,9 @@ TEST_CASE("cpu: py65 counts 3 cycles for DEC abs") {
 }
 
 TEST_CASE("cpu-run: segments run from the given state and patches, with a digest after each instruction") {
-  // LDA #$05; STA $10; JSR $E000; STA $11; BRK
   std::string image(0x10000, '\0');
   const unsigned char program[] = {0xA9, 0x05, 0x85, 0x10, 0x20, 0x00, 0xE0, 0x85, 0x11, 0x00};
   for (std::size_t i = 0; i < sizeof program; ++i) image[0x0800 + i] = static_cast<char>(program[i]);
-  // The second segment starts as the harness leaves it after the hook at
-  // $E000: SP back at $FF, PC after the JSR, and A and $12 set.
   const std::string args =
       R"({"stops": [57344], "stop_at_brk": true, "max_cycles": 1000, "max_instructions": null, "segments": [)"
       R"({"pc": 2048, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": []}, )"
@@ -372,8 +353,6 @@ TEST_CASE("cpu-run: segments run from the given state and patches, with a digest
   const std::string request = "c6502-backend 3\nmode cpu-run\nargs " + args + "\nimage 65536\n" + image;
   const std::string response = c6502::backend::respond(request);
 
-  // Each instruction's digest is the CRC-32 of Python's
-  // struct.pack("<HBBBBBQ", pc, a, x, y, sp, p, cycles) and its writes.
   const auto record = [](std::uint16_t pc, std::uint8_t a, std::uint8_t sp, std::uint64_t cycles,
                          const std::string& writes) {
     std::string r;
@@ -404,7 +383,7 @@ TEST_CASE("cpu-run: segments run from the given state and patches, with a digest
 
 TEST_CASE("cpu-run: a word read at $FFFF ends the response with an error") {
   std::string image(0x10000, '\0');
-  image[0xFFFE] = static_cast<char>(0xAD);  // LDA abs, whose operand would run past $FFFF
+  image[0xFFFE] = static_cast<char>(0xAD);
   const std::string args =
       R"({"stops": [], "stop_at_brk": true, "max_cycles": 1000, "max_instructions": null, "segments": [)"
       R"({"pc": 65534, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": []}, )"

@@ -1,7 +1,6 @@
 """Writes the captures of py65 1.2.0 that cpp/tests/test_cpu.cpp checks
 the C++ CPU (cpp/src/sim/cpu.h) against, in cpp/tests/frozen/cpu/.
-They stay the reference once py65 is gone, so this tool runs only while
-py65 is installed. Run it from the repository's root with
+Run it from the repository's root with
 `uv run python tools/py65_cpu_vectors.py`.
 
 vectors.txt starts with py65's two cycle tables, a hex digit per opcode
@@ -54,10 +53,6 @@ UNDEFINED_STEPS = 3
 
 
 class _Memory(list):
-    """py65's memory, whose bytes take a random value when first read.
-    It records each read, each write, and the first value of each byte
-    read before it was written."""
-
     def __init__(self, rng: random.Random) -> None:
         super().__init__([None] * 0x10000)
         self.rng = rng
@@ -106,9 +101,6 @@ def _size(mode: str) -> int:
 
 
 class _Case:
-    """The registers and memory a step starts from, before the random
-    fill. A field left None is drawn at random."""
-
     def __init__(self, **kw) -> None:
         self.pc = kw.get("pc")
         self.a = kw.get("a")
@@ -117,7 +109,6 @@ class _Case:
         self.sp = kw.get("sp")
         self.p = kw.get("p")
         self.bytes: dict[int, int] = kw.get("bytes", {})
-        # Bytes at offsets from the instruction's address.
         self.operand: list[int] = kw.get("operand", [])
 
 
@@ -130,7 +121,6 @@ def _forced_cases(op: int, name: str, mode: str, rng: random.Random) -> list[_Ca
             low = r(256 - index, 256) if cross else r(0, 256 - index)
             reg = {"x": index} if mode == "abx" else {"y": index}
             cases.append(_Case(operand=[low, r(256)], **reg))
-        # The address wraps past $FFFF.
         reg = {"x": 0xFF} if mode == "abx" else {"y": 0xFF}
         cases.append(_Case(operand=[0xF0, 0xFF], **reg))
     if mode == "iny":
@@ -163,7 +153,6 @@ def _forced_cases(op: int, name: str, mode: str, rng: random.Random) -> list[_Ca
                 else:
                     p &= ~flag
                 cases.append(_Case(operand=[offset], p=p))
-        # A taken branch from the last page into the first, and back.
         p_taken = (r(256) | flag) if when_set else (r(256) & ~flag)
         cases.append(_Case(pc=0xFFF0, operand=[0x20], p=p_taken))
         cases.append(_Case(pc=0x0004, operand=[0xF0], p=p_taken))
@@ -179,14 +168,11 @@ def _forced_cases(op: int, name: str, mode: str, rng: random.Random) -> list[_Ca
             cases.append(_Case(p=(r(256) | MPU.DECIMAL) & ~1 | carry))
             cases.append(_Case(p=(r(256) & ~MPU.DECIMAL) & ~1 | carry))
     if name in ("CMP", "CPX", "CPY"):
-        # Equal operands.
         v = r(256)
         if mode == "imm":
             cases.append(_Case(a=v, x=v, y=v, operand=[v]))
     if name in ("TXS",):
         cases.append(_Case(x=0x00))
-    # The instruction at the end of memory. A two-byte operand at $FFFF
-    # makes py65 read past the end, which is the `error` case.
     size = _size(mode)
     cases.append(_Case(pc=0xFFFF))
     if size == 3:
@@ -238,8 +224,6 @@ def _step(op: int, case: _Case, rng: random.Random) -> str:
     delta = mpu.processorCycles - start
     if delta < 0 or delta > 15:
         raise AssertionError(f"opcode {op:02X} took {delta} cycles")
-    # py65's cycle count is a Python int, which passes 2**64 where the
-    # C++ CPU's count wraps, so the vector gives the cycles taken.
     after =(f"{mpu.pc:04X} {mpu.a:02X} {mpu.x:02X} {mpu.y:02X} "
              f"{mpu.sp:02X} {mpu.p:02X} +{delta:X}")
     writes = " ".join(f"{a:04X}:{v:02X}" for a, v in mem.writes)

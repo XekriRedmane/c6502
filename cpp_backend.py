@@ -39,9 +39,6 @@ which are built in C++ (cpp/src/rtlib/helpers.h), as `c6502cpp
 helper-dump` and `c6502cpp helper-footprints` write them, for the
 simulator, which assembles them at $E000, and for the tests.
 
-`cpu_run` runs the C++ CPU in the backend's mode `cpu-run`, for the
-lockstep mode of the simulator harness (sim/lockstep.py).
-
 The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
 issues again through `diagnostics.warn`, and an error that a pass of

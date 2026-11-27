@@ -1,9 +1,7 @@
 // The tests of tests/test_bcd_builtins.py that read the TAC and the `-S`
 // text or run the TAC interpreter: `__c6502_bcd_add` and
 // `__c6502_bcd_sub` of constants fold, and the code of the others is one
-// chain of ADC or SBC between SED and CLD. Also its tests of the
-// arithmetic, `adc_byte` and `sbc_byte` against the CPU's decimal mode
-// and `bcd_add` and `bcd_sub` on wrapping operands.
+// chain of ADC or SBC between SED and CLD.
 #include <algorithm>
 #include <cstdint>
 #include <sstream>
@@ -312,8 +310,6 @@ TEST_CASE("bcd_builtins: the decimal flag is set only around the chain") {
 }
 
 TEST_CASE("bcd_builtins: adc_byte and sbc_byte give the CPU's A and C for every byte pair and carry") {
-  // test_cpu.cpp checks the CPU's decimal mode against py65's on every
-  // one of these inputs.
   using c6502::sim::Cpu;
   for (const bool subtract : {false, true}) {
     INFO((subtract ? "SBC" : "ADC"));

@@ -171,10 +171,6 @@ TEST_CASE("cmp_zero_jump_fold: a global byte compared with a constexpr byte is a
 }
 
 TEST_CASE("cmp_zero_jump_fold: a global isn't narrowed through a copy the loop after it makes") {
-  // `z < k` was narrowed through `z = (p ? i : i)` in the loop, which
-  // `z`'s one read doesn't see, into a compare of `i` before the loop
-  // set it (fuzz.stmts seed 854). The IR check reported the read of `i`
-  // that its definition doesn't dominate.
   const std::string src =
       "unsigned int z;\n"
       "void f(int p, unsigned char k) {\n"

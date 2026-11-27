@@ -5,8 +5,7 @@
 // set Z, N, and V from the binary result before the adjustment, `DEC
 // abs` takes 3 cycles, and each of the 105 opcodes py65 doesn't define
 // skips one operand byte in 0 cycles and changes nothing else. Nothing
-// raises an interrupt. cpp/tests/frozen/cpu holds py65's own results,
-// which cpp/tests/test_cpu.cpp checks the CPU against.
+// raises an interrupt.
 #pragma once
 
 #include <bitset>
@@ -59,7 +58,7 @@ class Cpu {
   struct Limits {
     std::uint64_t max_cycles = UINT64_MAX;
     std::uint64_t max_instructions = UINT64_MAX;
-    // Stop before an opcode of $00, as the harness's step loop does.
+    // Stop before an opcode of $00.
     bool stop_at_brk = true;
   };
   struct RunResult {

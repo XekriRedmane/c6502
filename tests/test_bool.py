@@ -22,56 +22,16 @@ Coverage:
     layouts for the back end.
   * `return_bool_in_carry` accepts `bool`, as the return type and as
     a carry struct's flag.
+
+The `-S` text and the TAC interpreter's results are checked in
+cpp/tests/test_bool.cpp.
 """
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
-from tests.no_inlining import no_inlining
 from tests.cpp_build import needs_c6502cpp
-
-
-def _codegen(src: str, optimize: bool = True) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _function_text(asm: str, name: str) -> str:
-    return asm.split(f"\n{name}:")[1].split("RTS")[0]
-
-
-@no_inlining()
-class TestLowering(unittest.TestCase):
-
-    @needs_c6502cpp
-    def test_conversion_is_a_zero_test(self) -> None:
-        # Static, so that they return in A: main keeps their results
-        # as values (cpp/src/passes/carry_return_choice.h). `x` arrives in A
-        # (and X), so f tests A with `ORA #$00`, and g stores the low
-        # byte and ORs the high byte into it.
-        asm = _codegen(
-            "static bool f(unsigned char x) { return x; }"
-            "static bool g(int x) { return x; }"
-            "int main(void) { return f(3) + g(256); }"
-        )
-        self.assertEqual(_function_text(asm, "f").split(), [
-            "SUBROUTINE",
-            "ORA", "#$00",
-            "BEQ", ".cmp_end@0",
-            "LDA", "#$01",
-            ".cmp_end@0:",
-        ])
-        self.assertEqual(_function_text(asm, "g").split(), [
-            "SUBROUTINE",
-            "STA", "__local_g__x_0",
-            "TXA",
-            "ORA", "__local_g__x_0",
-            "BEQ", ".cmp_end@1",
-            "LDA", "#$01",
-            ".cmp_end@1:",
-        ])
 
 
 # (name, source, expected return of main)
@@ -140,13 +100,6 @@ _PROGRAMS: list[tuple[str, str, int]] = [
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-    def test_tac_sim(self) -> None:
-        for name, src, expected in _PROGRAMS:
-            with self.subTest(case=name):
-                value = _run_tac(src) & 0xFFFF
-                if value & 0x8000:
-                    value -= 0x10000
-                self.assertEqual(value, expected)
 
     def test_asm_sim(self) -> None:
         for name, src, expected in _PROGRAMS:

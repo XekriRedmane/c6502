@@ -120,7 +120,7 @@ std::optional<asdl::Int> integer_value(const ir::Type_val& v) {
   return bit_precise::raw_value(c->const_);
 }
 
-bool narrowable_use(const ir::Var& val, const UseCount& use_count, const NameSet* ssa_dsts) {
+bool read_sees_indexed_def(const ir::Var& val, const UseCount& use_count, const NameSet* ssa_dsts) {
   if (ssa_dsts != nullptr) {
     return ssa_dsts->contains(val.name);
   }
@@ -143,7 +143,7 @@ struct Scope {
 
 std::optional<Narrowed> narrow_through_zero_extend(const ir::Type_val& val, const Scope& s) {
   const auto* v = std::get_if<ir::Var>(&val);
-  if (v == nullptr || !narrowable_use(*v, s.use_count, s.ssa_dsts)) {
+  if (v == nullptr || !read_sees_indexed_def(*v, s.use_count, s.ssa_dsts)) {
     return std::nullopt;
   }
   std::optional<std::size_t> def_idx = index_of(s.def_idx, v->name);
@@ -162,7 +162,7 @@ std::optional<Narrowed> narrow_through_zero_extend(const ir::Type_val& val, cons
       break;
     }
     ++seen;
-    if (!narrowable_use(*src, s.use_count, s.ssa_dsts)) {
+    if (!read_sees_indexed_def(*src, s.use_count, s.ssa_dsts)) {
       return std::nullopt;
     }
     def_idx = index_of(s.def_idx, src->name);
@@ -195,7 +195,7 @@ std::optional<Narrowed> narrow_through_zero_extend(const ir::Type_val& val, cons
 
 std::optional<Narrowed> narrow_through_sign_extend(const ir::Type_val& val, const Scope& s) {
   const auto* v = std::get_if<ir::Var>(&val);
-  if (v == nullptr || !narrowable_use(*v, s.use_count, s.ssa_dsts)) {
+  if (v == nullptr || !read_sees_indexed_def(*v, s.use_count, s.ssa_dsts)) {
     return std::nullopt;
   }
   const std::optional<std::size_t> def_idx = index_of(s.def_idx, v->name);
@@ -312,7 +312,7 @@ const ir::Type_val* zero_compare_other_operand(const ir::Type_val& a, const ir::
 ir::Type_val trace_through_zero_extend(ir::Type_val x, const Scope& s) {
   for (;;) {
     const auto* v = std::get_if<ir::Var>(&x);
-    if (v == nullptr || !narrowable_use(*v, s.use_count, s.ssa_dsts)) {
+    if (v == nullptr || !read_sees_indexed_def(*v, s.use_count, s.ssa_dsts)) {
       break;
     }
     const std::optional<std::size_t> def_idx = index_of(s.def_idx, v->name);

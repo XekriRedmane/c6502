@@ -22,72 +22,17 @@ Coverage:
 
 c6502 has no `_Generic`, so the type of `nullptr` is checked through
 the type checker's `data_type` instead.
+
+The tests of compile.py's messages, of <stddef.h>, and of the program
+on the TAC interpreter are doctest cases in
+cpp/tests/test_c23_nullptr.cpp.
 """
 from __future__ import annotations
 
-import io
 import unittest
-from unittest.mock import patch
 
-import diagnostics
-from compile import main as compile_main
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
-
-
-def _compile(src: str, *flags: str) -> tuple[int, str]:
-    """compile.py's exit status and stderr for `src` on stdin."""
-    err = io.StringIO()
-    with patch("sys.stdin", io.StringIO(src)), patch("sys.stderr", err), \
-            patch("sys.stdout", io.StringIO()):
-        rc = compile_main(["compile.py", "-", "-S", *flags])
-    return rc, err.getvalue()
-
-
-@needs_c6502cpp
-class TestOperators(unittest.TestCase):
-
-    def test_not_an_integer_constant(self) -> None:
-        # §6.6p8 admits only operands of integer type to an integer
-        # constant expression.
-        message = (
-            "`nullptr` has type nullptr_t, which isn't an integer type, so "
-            "it can't be an operand of an integer constant expression "
-            "(C23 §6.6p8)"
-        )
-        rc, err = _compile(
-            "int f(int x) { switch (x) { case nullptr: return 0; } "
-            "return 1; }\n",
-        )
-        self.assertEqual(rc, 1)
-        self.assertIn(
-            f"case label is not an integer constant expression: {message}",
-            err,
-        )
-
-
-@needs_c6502cpp
-class TestStddef(unittest.TestCase):
-    def test_includes_cleanly(self) -> None:
-        src = (
-            "#include <stddef.h>\n"
-            "#if __STDC_VERSION_STDDEF_H__ != 202311L\n"
-            "#error\n"
-            "#endif\n"
-            "struct s { char a; int b; long c[3]; };\n"
-            "nullptr_t n = nullptr;\n"
-            "size_t z = sizeof(int);\n"
-            "ptrdiff_t d;\n"
-            "max_align_t m;\n"
-            "wchar_t w;\n"
-            "int *p = NULL;\n"
-            "size_t o = offsetof(struct s, c[1]);\n"
-            "int main(void) { unreachable(); return NULL == 0; }\n"
-        )
-        with diagnostics.collecting() as found:
-            rc, err = _compile(src)
-        self.assertEqual((rc, err, found), (0, "", []))
 
 
 _PROGRAM = """\
@@ -143,9 +88,6 @@ _EXPECTED = 1023 + 3000 + 20000
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)
-
     def test_asm_sim(self) -> None:
         for optimize in (False, True):
             with self.subTest(optimize=optimize):

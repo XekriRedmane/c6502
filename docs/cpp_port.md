@@ -5218,3 +5218,275 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   `C6502_CHECK_IR=1` and the games' files present, gave 753 passed and
   22 skipped, against 755 and 22 at the base, and the two tests of
   `TestArithmetic` account for the difference. No GCC build was made.
+- 27 Nov 2026: group G4 of step 9 is done. The simulator's assembler,
+  runtime, and harness are in C++, and the Python suite's 674
+  simulator tests are doctest cases.
+  - cpp/src/sim/assembler.h's `assemble` is sim/assembler.py's two
+    passes, beside `instruction_size`, with Python's messages.
+    cpp/src/sim/runtime.h is sim/runtime.py: the boot stub at $0600, the
+    helpers at $E000 assembled from G2's builders, `icall`, and a trap
+    address for each helper with no 6502 code from the next multiple of
+    16, at the addresses the links have used. cpp/src/sim/harness.h is
+    sim/harness.py and sim/linked.py: `build_sim`, `build_linked_sim`
+    with the simulator's `--defsym` pairs (`defsym_args`), `Simulation`
+    with `run`, `step`, and `symbols`, and `SimResult` with its
+    accessors. The test library's cpp/tests/sim_case.h compiles a source
+    for it as `compile_to_asm` did. `run_bucketed`, which no test calls,
+    wasn't ported, and the compile-example skill runs the Python one.
+  - The assembler was compared with sim/assembler.py by `c6502cpp
+    check-sim-assembler` (temporary, for R) on the 633 chapter `valid/`
+    programs and the 19 examples in both pipelines: 1,197 records, 108
+    compiles rejected before the assembler, 1,042 images and symbol
+    tables equal, 151 errors equal (undefined symbols such as `malloc`,
+    and frames over 253 bytes), and 4 programs whose bytes run past
+    $FFFF, which the Python assembler laid down by growing its image.
+    That was a bug, fixed in its own commit with a Python test: such a
+    program is an `AssemblerError` in both now. No difference was left.
+  - The whole runs were compared with the Python harness. An
+    uncommitted copy of sim/harness.py recorded each `Simulation.run`
+    of the Python suite at the base (the build, the image's CRC-32, the
+    symbols, the hooks installed, the state and memory it started from,
+    and the registers, cycles, and memory it ended with), and the case
+    in cpp/tests/test_sim_records.cpp built each program again in C++
+    and ran it from the same state. All 4,263 runs matched, images,
+    symbols, registers, cycles, and memory, with 6,692 calls of 37 hooks
+    among them, first with hooks copied from the Python ones and then
+    with the hooks on fp_arith.
+  - The hooks follow fp_arith (decision 1), in a commit of their own.
+    No run of the suite calls a hook with inputs in one of the four
+    cases of "The Python hooks", so the comparison found no difference
+    and no test's expected value changed. A doctest case shows each
+    case with the Python hook's result: `fmul` of 3e38 by 2 and `d2f`
+    of 1e39 give an infinity where `struct.pack` raised OverflowError
+    (and a program that multiplies two volatile floats to overflow runs
+    to its end), 1.0 / -0.0 gives minus infinity where the hook gave
+    plus infinity and a NaN divided by 0 gives the NaN, `fadd` of a
+    signaling NaN and the quiet NaN 0xFFC00002 gives the first made
+    quiet where the hook gave the second, and the conversion of a NaN
+    or an infinity to an integer fails with the TAC interpreter's
+    ValueError or OverflowError where the hook wrote 0 (this plan's
+    reading of open question 7). A 64-bit division by zero fails with
+    the Python hook's RuntimeError, as before.
+  - `SimResult.return_long` and `return_longlong` read the classic
+    HARGS, so a program with a zero-page object at $10, whose block
+    moves to $11, returned 0 for 300001. That was fixed in the Python
+    harness first, with a test, and the C++ `SimResult` reads the
+    program's HARGS.
+
+  The tests were recounted as pytest collects them: 753 at the base, of
+  which 673 were G4's, and one more, the test of the moved block's
+  wide return. All 674 were ported, none dropped, and every module that
+  held them is gone but test_binutils.py, which keeps `TestElf` for R.
+  The lead ported the corpus runs, test_bin_to_bcd.py,
+  test_bcd_builtins.py, test_runtime_library.py, test_op_matrix_sim.py,
+  test_bitint_sim.py, and test_binutils.py's run (118 tests), a helper
+  agent ported the assembler and `TestEmit` (1), and two more ported
+  batches of 278 and 277 tests, each in a worktree of its own, cherry
+  picked onto the lead's branch with no conflict.
+  - `EXPECTED_RETURNS`, `SKIPPED`, `SKIPS`, and `_OPT_DIVERGES` are
+    cpp/tests/sim_chapters.cpp, converted by a script that kept their
+    comments, and test_sim_chapters.py keeps `_run_program` for
+    fuzz/runner.py.
+  - The shards that `setattr` made are cases named `shard: <name>`, 72
+    of them, and cpp/CMakeLists.txt reads the names when CMake runs and
+    gives each a ctest entry, which the `c6502_tests` entry leaves out.
+  - The models of plain arithmetic are C++ in the cases. The Python
+    models of `bit_precise` and the BCD builtins are frozen, the 8,314
+    expected results of test_bitint_sim.py in
+    cpp/tests/frozen/sim/bitint_sim.txt and the hashes of
+    test_bcd_builtins.py's sweeps in the case. Where a test generated
+    its programs, the C++ case writes the same ones with py_random on
+    the same seeds and checks a CRC-32 of the sources against the
+    Python generator's. bit_precise.py, which nothing read after that,
+    is removed.
+  - test_bin_to_bcd.py's 712 cycles of `bin16_to_bcd` (727 where its
+    loop's BNE crosses a page, as at $E3DA) are checked on the C++ CPU,
+    its `TestModel` against each value's decimal digits, and
+    `TestHelper` on all 65,536 inputs against the digits read as packed
+    BCD, where Python compared with the hook that runtime.py never
+    installs. test_binutils.py's `test_link_and_run` is a case of
+    cpp/tests/test_binutils_source.cpp.
+  - test_runtime_helpers.py's docstring is right: 155 of its 181
+    programs call a helper with 6502 code (mul16, mul32, udivmod16 and
+    32, sdivmod16 and 32, asr32) without -O, and 26 reach an inline
+    lowering, so all 65 tests were ported as they were.
+
+  | Module | Ported | Dropped | Left in Python |
+  |---|---|---|---|
+  | test_address_attr.py | 8 | 0 | none |
+  | test_and_zero_jump_fold.py | 5 | 0 | none |
+  | test_apply_bobble_sim.py | 3 | 0 | none |
+  | test_asm_aliasing.py | 1 | 0 | none |
+  | test_asm_dead_store.py | 2 | 0 | none |
+  | test_asm_regalloc.py | 2 | 0 | none |
+  | test_asm_remat.py | 2 | 0 | none |
+  | test_auto.py | 1 | 0 | none |
+  | test_bcd_builtins.py | 2 | 0 | none |
+  | test_beam_target_draw_sim.py | 3 | 0 | none |
+  | test_beam_target_tick_diff.py | 4 | 0 | none |
+  | test_beam_target_tick_sim.py | 3 | 0 | none |
+  | test_bin_to_bcd.py | 24 | 0 | none |
+  | test_binutils.py | 1 | 0 | 4 R |
+  | test_bitint.py | 1 | 0 | none |
+  | test_bitint_sim.py | 40 | 0 | none |
+  | test_bool.py | 1 | 0 | none |
+  | test_branch_through_jump.py | 1 | 0 | none |
+  | test_branch_value_thread.py | 1 | 0 | none |
+  | test_byte_arith_sim.py | 2 | 0 | none |
+  | test_c23_bool.py | 1 | 0 | none |
+  | test_c23_literals.py | 1 | 0 | none |
+  | test_c23_nullptr.py | 1 | 0 | none |
+  | test_call_through_expression.py | 5 | 0 | none |
+  | test_carry_halve.py | 1 | 0 | none |
+  | test_carry_in_add.py | 1 | 0 | none |
+  | test_carry_inc.py | 3 | 0 | none |
+  | test_carry_recompute.py | 1 | 0 | none |
+  | test_carry_return.py | 13 | 0 | none |
+  | test_carry_return_choice.py | 3 | 0 | none |
+  | test_cmp_zero_jump_fold.py | 9 | 0 | none |
+  | test_coalescing.py | 2 | 0 | none |
+  | test_companion_update_sim.py | 3 | 0 | none |
+  | test_compare_subtract.py | 2 | 0 | none |
+  | test_compound_literal.py | 2 | 0 | none |
+  | test_const_qualifier.py | 17 | 0 | none |
+  | test_const_shift_mul_sim.py | 3 | 0 | none |
+  | test_const_static_fold.py | 4 | 0 | none |
+  | test_constant_store_order.py | 2 | 0 | none |
+  | test_constexpr.py | 4 | 0 | none |
+  | test_count_down.py | 1 | 0 | none |
+  | test_counter_to_index_reg.py | 1 | 0 | none |
+  | test_cross_jump.py | 1 | 0 | none |
+  | test_cse.py | 3 | 0 | none |
+  | test_designated_init.py | 2 | 0 | none |
+  | test_direct_index_load.py | 1 | 0 | none |
+  | test_direct_member_access.py | 6 | 0 | none |
+  | test_dispatch_pointer_array.py | 2 | 0 | none |
+  | test_divide_shapes.py | 2 | 0 | none |
+  | test_divmod_hoist.py | 1 | 0 | none |
+  | test_do_ascend_sim.py | 3 | 0 | none |
+  | test_draw_sprite_opaque_sim.py | 2 | 0 | none |
+  | test_dual_index_promotion.py | 2 | 0 | none |
+  | test_element_rmw.py | 3 | 0 | none |
+  | test_empty_initializer.py | 3 | 0 | none |
+  | test_enum.py | 1 | 0 | none |
+  | test_flag_compares.py | 1 | 0 | none |
+  | test_floor_enemy_advance_sim.py | 3 | 0 | none |
+  | test_floor_enemy_draw_sim.py | 3 | 0 | none |
+  | test_hwreg_pin_correctness.py | 1 | 0 | none |
+  | test_in_place_member_update.py | 7 | 0 | none |
+  | test_inc_peephole.py | 5 | 0 | none |
+  | test_index_inc_cmp_y.py | 1 | 0 | none |
+  | test_indexed_load.py | 4 | 0 | none |
+  | test_indexed_symbol_store.py | 3 | 0 | none |
+  | test_inline_functions.py | 1 | 0 | none |
+  | test_inline_shift_direct.py | 6 | 0 | none |
+  | test_jump_table.py | 1 | 0 | none |
+  | test_jump_thread.py | 2 | 0 | none |
+  | test_known_compare_thread.py | 2 | 0 | none |
+  | test_leaf_zp_abi.py | 5 | 0 | none |
+  | test_limits_h.py | 15 | 0 | none |
+  | test_linker.py | 10 | 0 | none |
+  | test_linker_script.py | 3 | 0 | none |
+  | test_lnot_jump_fold.py | 4 | 0 | none |
+  | test_loop_counter_to_x.py | 2 | 0 | none |
+  | test_loop_rotate.py | 8 | 0 | none |
+  | test_narrow_byte_bitwise.py | 1 | 0 | none |
+  | test_narrow_widened_arith.py | 2 | 0 | none |
+  | test_negate_lowering.py | 1 | 0 | none |
+  | test_noreturn_call.py | 3 | 0 | none |
+  | test_object_byte_view.py | 5 | 0 | none |
+  | test_op_matrix_sim.py | 16 | 0 | none |
+  | test_optimize_asm_regalloc.py | 4 | 0 | none |
+  | test_outline_runs.py | 2 | 0 | none |
+  | test_param_registers.py | 6 | 0 | none |
+  | test_pointer_aware_regalloc.py | 3 | 0 | none |
+  | test_pointer_member_access.py | 9 | 0 | none |
+  | test_pointer_return.py | 1 | 0 | none |
+  | test_preserves.py | 4 | 0 | none |
+  | test_read_stored_global.py | 1 | 0 | none |
+  | test_reassoc_offset_licm.py | 2 | 0 | none |
+  | test_recognize_indexed_store.py | 4 | 0 | none |
+  | test_recognize_indirect_indexed.py | 9 | 0 | none |
+  | test_recursion_saves.py | 1 | 0 | none |
+  | test_redundant_load.py | 2 | 0 | none |
+  | test_redundant_load_after_rmw.py | 1 | 0 | none |
+  | test_refresh_hit_entities_sim.py | 3 | 0 | none |
+  | test_register_arguments.py | 1 | 0 | none |
+  | test_register_keyword_sim.py | 5 | 0 | none |
+  | test_ret_slot_coalescing.py | 1 | 0 | none |
+  | test_return_in_zero_page.py | 1 | 0 | none |
+  | test_rotate_loop_test.py | 1 | 0 | none |
+  | test_row_address_tables.py | 5 | 0 | none |
+  | test_runtime_helpers.py | 65 | 0 | none |
+  | test_runtime_layout.py | 4 | 0 | none |
+  | test_runtime_library.py | 26 | 0 | none |
+  | test_sfx_tone_sim.py | 4 | 0 | none |
+  | test_shared_tails.py | 2 | 0 | none |
+  | test_short_and_unary_plus.py | 1 | 0 | none |
+  | test_short_circuit_jump_fold.py | 5 | 0 | none |
+  | test_sign_test_lowering.py | 3 | 0 | none |
+  | test_signed_positive_branch.py | 1 | 0 | none |
+  | test_significant_bytes.py | 8 | 0 | none |
+  | test_sim_asm.py | 4 | 0 | none |
+  | test_sim_asm_optimized.py | 1 | 0 | none |
+  | test_sim_differential.py | 4 | 0 | none |
+  | test_sim_miscompile_regressions.py | 1 | 0 | none |
+  | test_sim_smoke.py | 26 | 0 | none |
+  | test_sink_and_past_branch.py | 1 | 0 | none |
+  | test_sink_increment.py | 3 | 0 | none |
+  | test_slot_coalescing.py | 1 | 0 | none |
+  | test_slot_sharing.py | 14 | 0 | none |
+  | test_special_inactive_draw_sim.py | 3 | 0 | none |
+  | test_split_tables.py | 4 | 0 | none |
+  | test_statement_attributes.py | 1 | 0 | none |
+  | test_static_const_fold.py | 4 | 0 | none |
+  | test_static_indexed_access.py | 6 | 0 | none |
+  | test_stdbit.py | 7 | 0 | none |
+  | test_stdint_h.py | 24 | 0 | none |
+  | test_step_on_edge.py | 1 | 0 | none |
+  | test_step_pos_sim.py | 3 | 0 | none |
+  | test_strength_reduction.py | 12 | 0 | none |
+  | test_tail_merge.py | 1 | 0 | none |
+  | test_three_way_compare.py | 1 | 0 | none |
+  | test_truncate_extend_fold.py | 1 | 0 | none |
+  | test_typed_enum.py | 2 | 0 | none |
+  | test_typedef.py | 6 | 0 | none |
+  | test_typeof.py | 1 | 0 | none |
+  | test_unsized_arrays.py | 3 | 0 | none |
+  | test_volatile_named.py | 9 | 0 | none |
+  | test_zp_globals.py | 8 | 0 | none |
+  | test_zp_local_allocation.py | 3 | 0 | none |
+  | in all, 143 modules | 674 | 0 | 4 |
+
+  The plan changed in six places once the code was read.
+  - The comparison of whole runs used a recording copy of the Python
+    harness and a doctest case that reads its records, rather than a
+    backend mode, so the C++ side built each program itself, from its
+    source or its executable, which checks the assembler and the loader
+    on the suite's programs too.
+  - The four cases of the hooks reach no run of the suite, so decision
+    1 moved no expected value, and the commit shows each case with a
+    doctest case of its own.
+  - test_bin_to_bcd.py's 16 batch tests, one per batch and pipeline,
+    are 8 cases that run both pipelines.
+  - The plan counted 662 tests by a static count. pytest collected 673
+    of G4's at the base, as G1's entry gives, since G1's reading of
+    each test moved a few more to G4, and the test of the moved block
+    makes 674.
+  - bit_precise.py went in G4, since its last reader went, where the
+    plan had it in R.
+  - The second batch's agent split its batch among five forks of
+    itself in its worktree, beyond the brief's limit of two helpers,
+    before the lead stopped it. The forks wrote only their own test
+    files, and the agent made the deletions and every commit itself.
+
+  The fresh MSVC build gave 11,142 doctest cases passed
+  (123,987 assertions), ctest 76 of 76 (the `c6502_tests` entry, the 72
+  shards, `check_golden`, `check_frozen`, and `check_asdl`),
+  `check-golden` 19,678 jobs with 0 differing, and `check-frozen` no
+  difference. The suite, with `C6502_CHECK_IR=1` and the games' files
+  present, gave 82 passed and none skipped, against 753 passed and 22
+  skipped at the base. The 674 tests of G4 went and the 2 of
+  test_sim_assembler.py came, and the 22 skips were the subtests of
+  test_sim_asm.py and test_sim_differential.py for the 11 programs of
+  `SKIPS`, which went with those modules. No GCC build was made.

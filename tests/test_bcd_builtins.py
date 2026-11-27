@@ -2,10 +2,11 @@
 `__c6502_bcd_sub` (builtin_functions.py, docs/builtins.md).
 
 The arithmetic is checked against py65's decimal mode, which the
-simulator runs, for every pair of bytes. The front end is checked for
-the types it gives and the errors it reports, the optimizer for the
-constants it folds, the back end for the code it writes, and both
-pipelines for the values the simulator computes.
+simulator runs, for every pair of bytes, and both pipelines for the
+values the simulator computes. The tests of the constants the optimizer
+folds and the code the back end writes are doctest cases in
+cpp/tests/test_bcd_builtins.cpp, which runs the programs below on the
+TAC interpreter too.
 """
 from __future__ import annotations
 
@@ -13,40 +14,10 @@ import random
 import unittest
 
 import builtin_functions as bf
-import tac_ast
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
-
-
-def _codegen(src: str, optimize: bool) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _body(asm: str, name: str) -> list[str]:
-    """The instruction lines of function `name`, without the
-    `SUBROUTINE` line, blank lines, or comments."""
-    text = asm.split(f"\n{name}:\n")[1]
-    out = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith(";") or line == "SUBROUTINE":
-            continue
-        if line.endswith(":") and not line.startswith("."):
-            break
-        out.append(" ".join(line.split()))
-    return out
-
-
-def _tac(src: str, optimize: bool) -> tac_ast.Program:
-    """The TAC that `compile.py --tac` prints for `src`, read back into
-    `tac_ast` objects. Its `pretty` text is the constructors' calls with
-    their fields as keywords, so Python can evaluate it."""
-    from compile import _run_source
-    return eval(_run_source("tac", src, optimize=optimize),
-                vars(tac_ast))
 
 
 class TestArithmetic(unittest.TestCase):
@@ -87,176 +58,9 @@ class TestArithmetic(unittest.TestCase):
         self.assertEqual(bf.bcd_add(0x00999999, 0x250, 4), 0x01000249)
 
 
-def _binaries(prog: tac_ast.Program, fn: str) -> list:
-    for tl in prog.top_level:
-        if isinstance(tl, tac_ast.Function) and tl.name == fn:
-            return [i for i in tl.instructions if isinstance(i, tac_ast.Binary)]
-    raise KeyError(fn)
-
-
-@needs_c6502cpp
-class TestTac(unittest.TestCase):
-
-    def test_constants_fold_in_both_pipelines(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "uint16_t f(void) { return __c6502_bcd_add(0x0999, 0x0001); }"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                tac = _tac(src, optimize)
-                self.assertEqual(_binaries(tac, "f"), [])
-                asm = _codegen(src, optimize)
-                self.assertNotIn("SED", asm)
-
-    def test_propagated_constants_fold(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "uint8_t f(void) { uint8_t x = 0x58; uint8_t y = 0x47;"
-            " return __c6502_bcd_add(x, y); }"
-        )
-        tac = _tac(src, optimize=True)
-        self.assertEqual(_binaries(tac, "f"), [])
-        asm = _codegen(src, optimize=True)
-        self.assertNotIn("SED", asm)
-        self.assertIn("#$05", asm)   # 58 + 47 = 105, wrapped to 05
-
-
-    def test_tac_sim(self) -> None:
-        for name, src, expected in _PROGRAMS:
-            with self.subTest(case=name):
-                self.assertEqual(_run_tac(src) & 0xFFFF, expected)
-
-
-@needs_c6502cpp
-class TestCodegen(unittest.TestCase):
-    def test_score(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint32_t score;"
-            "void add(uint16_t points) {"
-            " score = __c6502_bcd_add(score, points); }"
-        )
-        asm = _codegen(src, optimize=True)
-        # `points` arrives in A and X, and `add` stores it before the
-        # chain, which needs A for each byte.
-        self.assertEqual(_body(asm, "add"), [
-            "STA __local_add__points_0", "STX __local_add__points_1",
-            "SED", "CLC",
-            "LDA score", "ADC __local_add__points_0", "STA score",
-            "LDA score+1", "ADC __local_add__points_1", "STA score+1",
-            "LDA score+2", "ADC #$00", "STA score+2",
-            "LDA score+3", "ADC #$00", "STA score+3",
-            "CLD", "RTS",
-        ])
-
-    def test_member_in_place(self) -> None:
-        # `in_place_member_update` computes the member in its own
-        # bytes, whichever operand it is. `x` arrives in A (and X), and
-        # each function stores it before the chain.
-        src = (
-            "#include <stdint.h>\n"
-            "struct s { uint8_t tag; uint16_t score; } p;"
-            "void add(uint8_t x) { p.score = __c6502_bcd_add(p.score, x); }"
-            "void add2(uint16_t x) { p.score = __c6502_bcd_add(x, p.score); }"
-        )
-        asm = _codegen(src, optimize=True)
-        self.assertEqual(_body(asm, "add"), [
-            "STA __local_add__x",
-            "SED", "CLC",
-            "LDA p+1", "ADC __local_add__x", "STA p+1",
-            "LDA p+2", "ADC #$00", "STA p+2",
-            "CLD", "RTS",
-        ])
-        self.assertEqual(_body(asm, "add2"), [
-            "STA __local_add2__x_0", "STX __local_add2__x_1",
-            "SED", "CLC",
-            "LDA __local_add2__x_0", "ADC p+1", "STA p+1",
-            "LDA __local_add2__x_1", "ADC p+2", "STA p+2",
-            "CLD", "RTS",
-        ])
-
-    def test_unused_top_bytes_go(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint32_t s;"
-            "uint8_t low(void) { return __c6502_bcd_add(s, 0x25); }"
-        )
-        body = _body(_codegen(src, optimize=True), "low")
-        chain = body[body.index("SED"):body.index("CLD") + 1]
-        self.assertEqual(chain[:5], ["SED", "CLC", "LDA s", "ADC #$25",
-                                     chain[4]])
-        self.assertEqual(len(chain), 6)
-
-    def test_subtract_a_constant(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint16_t w;"
-            "void dec(void) { w = __c6502_bcd_sub(w, 1); }"
-        )
-        asm = _codegen(src, optimize=True)
-        self.assertEqual(_body(asm, "dec"), [
-            "SED", "SEC",
-            "LDA w", "SBC #$01", "STA w",
-            "LDA w+1", "SBC #$00", "STA w+1",
-            "CLD", "RTS",
-        ])
-
-    def test_byte_result_in_a(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint8_t a, b;"
-            "uint8_t f(void) { return __c6502_bcd_add(a, b); }"
-        )
-        asm = _codegen(src, optimize=True)
-        body = _body(asm, "f")
-        self.assertEqual(body[:5], ["SED", "CLC", "LDA a", "ADC b",
-                                    body[4]])
-        self.assertTrue(body[4].startswith("STA "))
-        self.assertEqual(body[5], "CLD")
-
-    def test_unoptimized_soft_stack_operands(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "uint16_t f(uint16_t a, uint16_t b) {"
-            " return __c6502_bcd_add(a, b); }"
-        )
-        asm = _codegen(src, optimize=False)
-        body = _body(asm, "f")
-        start = body.index("SED")
-        end = body.index("CLD")
-        chain = body[start:end + 1]
-        self.assertEqual(chain[1], "CLC")
-        # Each byte is a load, an add, and a store, each of a frame
-        # slot behind its own `LDY #off`.
-        ops = [line.split()[0] for line in chain[2:-1]]
-        self.assertTrue(all(
-            line.endswith("(FP),Y") for line in chain[2:-1]
-            if line.split()[0] in ("LDA", "ADC", "STA")
-        ))
-        self.assertEqual([o for o in ops if o not in ("LDY", "INY", "DEY")],
-                         ["LDA", "ADC", "STA", "LDA", "ADC", "STA"])
-
-    def test_decimal_flag_only_around_the_chain(self) -> None:
-        src = _PROGRAMS_BY_NAME["struct_and_array"]
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _codegen(src, optimize)
-                lines = [" ".join(l.split()) for l in asm.splitlines()]
-                inside = False
-                for line in lines:
-                    op = line.split(" ")[0] if line else ""
-                    if op == "SED":
-                        self.assertFalse(inside)
-                        inside = True
-                    elif op == "CLD":
-                        self.assertTrue(inside)
-                        inside = False
-                    elif inside:
-                        self.assertIn(op, ("CLC", "SEC", "LDA", "ADC",
-                                           "SBC", "STA", "LDY", "INY",
-                                           "DEY"))
-                self.assertFalse(inside)
-
-
-# Programs whose `main` returns a 16-bit value. Each runs through
-# tac_sim and the simulator in both pipelines.
+# Programs whose `main` returns a 16-bit value. Each runs in the
+# simulator in both pipelines, and cpp/tests/test_bcd_builtins.cpp has
+# a copy of each that it runs on the TAC interpreter.
 _PROGRAMS = [
     ("byte_add",
      "#include <stdint.h>\nuint8_t a = 0x38, b = 0x45;"
@@ -318,7 +122,6 @@ _PROGRAMS = [
      "uint8_t f(register uint8_t x) { return __c6502_bcd_add(x, 0x01); }"
      "int main(void) { return f(0x09) + f(0x19); }", 0x30),
 ]
-_PROGRAMS_BY_NAME = {name: src for name, src, _ in _PROGRAMS}
 
 
 def _sweep_program(op: str, width: int, pairs) -> tuple[str, int]:

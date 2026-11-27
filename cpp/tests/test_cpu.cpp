@@ -15,6 +15,20 @@ namespace {
 using c6502::sim::Cpu;
 using c6502::sim::CpuError;
 
+constexpr std::uint8_t kBrk = 0x00;
+constexpr std::uint8_t kJsr = 0x20;
+constexpr std::uint8_t kLsrAbsX = 0x5E;
+constexpr std::uint8_t kAdcImm = 0x69;
+constexpr std::uint8_t kStaZp = 0x85;
+constexpr std::uint8_t kStaAbs = 0x8D;
+constexpr std::uint8_t kLdxImm = 0xA2;
+constexpr std::uint8_t kLdaImm = 0xA9;
+constexpr std::uint8_t kLdaAbs = 0xAD;
+constexpr std::uint8_t kDecAbs = 0xCE;
+constexpr std::uint8_t kSbcImm = 0xE9;
+constexpr std::uint8_t kNop = 0xEA;
+constexpr std::uint8_t kIncAbs = 0xEE;
+
 std::vector<std::string> split(const std::string& text, char sep) {
   std::vector<std::string> out;
   std::string piece;
@@ -169,7 +183,7 @@ TEST_CASE("cpu: decimal ADC and SBC give py65's A and P for every accumulator, o
     INFO(line);
     const std::vector<std::string> w = words(line);
     REQUIRE(w.size() == 4);
-    const std::uint8_t opcode = w[0] == "ADC" ? 0x69 : 0xE9;
+    const std::uint8_t opcode = w[0] == "ADC" ? kAdcImm : kSbcImm;
     const int carry = std::stoi(w[1]);
     const auto a = static_cast<std::uint8_t>(hex(w[2]));
     std::string out;
@@ -208,8 +222,12 @@ TEST_CASE("cpu: reset gives py65's state") {
 }
 
 TEST_CASE("cpu: the read and write callbacks see a read-modify-write's read before its write") {
-  Cpu cpu = cpu_with(0x0800, {0xEE, 0x30, 0xC0, 0xA2, 0x09, 0x5E, 0xE0, 0xC0, 0x8D, 0x10, 0xC0, 0xAD,
-                              0x00, 0xC0, 0xAD, 0x00, 0xC1});
+  Cpu cpu = cpu_with(0x0800, {kIncAbs, 0x30, 0xC0,
+                              kLdxImm, 0x09,
+                              kLsrAbsX, 0xE0, 0xC0,
+                              kStaAbs, 0x10, 0xC0,
+                              kLdaAbs, 0x00, 0xC0,
+                              kLdaAbs, 0x00, 0xC1});
   cpu.memory[0xC030] = 0x55;
   cpu.memory[0xC100] = 0x66;
   cpu.a = 0x12;
@@ -238,7 +256,9 @@ TEST_CASE("cpu: the read and write callbacks see a read-modify-write's read befo
 }
 
 TEST_CASE("cpu: run calls a trap before the fetch and returns from it as RTS would") {
-  Cpu cpu = cpu_with(0x0800, {0x20, 0x00, 0xE0, 0xA9, 0x01, 0x00});
+  Cpu cpu = cpu_with(0x0800, {kJsr, 0x00, 0xE0,
+                              kLdaImm, 0x01,
+                              kBrk});
   int calls = 0;
   cpu.set_trap(0xE000, [&](Cpu& c) {
     ++calls;
@@ -257,7 +277,9 @@ TEST_CASE("cpu: run calls a trap before the fetch and returns from it as RTS wou
 }
 
 TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, and BRK") {
-  Cpu cpu = cpu_with(0x0800, {0xA9, 0x01, 0xEA, 0x00});
+  Cpu cpu = cpu_with(0x0800, {kLdaImm, 0x01,
+                              kNop,
+                              kBrk});
   Cpu::Limits limits;
   limits.max_cycles = 2;
   Cpu::RunResult r = cpu.run(limits);
@@ -285,7 +307,7 @@ TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, an
   cpu.clear_trap(0x0802);
   cpu.memory[0xFFFE] = 0x00;
   cpu.memory[0xFFFF] = 0x09;
-  cpu.memory[0x0900] = 0xEA;
+  cpu.memory[0x0900] = kNop;
   limits.stop_at_brk = false;
   limits.max_instructions = 2;
   r = cpu.run(limits);
@@ -295,7 +317,9 @@ TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, an
 }
 
 TEST_CASE("cpu: a CpuError from run gives the instructions the run executed before it") {
-  Cpu cpu = cpu_with(0xFFFC, {0xEA, 0xEA, 0xAD});
+  Cpu cpu = cpu_with(0xFFFC, {kNop,
+                              kNop,
+                              kLdaAbs});
   std::uint64_t instructions = 99;
   try {
     cpu.run({});
@@ -307,7 +331,10 @@ TEST_CASE("cpu: a CpuError from run gives the instructions the run executed befo
 }
 
 TEST_CASE("cpu: before_instruction can skip an instruction or stop the run") {
-  Cpu cpu = cpu_with(0x0800, {0xA9, 0x01, 0xA9, 0x02, 0xA9, 0x03, 0x00});
+  Cpu cpu = cpu_with(0x0800, {kLdaImm, 0x01,
+                              kLdaImm, 0x02,
+                              kLdaImm, 0x03,
+                              kBrk});
   std::vector<std::uint16_t> seen;
   cpu.before_instruction = [&](Cpu& c) {
     seen.push_back(c.pc);
@@ -347,7 +374,7 @@ TEST_CASE("cpu: py65's undefined opcodes skip a byte in no cycles") {
 }
 
 TEST_CASE("cpu: py65 counts 3 cycles for DEC abs") {
-  Cpu cpu = cpu_with(0x0800, {0xCE, 0x00, 0x30});
+  Cpu cpu = cpu_with(0x0800, {kDecAbs, 0x00, 0x30});
   cpu.memory[0x3000] = 0x01;
   cpu.step();
   CHECK(cpu.memory[0x3000] == 0x00);
@@ -356,7 +383,11 @@ TEST_CASE("cpu: py65 counts 3 cycles for DEC abs") {
 
 TEST_CASE("cpu-run: segments run from the given state and patches, with a digest after each instruction") {
   std::string image(0x10000, '\0');
-  const unsigned char program[] = {0xA9, 0x05, 0x85, 0x10, 0x20, 0x00, 0xE0, 0x85, 0x11, 0x00};
+  const std::uint8_t program[] = {kLdaImm, 0x05,
+                                  kStaZp, 0x10,
+                                  kJsr, 0x00, 0xE0,
+                                  kStaZp, 0x11,
+                                  kBrk};
   for (std::size_t i = 0; i < sizeof program; ++i) image[0x0800 + i] = static_cast<char>(program[i]);
   const std::string args =
       R"({"stops": [57344], "stop_at_brk": true, "max_cycles": 1000, "max_instructions": null, "segments": [)"
@@ -395,7 +426,7 @@ TEST_CASE("cpu-run: segments run from the given state and patches, with a digest
 
 TEST_CASE("cpu-run: a word read at $FFFF ends the response with an error") {
   std::string image(0x10000, '\0');
-  image[0xFFFE] = static_cast<char>(0xAD);
+  image[0xFFFE] = static_cast<char>(kLdaAbs);
   const std::string args =
       R"({"stops": [], "stop_at_brk": true, "max_cycles": 1000, "max_instructions": null, "segments": [)"
       R"({"pc": 65534, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": []}, )"

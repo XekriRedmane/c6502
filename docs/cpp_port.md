@@ -5047,3 +5047,73 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   test_asdl.py's 32 for R, test_asdl_cpp.py's 7 and
   test_rtlib_table.py's 5 for G2, and test_fuzz_tools.py's 5 for G6. In
   all, G4 takes 673 tests, G5 22, R 52, G2 12, G6 5, and G3 2.
+- 26 Nov 2026: group G2 of step 9 is done. asdl.py's `.asdl` parser
+  and its C++ generator are asdlgen (cpp/tools/asdlgen.h and
+  asdlgen.cpp, 1,090 lines with its command line), a tool of its own
+  that the build compiles first, since it uses none of the generated
+  code. It wrote the eight files of cpp/generated/ byte for byte from
+  the four `.asdl` files before anything else changed. CMake runs it
+  before the `c6502` library whenever an `.asdl` file or the tool is
+  newer than the last run's stamp, and it rewrites only the files whose
+  bytes differ, so cpp/generated/ stays checked in and a fresh build
+  left the tree unchanged. The ctest entry `check_asdl` runs `asdlgen
+  --check`, and a doctest case makes the same comparison. asdl.py keeps
+  its parser and the Python generator for the Python IR modules, which
+  go in R, and its `--cpp` path is gone. rtlib/helpers.py's builders
+  are cpp/src/rtlib/helpers.cpp, with the docstrings that give a
+  layout, an algorithm, or a result for bad operands kept as comments,
+  and their dump equals cpp/generated/rtlib_helpers.cpp's text, frozen
+  before the file went as cpp/tests/frozen/rtlib_helpers.txt. `c6502cpp
+  helper-dump` writes it, `cpp_backend.helper_program` and
+  `helper_footprints` read it and `c6502cpp helper-footprints` for
+  sim/runtime.py, passes/runtime_layout.py, and the tests, and
+  rtlib/ (the package and its CLAUDE.md, which moved to
+  cpp/src/rtlib/), tools/rtlib_table.py, cpp/generated/rtlib_helpers.cpp,
+  test_rtlib_table.py, and test_asdl_cpp.py are gone. No bug was found.
+
+  The fresh MSVC build gave 10,438 doctest cases passed (87,642
+  assertions), ctest 4 of 4, `check-golden` 19,678 jobs with 0
+  differing, and `check-frozen` no difference. The suite, with
+  `C6502_CHECK_IR=1` and the games' files present, gave 755 passed and
+  22 skipped, against 766 and 22 at the base. The 12 tests of G2's two
+  modules went, and one of them moved to test_asdl.py, which accounts
+  for the difference of 11.
+
+  | Module | Ported | Dropped | Left in Python |
+  |---|---|---|---|
+  | test_asdl_cpp.py | 6 | 0 | 1 R (moved to test_asdl.py) |
+  | test_rtlib_table.py | 4 | 1 | none |
+
+  - test_asdl_cpp.py's comparison with the checked-in files is the
+    doctest case "regenerating the IR classes gives the checked-in
+    files", beside `check_asdl`, and its five tests of the generator
+    (dependencies first, keywords, product types, the order of
+    `pretty`'s fields, and the refusal of `float`) are doctest cases of
+    cpp/tests/test_asdlgen.cpp. `test_python_output_is_unchanged`
+    tests the Python generator, so it moved to test_asdl.py and goes
+    with it in R.
+  - test_rtlib_table.py's comparison of the generated table became the
+    comparison of the builders' dump with the frozen text, and its two
+    tests of the cycle check are doctest cases of `rtlib::check_acyclic`.
+    Its comparison of the C++ footprints with Python's became a
+    comparison with the 19 footprints Python's `helper_footprints` gave
+    on rtlib/helpers.py, frozen in the case, since Python now reads the
+    footprints from C++. Its check that the generated file had LF line
+    endings was dropped with the file, and the frozen text is compared
+    byte for byte.
+
+  The plan changed in five places once the code was read.
+  - asdlgen is a separate executable in cpp/tools/, built from a
+    library that c6502_tests links, rather than a `c6502cpp` command,
+    since the compiler's library can't be built until the tool has run.
+  - `check_asdl` compares the files with what asdlgen would write in
+    memory, without writing them to a temporary directory, which is the
+    same comparison of bytes.
+  - The first line of each generated file names asdlgen in place of
+    `asdl.py --cpp`, which is the one change to the eight files.
+  - rtlib/ was left with nothing but `__init__.py` and its CLAUDE.md,
+    so the whole package went, and its CLAUDE.md is
+    cpp/src/rtlib/CLAUDE.md.
+  - sim/runtime.py's check that every name in `ASM_IMPLEMENTED` had
+    been assembled went with the tuple, since the names now come from
+    the functions that `helper_program` gives.

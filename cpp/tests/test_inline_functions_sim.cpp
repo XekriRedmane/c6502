@@ -1,26 +1,26 @@
-"""cpp/src/passes/optimization/inline_functions.h: the calls of small `static`
-functions are replaced by copies of their bodies under `-O`.
+// The simulator tests of tests/test_inline_functions.py: programs whose
+// calls of small `static` functions
+// src/passes/optimization/inline_functions.h inlines give the values C
+// does in both pipelines, including the order of an argument's side
+// effects and volatile accesses.
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <vector>
 
-`TestRewrite` translates small programs to TAC, inlines them, and
-checks the instructions written, the names given to the copies, and
-which functions are left alone. `TestPrograms` runs programs whose
-calls are inlined, in the simulator with and without `-O`, and checks
-the values they compute, including the order of an argument's side
-effects and volatile accesses."""
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
 
-from __future__ import annotations
+namespace c6502::suite {
+namespace {
 
-import unittest
-
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-# (name, C source, expected int return of main)
-_CASES: list[tuple[str, str, int]] = [
-    # Each argument's side effects happen once, in order, before the
-    # body, which reads its parameter twice.
-    ("argument_side_effects", """
+// (name, C source, expected int return of main)
+const std::vector<std::tuple<std::string, std::string, int>> kCases = {
+    // Each argument's side effects happen once, in order, before the
+    // body, which reads its parameter twice.
+    {"argument_side_effects", R"c(
         unsigned char log[4];
         unsigned char n;
         static unsigned char note(unsigned char v) { log[n++] = v; return v; }
@@ -29,9 +29,10 @@ _CASES: list[tuple[str, str, int]] = [
             int r = pair(note(3), note(5));
             return r * 100 + log[0] * 10 + log[1] + n * 1000;
         }
-    """, 2000 + 3800 + 30 + 5),
-    # Several returns, used in an expression and in tail position.
-    ("returns", """
+    )c",
+     2000 + 3800 + 30 + 5},
+    // Several returns, used in an expression and in tail position.
+    {"returns", R"c(
         static int sign(int x) {
             if (x < 0) return -1;
             if (x == 0) return 0;
@@ -42,10 +43,11 @@ _CASES: list[tuple[str, str, int]] = [
             return (sign(-7) + 2) * 100 + (sign(0) + 2) * 10
                 + sign(9) + tail(2) * 1000;
         }
-    """, -1000 + 100 + 20 + 1),
-    # A void function with an early return, and a pointer result read
-    # through, as Ali Baba's next_string is.
-    ("void_and_pointer", """
+    )c",
+     -1000 + 100 + 20 + 1},
+    // A void function with an early return, and a pointer result read
+    // through, as Ali Baba's next_string is.
+    {"void_and_pointer", R"c(
         unsigned char text[] = { 2, 'a', 'b', 3, 'c', 'd', 'e', 1, 'f' };
         unsigned char g;
         static void bump(unsigned char by) { if (by == 0) return; g += by; }
@@ -60,10 +62,11 @@ _CASES: list[tuple[str, str, int]] = [
             bump(5);
             return m[1] + g * 1000;
         }
-    """, ord('f') + 9000),
-    # A copy inside a loop: each pass gets the parameter's new value,
-    # and a local of the copy starts from its initializer each time.
-    ("in_a_loop", """
+    )c",
+     'f' + 9000},
+    // A copy inside a loop: each pass gets the parameter's new value,
+    // and a local of the copy starts from its initializer each time.
+    {"in_a_loop", R"c(
         static unsigned int tri(unsigned char k) {
             unsigned int s = 0;
             while (k) s += k--;
@@ -74,9 +77,10 @@ _CASES: list[tuple[str, str, int]] = [
             for (unsigned char i = 1; i <= 4; i++) t += tri(i);
             return t;
         }
-    """, 1 + 3 + 6 + 10),
-    # Volatile reads in the body happen once per call.
-    ("volatile", """
+    )c",
+     1 + 3 + 6 + 10},
+    // Volatile reads in the body happen once per call.
+    {"volatile", R"c(
         volatile unsigned char port;
         unsigned char reads;
         static unsigned char get(void) { reads++; return port; }
@@ -86,30 +90,28 @@ _CASES: list[tuple[str, str, int]] = [
             unsigned char b = get();
             return a + b + reads * 100;
         }
-    """, 214),
-    # Nested candidates, with a wide and a floating parameter.
-    ("nested", """
+    )c",
+     214},
+    // Nested candidates, with a wide and a floating parameter.
+    {"nested", R"c(
         static long sq(long x) { return x * x; }
         static long sum_sq(long a, long b) { return sq(a) + sq(b); }
         static int trunc(double d) { return (int)d; }
         int main(void) {
             return (int)(sum_sq(3, 4) + sum_sq(100, 200) / 1000) + trunc(2.75);
         }
-    """, 25 + 50 + 2),
-]
+    )c",
+     25 + 50 + 2}};
+TEST_CASE("inline_functions: programs") {
+  for (const auto& [name, src, expected] : kCases) {
+    for (bool optimize : {false, true}) {
+      INFO("case=" << name << " optimize=" << optimize);
+      auto result = build_sim(src, optimize).run();
+      CHECK_FALSE(result.timed_out);
+      CHECK(result.return_int_signed() == expected);
+    }
+  }
+}
 
-
-@needs_c6502cpp
-class TestPrograms(unittest.TestCase):
-
-    def test_programs(self):
-        for name, src, expected in _CASES:
-            for optimize in (False, True):
-                with self.subTest(case=name, optimize=optimize):
-                    result = build_sim(src, optimize=optimize).run()
-                    self.assertFalse(result.timed_out)
-                    self.assertEqual(result.return_int_signed(), expected)
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace
+}  // namespace c6502::suite

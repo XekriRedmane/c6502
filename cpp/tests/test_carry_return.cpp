@@ -1,6 +1,5 @@
 // The tests of tests/test_carry_return.py that run carry_return's
-// peepholes on asm, ported. The simulator's runs are in
-// test_carry_return_sim.cpp.
+// peepholes on asm, ported.
 #include <string>
 
 #include "asm_text.h"

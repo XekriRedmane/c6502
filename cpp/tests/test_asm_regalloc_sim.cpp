@@ -1,8 +1,3 @@
-// Values that the asm regalloc (src/passes/optimization_asm/regalloc.h)
-// must not keep in Y across a read of the frame, run in the simulator,
-// from tests/test_asm_regalloc.py. A `Pseudo` that
-// `replace_pseudoregisters` puts in the frame is read with
-// `LDY #off; LDA (FP),Y` (`fuzz.calls` seed 335).
 #include <string>
 
 #include "compile_case.h"

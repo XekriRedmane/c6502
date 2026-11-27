@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_dual_index_promotion.py: programs
-// whose index the X to Y dual-index promotion moves give the values C
-// does in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

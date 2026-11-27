@@ -1,7 +1,6 @@
 // tests/test_constexpr.py's programs on the TAC interpreter. Each
 // returns 0 when every check passes, and otherwise the number of the
-// first check that fails. The simulator's runs are in
-// test_constexpr_sim.cpp.
+// first check that fails.
 #include <string>
 
 #include "compile_case.h"

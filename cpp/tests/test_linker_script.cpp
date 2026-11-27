@@ -2,8 +2,7 @@
 // `fall_through`, `tail_jump`, and `lay_out`, ported by hand, one case
 // per Python test with each of its assertions. Where the Python test
 // matched a ScriptError's or a LayoutError's message with a regular
-// expression, the case checks the whole message Python 3.11 gives. The
-// simulator's runs are in test_linker_script_sim.cpp.
+// expression, the case checks the whole message Python 3.11 gives.
 #include <optional>
 #include <string>
 #include <utility>

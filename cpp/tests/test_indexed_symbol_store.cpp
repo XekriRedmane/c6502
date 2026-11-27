@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_indexed_symbol_store.py's stores into
 // a static array of at most 256 bytes, which are absolute,X on its
-// label. The simulator's runs are in test_indexed_symbol_store_sim.cpp.
+// label.
 #include <string>
 
 #include "compile_case.h"

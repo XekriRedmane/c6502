@@ -1,6 +1,3 @@
-// Functions whose divide and remainder of the same operands
-// src/passes/optimization/divmod_hoist.h computes together, run in both
-// pipelines for each byte value, from tests/test_divmod_hoist.py.
 #include <vector>
 
 #include "doctest.h"
@@ -10,7 +7,6 @@ namespace c6502::suite {
 
 TEST_CASE("divmod_hoist sim: the hoisted divides and remainders give each value") {
   constexpr int sel = 7;
-  // The Python module's source with `sel` put in its `%d`.
   const char* src = R"c(
 #include <stdint.h>
 struct iob { uint8_t pad[4]; uint8_t track, sector; };

@@ -1,5 +1,5 @@
 // The tests of tests/test_carry_recompute.py that run the pass on asm,
-// ported. The simulator's runs are in test_carry_recompute_sim.cpp.
+// ported.
 #include <string>
 
 #include "asm_text.h"

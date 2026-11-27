@@ -1,5 +1,3 @@
-// Stores that `apply_asm_dead_store` (src/passes/asm_dead_store.h) must
-// keep, run in both pipelines, from tests/test_asm_dead_store.py.
 #include "doctest.h"
 #include "sim_case.h"
 

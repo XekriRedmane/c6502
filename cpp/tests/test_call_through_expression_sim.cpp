@@ -1,7 +1,3 @@
-// Calls through any expression that gives a function or a function
-// pointer (C99 §6.5.2.2), `pick()(3)`, `t[i](3)`, `s.g(3)`, `p->g(3)`,
-// and `(*pp)(3)`, run in the simulator in both pipelines, from
-// tests/test_call_through_expression.py.
 #include <string>
 
 #include "doctest.h"

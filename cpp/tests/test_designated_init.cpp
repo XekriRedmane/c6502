@@ -1,6 +1,5 @@
 // tests/test_designated_init.py's program on the TAC interpreter. It
-// returns 0 when every byte of every designated object is right. The
-// simulator's runs are in test_designated_init_sim.cpp.
+// returns 0 when every byte of every designated object is right.
 #include <string>
 
 #include "compile_case.h"

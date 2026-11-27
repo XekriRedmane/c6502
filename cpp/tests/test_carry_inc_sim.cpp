@@ -1,8 +1,6 @@
-// The carry-INC peephole (src/passes/carry_inc.h) and the coalescing that
-// sets it up, run in both pipelines, from tests/test_carry_inc.py. Each
-// add and subtract runs across values where the carry or borrow does
-// and doesn't happen, since the two branches of the rewrite are
-// different code paths.
+// Each add and subtract runs across values where the carry or borrow
+// does and doesn't happen, since the two branches of the rewrite in
+// src/passes/carry_inc.h are different code paths.
 #include <string>
 #include <utility>
 #include <vector>
@@ -45,7 +43,6 @@ std::string program(const std::string& ctype, char op, const std::vector<std::ui
          "        q[i] = h(ws[i], bs[i]);\n" + "    }\n" + "    return 0;\n}\n";
 }
 
-// Runs `src` and checks each element of `r` and `q`.
 void check(const std::string& src, int size, char op, const std::vector<std::uint64_t>& words, bool optimize) {
   const std::uint64_t mask = size == 8 ? ~0ULL : (1ULL << (size * 8)) - 1;
   sim::Simulation s = build_sim(src, optimize);

@@ -1,5 +1,4 @@
 // tests/test_auto.py's program of C23's `auto` on the TAC interpreter.
-// The simulator's runs are in test_auto_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

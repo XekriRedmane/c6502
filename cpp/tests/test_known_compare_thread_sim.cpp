@@ -1,6 +1,3 @@
-// Jumps threaded past tests that their own path decided
-// (src/passes/optimization/known_compare_thread.h), run in both
-// pipelines with inlining off, from tests/test_known_compare_thread.py.
 // Each test is the shape the short-circuit fold leaves of
 // `if (x == 20 || x == 10) r = x == 20 ? 1 : 2;`, run on 600 values.
 #include <functional>

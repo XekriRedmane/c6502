@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_bool.py: programs that convert
-// scalars to `bool` (C23 §6.2.5, C99 §6.3.1.2), increment and decrement
-// one, assign to one, and return one in the carry flag run to the values
-// C gives in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -15,7 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, source, expected return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {
     {"int_conversion", "int main(void) { int x = 512; bool b = x; return b; }", 1},
     {"long_conversion", "int main(void) { long x = 0x10000L; bool b = x; long z = 0; bool c = z; return b * 2 + c; }",

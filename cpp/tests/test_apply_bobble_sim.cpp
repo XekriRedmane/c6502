@@ -1,10 +1,6 @@
-// The simulator tests of tests/test_apply_bobble_sim.py: examples'
-// `apply_bobble`, which adds or subtracts the 7-bit magnitude of
-// `rescue_bobble[bobble_idx]` to `entity_floor_pos[slot]` as bit 7
-// says, runs a battery of scenarios, including a magnitude of 0 on each
-// branch, the magnitude $7F, and 8-bit wrap both ways. Each scenario logs
-// the byte at its slot before and after the call, and both pipelines
-// log the bytes computed by hand.
+// The scenarios include a magnitude of 0 on each branch, the magnitude
+// $7F, and 8-bit wrap both ways, and the expected bytes were computed by
+// hand.
 #include <cstdint>
 #include <string>
 #include <tuple>

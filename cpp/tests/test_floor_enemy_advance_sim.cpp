@@ -1,9 +1,3 @@
-// The simulator tests of tests/test_floor_enemy_advance_sim.py:
-// `floor_enemy_advance` keeps 4 floor-enemy slots, spawns one on a jump
-// input, and moves each leftward or rightward enemy under each move_dir
-// bucket, with the despawn edges at col-2 >= $8D and col >= $8F. Each
-// scenario logs the slots and the sound calls, and both pipelines log
-// the bytes computed by hand.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -236,7 +230,6 @@ Bytes scenario_state() {
   //     col[1]=$40-7=$39 -> ($39-2)=$37 < $8D, keep.
   //     col[2]=$10-7=$09 -> ($09-2)=$07 < $8D, keep.
   //       (note: this comment was wrong in the test design; $07 < $8D so KEEP)
-  //     col[3]=$50-7=$49 -> ($49-2)=$47 < $8D, keep.
   const std::vector<Bytes> s4a = {{0xFF, 0xFF, 0xFF, 0xFF}, {0x79, 0x39, 0x09, 0x49}, {0, 0, 0, 0}, {0, 2, 0x20, 10}};
   // 4b. Leftward, move_dir=1 (player-right), step=9.
   //     col[0]=$60-9=$57 -> ($57-2)=$55 keep.

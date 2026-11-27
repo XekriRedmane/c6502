@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_inline_shift_direct.py: shifts by 1
-// that `tac_to_asm` lowers as direct-memory shifts under `-O` give the
-// results of the unoptimized helper calls.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -24,8 +21,6 @@ std::int64_t run_long(const std::string& src, bool opt = false, bool is_signed =
   return is_signed ? res.return_long_signed() : static_cast<std::int64_t>(res.return_long());
 }
 
-// Both paths (no-opt and --optimize-asm) produce the same
-// return for every shift width × signedness.
 TEST_CASE("inline_shift_direct: uint16 lsl inplace") {
   // `x <<= 1` on a 2-byte unsigned. Compound assignment makes
   // x both src and dst at the TAC level; after SSA regalloc
@@ -35,8 +30,8 @@ TEST_CASE("inline_shift_direct: uint16 lsl inplace") {
   std::string src = R"c(unsigned int f(unsigned int x) { x <<= 1; return x; }
 unsigned int main(void) { return f(0x1234u); }
 )c";
-  CHECK(run_int(src, /*opt=*/false, /*signed=*/false) == 0x2468);
-  CHECK(run_int(src, /*opt=*/true, /*signed=*/false) == 0x2468);
+  CHECK(run_int(src, false, false) == 0x2468);
+  CHECK(run_int(src, true, false) == 0x2468);
 }
 
 TEST_CASE("inline_shift_direct: int16 lsr signed") {
@@ -44,16 +39,16 @@ TEST_CASE("inline_shift_direct: int16 lsr signed") {
 int main(void) { return f(-5); }
 )c";
   // -5 >> 1 = -3 (arithmetic right shift).
-  CHECK(run_int(src, /*opt=*/false) == -3);
-  CHECK(run_int(src, /*opt=*/true) == -3);
+  CHECK(run_int(src, false) == -3);
+  CHECK(run_int(src, true) == -3);
 }
 
 TEST_CASE("inline_shift_direct: uint16 lsr unsigned") {
   std::string src = R"c(unsigned int f(unsigned int x) { x >>= 1; return x; }
 unsigned int main(void) { return f(0xFFFEu); }
 )c";
-  CHECK(run_int(src, /*opt=*/false, /*signed=*/false) == 0x7FFF);
-  CHECK(run_int(src, /*opt=*/true, /*signed=*/false) == 0x7FFF);
+  CHECK(run_int(src, false, false) == 0x7FFF);
+  CHECK(run_int(src, true, false) == 0x7FFF);
 }
 
 TEST_CASE("inline_shift_direct: uint32 lsl") {
@@ -62,8 +57,8 @@ TEST_CASE("inline_shift_direct: uint32 lsl") {
 unsigned long main(void) { return f(0x80000001UL); }
 )c";
   // 0x80000001 << 1 = 0x100000002 → 0x00000002 (32-bit wrap).
-  CHECK(run_long(src, /*opt=*/false, /*signed=*/false) == 0x2);
-  CHECK(run_long(src, /*opt=*/true, /*signed=*/false) == 0x2);
+  CHECK(run_long(src, false, false) == 0x2);
+  CHECK(run_long(src, true, false) == 0x2);
 }
 
 TEST_CASE("inline_shift_direct: int32 lsr signed") {
@@ -73,8 +68,8 @@ TEST_CASE("inline_shift_direct: int32 lsr signed") {
 long main(void) { return f(-100000L); }
 )c";
   // -100000 >> 1 = -50000.
-  CHECK(run_long(src, /*opt=*/false) == -50000);
-  CHECK(run_long(src, /*opt=*/true) == -50000);
+  CHECK(run_long(src, false) == -50000);
+  CHECK(run_long(src, true) == -50000);
 }
 
 TEST_CASE("inline_shift_direct: strength reduced multiply") {
@@ -83,8 +78,8 @@ TEST_CASE("inline_shift_direct: strength reduced multiply") {
   std::string src = R"c(unsigned int f(unsigned int x) { return x * 2; }
 unsigned int main(void) { return f(0x4321u); }
 )c";
-  CHECK(run_int(src, /*opt=*/false, /*signed=*/false) == 0x8642);
-  CHECK(run_int(src, /*opt=*/true, /*signed=*/false) == 0x8642);
+  CHECK(run_int(src, false, false) == 0x8642);
+  CHECK(run_int(src, true, false) == 0x8642);
 }
 
 }  // namespace

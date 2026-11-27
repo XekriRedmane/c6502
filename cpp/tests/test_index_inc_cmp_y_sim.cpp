@@ -1,6 +1,3 @@
-// A loop and a global whose `INC tmp; LDA tmp; CMP` src/passes/
-// index_inc_cmp_y.h rewrites, run under -O, from
-// tests/test_index_inc_cmp_y.py.
 #include "doctest.h"
 #include "sim_case.h"
 

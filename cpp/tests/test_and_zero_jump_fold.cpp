@@ -1,6 +1,5 @@
 // The `-S` text of tests/test_and_zero_jump_fold.py's program of masks
-// on wide values. The simulator's runs are in
-// test_and_zero_jump_fold_sim.cpp.
+// on wide values.
 #include <stdexcept>
 #include <string>
 

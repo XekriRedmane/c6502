@@ -1,7 +1,6 @@
 // The `-S -O` text of tests/test_in_place_member_update.py's updates of
 // a member of a static object computed in its own bytes
-// (cpp/src/passes/in_place_member_update.h). The simulator's runs are
-// in test_in_place_member_update_sim.cpp.
+// (cpp/src/passes/in_place_member_update.h).
 #include <sstream>
 #include <stdexcept>
 #include <string>

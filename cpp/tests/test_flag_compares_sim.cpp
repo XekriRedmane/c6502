@@ -1,6 +1,3 @@
-// Compares that branch on flags another instruction set, or that fold
-// into fewer tests, run in the simulator in both pipelines against
-// values computed in C++, from tests/test_flag_compares.py.
 #include <vector>
 
 #include "doctest.h"
@@ -10,8 +7,6 @@ namespace c6502::suite {
 
 namespace {
 
-// The values tests/test_flag_compares.py's `_PROGRAM` stores in
-// `checks`, computed as the Python test's `_expected` computes them.
 std::vector<int> expected_checks() {
   int s = 0;
   for (int v = 0; v < 256; ++v) {

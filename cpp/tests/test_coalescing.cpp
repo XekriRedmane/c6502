@@ -1,5 +1,4 @@
-// The `-S -O` text of tests/test_coalescing.py's byte loop. The
-// simulator's runs are in test_coalescing_sim.cpp.
+// The `-S -O` text of tests/test_coalescing.py's byte loop.
 #include <string>
 
 #include "compile_case.h"

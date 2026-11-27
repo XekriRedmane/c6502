@@ -1,7 +1,3 @@
-// `__c6502_bin_to_bcd` and its runtime helper `bin16_to_bcd` in the
-// simulator, from test_bin_to_bcd.py: the model against the decimal
-// digits of every value, the helper's 6502 code on every input with its
-// cycles, and every value through the builtin in both pipelines.
 #include <cstdio>
 #include <string>
 #include <vector>

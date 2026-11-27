@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_loop_counter_to_x.py: loops whose
-// counter the loop-counter-to-X promotion moves end, after a call and
-// across pages, with the values C gives.
 #include <cstdint>
 #include <string>
 #include <tuple>

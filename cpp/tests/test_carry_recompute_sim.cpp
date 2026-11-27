@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_carry_recompute.py: adds and subtracts
-// of a constant whose low byte is zero run to the values computed here in
-// both pipelines, and under `-O` step the high byte with `INC` and
-// `DEC`.
 #include <cstdint>
 #include <string>
 #include <tuple>

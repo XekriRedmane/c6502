@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_hwreg_pin_correctness.py: a value the
-// asm-level optimizer pins to Y keeps its value across an indirect store
-// whose lowering writes Y, as in examples/draw_sprite_opaque.c. The
-// unoptimized run is the reference.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -22,17 +18,13 @@ std::int64_t run(const std::string& source, bool optimize) {
   return result.return_int();
 }
 
-// Each test verifies the optimizer doesn't pin a value to a
-// hardware register whose value is overwritten by another
-// instruction inside the pinned name's live range.
 TEST_CASE("hwreg_pin_correctness: indirect store clobbers y resident iv") {
-  // Minimum case from the draw_sprite_opaque investigation
-  // (2026-05-14). `y` is incremented across nested loops, so
-  // the optimizer pins it to Reg(Y). Inside the inner loop's
-  // body, `base[x] = p[y]` lowers to an IndirectIndexedStore
-  // whose lowering writes Y (it stages `x` into Y for the
-  // `STA (DPTR),Y`). After that store, the *next* `p[y]` read
-  // uses the stale Y (= x), not the live `y`.
+  // `y` is incremented across nested loops, so the optimizer
+  // pins it to Reg(Y). Inside the inner loop's body, `base[x] =
+  // p[y]` lowers to an IndirectIndexedStore whose lowering
+  // writes Y (it stages `x` into Y for the `STA (DPTR),Y`).
+  // After that store, the *next* `p[y]` read uses the stale Y
+  // (= x), not the live `y`.
   //
   // Expected return: sum of in_buf[0..15] = 1+2+...+16 = 136.
   // Before the fix, the optimized run returned 90 (the inner
@@ -61,8 +53,8 @@ TEST_CASE("hwreg_pin_correctness: indirect store clobbers y resident iv") {
             return sum;
         }
         )c";
-  auto unopt = run(source, /*optimize=*/false);
-  auto opt = run(source, /*optimize=*/true);
+  auto unopt = run(source, false);
+  auto opt = run(source, true);
   CHECK_MESSAGE(unopt == 136, "oracle (unopt) sanity check");
   CHECK_MESSAGE(opt == 136,
                 "optimized run returned the wrong value — Reg(Y) was pinned to a Pseudo whose live range crosses an "

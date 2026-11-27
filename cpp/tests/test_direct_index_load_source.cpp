@@ -1,5 +1,4 @@
 // The `-S -O` text of tests/test_direct_index_load.py's indexed read.
-// The simulator's runs are in test_direct_index_load_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

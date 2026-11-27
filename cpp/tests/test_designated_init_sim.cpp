@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_designated_init.py: a program that
-// checks every byte of objects with designated initializers (C99 §6.7.8,
-// C23 §6.7.11), as file-scope objects, block-scope statics, and automatic
-// objects, returns 0 in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

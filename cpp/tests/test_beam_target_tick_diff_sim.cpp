@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_beam_target_tick_diff.py:
-// `beam_target_tick` run over a table of scenarios for the attack, chase,
-// and idle states of `beam_state` logs the same bytes in both pipelines.
-// The unoptimized pipeline's log is the reference, and
-// test_beam_target_tick_sim.cpp checks values computed by hand.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -195,10 +190,6 @@ int main(void) {
 )c";
 const auto kScenarios = 24;
 const auto kRecordSize = 8;
-// Run the same C source through both pipelines and compare the
-// full `result_log` buffer byte-for-byte. Any optimizer-introduced
-// divergence (incl. the new `transfer_pm1_store` peephole) shows
-// up as a buffer mismatch.
 auto run(const auto& optimize) {
   auto s = build_sim(kProgram, optimize);
   auto result = s.run(5'000'000);
@@ -210,24 +201,22 @@ auto run(const auto& optimize) {
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt full buffer") {
-  auto unopt = run(/*optimize=*/false);
-  auto opt = run(/*optimize=*/true);
+  auto unopt = run(false);
+  auto opt = run(true);
   CHECK_MESSAGE(unopt == opt, "optimizer changed observable state");
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt attack state 80") {
-  // First 6 scenarios cover beam_state == 0x80 variations.
-  auto unopt = run(/*optimize=*/false);
-  auto opt = run(/*optimize=*/true);
+  auto unopt = run(false);
+  auto opt = run(true);
   auto size = 6 * kRecordSize;
   CHECK_MESSAGE(slice(unopt, 0, size) == slice(opt, 0, size),
                 "optimizer perturbed the beam_state == 0x80 (attack) cases");
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt chase state 01") {
-  // Scenarios 6..11 cover beam_state == 0x01 variations.
-  auto unopt = run(/*optimize=*/false);
-  auto opt = run(/*optimize=*/true);
+  auto unopt = run(false);
+  auto opt = run(true);
   auto start = 6 * kRecordSize;
   auto end = 12 * kRecordSize;
   CHECK_MESSAGE(slice(unopt, start, end) == slice(opt, start, end),
@@ -235,9 +224,8 @@ TEST_CASE("beam_target_tick_diff: opt matches unopt chase state 01") {
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt idle state 00") {
-  // Scenarios 12..19 cover beam_state == 0x00 variations.
-  auto unopt = run(/*optimize=*/false);
-  auto opt = run(/*optimize=*/true);
+  auto unopt = run(false);
+  auto opt = run(true);
   auto start = 12 * kRecordSize;
   auto end = 20 * kRecordSize;
   CHECK_MESSAGE(slice(unopt, start, end) == slice(opt, start, end),

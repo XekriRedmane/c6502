@@ -1,8 +1,6 @@
-// examples/draw_sprite_opaque.c run in both pipelines, from
-// tests/test_draw_sprite_opaque_sim.py: `page_flag & 0x80` switches the
-// row base between `screen_row_addr_hi` (page 1) and
-// `screen_row_addr_hi2` (page 2). The optimizer once dropped the switch
-// and always used `screen_row_addr_hi`.
+// `page_flag & 0x80` switches the row base between `screen_row_addr_hi`
+// (page 1) and `screen_row_addr_hi2` (page 2). The optimizer once
+// dropped the switch and always used `screen_row_addr_hi`.
 //
 // For sprite_y = 0, screen_row_addr_hi[0] is $20 and
 // screen_row_addr_hi2[0] is $40, so the sprite's byte $A5 lands at $2000

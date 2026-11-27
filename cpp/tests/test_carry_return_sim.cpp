@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_carry_return.py: functions with
-// `[[c6502::return_bool_in_carry]]` return `e != 0` in the carry flag,
-// and a struct of a value and a `bool` with the value in A (and X) and
-// the flag in C. The programs run in both pipelines, and the struct ones
-// on the TAC too.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -127,17 +122,13 @@ int main(void) {
 
 }  // namespace sim_runs
 
-// A struct of a value and a `bool`, which a `return_bool_in_carry`
-// function returns with the value in A (and X) and the flag in C.
 const std::string kZc = R"c(struct zc { unsigned char v; bool end; };
 )c";
 const std::string kWv = R"c(struct wv { int v; bool end; };
 )c";
 
 namespace struct_sim {
-// Each program runs on both TACs and through both pipelines.
 auto check(const auto& src, const auto& expected) {
-  // main()'s result on the unoptimized TAC.
   CHECK(run_program(src) == expected);
   for (bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

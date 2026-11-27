@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_limits_h.py: each macro of the
-// bundled `<limits.h>` returns its value from a program, and including
-// the header twice is no error.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -78,9 +75,6 @@ TEST_CASE("limits_h: long min") { CHECK(run_long("return LONG_MIN;") == -0x80000
 TEST_CASE("limits_h: ulong max") { CHECK(run_ulong("return ULONG_MAX;") == 0xFFFFFFFFLL); }
 
 TEST_CASE("limits_h: idempotent double include") {
-  // Including twice must not cause a redefinition error — pcpp's
-  // auto-pragma-once heuristic + the header's own ifndef guard
-  // both protect this.
   std::string src = R"c(#include <limits.h>
 #include <limits.h>
 int main(void) { return INT_MAX; }

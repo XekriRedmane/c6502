@@ -1,8 +1,3 @@
-// The leaf zero-page calling convention run in the simulator, from
-// tests/test_leaf_zp_abi.py: the caller's writes of the arguments line up
-// with the callee's reads, a `[[c6502::zp_abi]]` function that calls
-// another keeps a value across the call without a prologue, and a caller
-// and its callee get disjoint slots.
 #include <string>
 
 #include "compile_case.h"
@@ -13,7 +8,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Returns the `-S -O` text compile.py writes for `source` on stdin.
 std::string codegen_main(const std::string& source) {
   const auto o = compile_main({"compile.py", "-", "-S", "-O"}, source);
   REQUIRE(o.status.value_or(-1) == 0);

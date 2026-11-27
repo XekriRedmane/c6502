@@ -1,5 +1,4 @@
 // The `-S -O` text of tests/test_inc_peephole.py's 16-bit loop counter.
-// The simulator's runs are in test_inc_peephole_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

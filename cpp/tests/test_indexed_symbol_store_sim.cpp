@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_indexed_symbol_store.py: stores to
-// small static arrays, which c99_to_tac lowers as `IndexedSymbolStore`
-// (`STA arr,X`), write every byte of the element.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -14,8 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// Sim-level tests: the emitted code actually writes the right
-// bytes.
 auto sim_return(const auto& src) {
   auto s = build_sim(src, true);
   auto result = s.run(5'000'000);
@@ -48,8 +43,6 @@ int main(void) {
 }
 
 TEST_CASE("indexed_symbol_store: runtime index store") {
-  // Index isn't a compile-time constant — the runtime-index
-  // path in `_try_indexed_store_subscript` fires.
   std::string src = R"c(#include <stdint.h>
 static uint8_t arr[20];
 void put(uint8_t i, uint8_t v) { arr[i] = v; }

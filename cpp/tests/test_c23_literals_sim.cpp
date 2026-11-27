@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_c23_literals.py: a program with C23's
-// binary constants and digit separators (C23 §6.4.4.2) runs to the same
-// result in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

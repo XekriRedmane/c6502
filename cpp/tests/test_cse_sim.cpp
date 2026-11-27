@@ -1,6 +1,3 @@
-// Programs whose repeated subscripts and tests go through
-// common-subexpression elimination (src/passes/optimization/cse.h),
-// run in both pipelines, from tests/test_cse.py.
 #include <string>
 
 #include "doctest.h"

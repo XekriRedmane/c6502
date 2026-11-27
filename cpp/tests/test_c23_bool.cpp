@@ -94,7 +94,6 @@ TEST_CASE("c23_bool: a program with <stdbool.h> compiles without a warning") {
 }
 
 TEST_CASE("c23_bool: the TAC interpreter runs a program of bool, true, and false") {
-  // test_c23_bool_sim.cpp runs the same program in the simulator.
   const std::string program = R"(#include <stdbool.h>
 
 enum { TWO = true + true };

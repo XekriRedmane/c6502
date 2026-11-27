@@ -1,7 +1,3 @@
-// A program with switch, arrays, struct members, pointers, static
-// initializers, and calls on bit-precise values, run in the simulator in
-// both pipelines, from tests/test_bitint.py. (tests/test_bitint_sim.py is
-// another module, which runs every operator on every width.)
 #include <cstdint>
 #include <vector>
 

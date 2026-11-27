@@ -1,6 +1,3 @@
-// The read-modify-write of an array element indexed by X, `INC t,X` and
-// the rest, run in the simulator in both pipelines, from
-// tests/test_element_rmw.py.
 #include <vector>
 
 #include "doctest.h"

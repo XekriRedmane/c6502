@@ -1,5 +1,4 @@
-// The asm tests of tests/test_loop_counter_to_x.py, ported. The
-// simulator's runs are in test_loop_counter_to_x_sim.cpp.
+// The asm tests of tests/test_loop_counter_to_x.py, ported.
 #include <algorithm>
 #include <string>
 #include <vector>

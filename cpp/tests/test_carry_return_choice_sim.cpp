@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_carry_return_choice.py:
-// src/passes/carry_return_choice.h returns a `bool` in the carry flag
-// without the annotation, for a `static` function every call of which
-// suits the carry and for a zp_abi function with external linkage, and
-// the programs run in both pipelines and when linked from two units.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -105,8 +100,6 @@ int main(void) {
 }
 )c";
 namespace linked {
-// Compiles `src` from stdin to the `-S -O` text at `path`, and returns
-// the text.
 std::string compile(const std::string& src, const std::string& path) {
   const auto o = compile_main({"compile.py", "-", "-S", "-O", "-o", path}, src);
   CHECK(o.status == 0);

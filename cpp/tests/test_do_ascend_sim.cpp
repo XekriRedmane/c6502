@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_do_ascend_sim.py: `do_ascend`
-// dispatches on what the ascending player landed on, the ceiling on
-// entry, the ceiling after the -4 step, the floor-side threshold, or
-// nothing. Each scenario logs 16 bytes of state, and both pipelines log
-// the bytes computed by hand.
 #include <cstdint>
 #include <string>
 #include <tuple>

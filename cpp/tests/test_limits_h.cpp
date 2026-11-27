@@ -1,6 +1,5 @@
 // A `limits.h` in a directory given with `-I` comes before the bundled
-// one, from tests/test_limits_h.py. The simulator's runs are in
-// test_limits_h_sim.cpp.
+// one, from tests/test_limits_h.py.
 #include <string>
 #include <vector>
 

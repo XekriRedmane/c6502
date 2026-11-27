@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_direct_member_access.py: programs
-// whose accesses through `&obj + k`
-// src/passes/optimization/direct_member_access.h makes direct accesses
-// to byte `k` of `obj` give the same value on the unoptimized TAC and in
-// both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -19,7 +14,6 @@ namespace {
 const std::string kS = R"c(struct s { unsigned char a; int b; unsigned char c; };
 )c";
 void check(const auto& src, const auto& expected) {
-  // main()'s result on the unoptimized TAC.
   CHECK(run_program(src) == expected);
   for (bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

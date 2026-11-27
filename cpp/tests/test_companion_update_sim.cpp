@@ -1,7 +1,3 @@
-// `companion_update`, the two-slot companion walker's tick and draw,
-// run in both pipelines from a `main` that records the state after each
-// scenario, from tests/test_companion_update_sim.py.
-//
 // The program first showed an optimizer bug. The asm-SSA regalloc gave
 // the outer loop counter `slot` both X (for `companion_state,X` and the
 // loop's `DEX`) and the slot `__local_companion_update__slot`, which the
@@ -10,17 +6,6 @@
 // slot 0's iteration called the leaf functions with slot 1. The fix is
 // src/passes/x_save_slot_load.h, which reads X in place of M when M is
 // an X-save slot.
-//
-// The scenarios are A, the gate disabled (bit 7 set), which returns at
-// once; B, both slots inactive, which activate themselves and draw; C,
-// slot 1 active in the + direction midstream, which steps by 3, while
-// slot 0 is clipped off screen; D, slot 1 at the + direction's turning
-// point (hi == 3 and lo >= $52), which turns and is put on the row
-// floor_thresh[player_floor] + $0B without a draw; E, the same for the
-// - direction (hi == 0 and lo < $3E); F, a drift, where slot 1 on an
-// anchor row is reactivated and slot 0 on another row moves down 4; G,
-// an entity in the centre band, which starts a drift and still draws;
-// and H, the player caught, which sets hit_flag.
 #include <cstdint>
 #include <vector>
 

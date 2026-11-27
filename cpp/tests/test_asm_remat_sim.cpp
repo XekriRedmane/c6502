@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_asm_remat.py: programs whose loads
-// apply_remat (src/passes/asm_remat.h) could rematerialize run to the
-// values they compute, with a store through a pointer between a load and
-// its read, and with a table byte copied into a local and a zero-page
-// global.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -36,10 +31,9 @@ int main(void) { g = 3; return f(&g); }
 }  // namespace remat_pointer_store
 
 namespace remat_cost_sim {
-// The shapes of `TestRematCost` and of Lode Runner's
-// `enable_next_level_ladders` (a table byte copied into a local and
-// a zero-page global, the local read again after a call) run to the
-// same results in both pipelines.
+// The shape of Lode Runner's `enable_next_level_ladders` is a table
+// byte copied into a local and a zero-page global, with the local read
+// again after a call.
 const std::string kSrc = R"c(
 #include <stdint.h>
 uint8_t ROWS[6] = {1, 4, 9, 16, 25, 36};

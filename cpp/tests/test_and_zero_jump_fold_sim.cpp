@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_and_zero_jump_fold.py: programs with
-// the `if (uchar & 0x80)` idiom, which and_zero_jump_fold
-// (src/passes/optimization/and_zero_jump_fold.h) turns into a jump on
-// the masked byte, and masks of wide values whose set bits fall in one
-// byte, run to the values they compute.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -17,8 +12,6 @@ namespace c6502::suite {
 namespace {
 
 namespace sim_integration {
-// End-to-end: a small C program exercising the (uchar & 0x80)
-// idiom returns the right value under -O.
 auto run(const auto& src) {
   auto s = build_sim(src, true);
   auto r = s.run(200'000);
@@ -51,9 +44,6 @@ TEST_CASE("and_zero_jump_fold: high bit clear") {
 }
 
 TEST_CASE("and_zero_jump_fold: arbitrary mask") {
-  // Mask 0x10 — exercises a non-sign-bit fold path. Existing
-  // peepholes don't collapse this further than `AND #$10;
-  // BEQ`, but the high-byte zero stage is gone.
   std::string src = R"c(
         #include <stdint.h>
         int test(uint8_t flags) {
@@ -84,8 +74,6 @@ TEST_CASE("and_zero_jump_fold: store between extend and and") {
 }  // namespace sim_integration
 
 namespace wide_mask_in_one_byte {
-// A mask on a wide value whose set bits fall in one byte tests
-// that byte: `if (zchars & 0x8000)` is `LDA zchars+1; BPL`.
 const std::string kSrc = R"c(
     unsigned int w;
     int s;

@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_compound_literal.py: programs with
-// compound literals (C99 §6.5.2.5) at block and file scope run to the
-// values C gives in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -14,7 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, source, expected return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {
     {"address_of_scalar", "int main(void) { int *p = &(int){5}; *p += 2; return *p; }", 7},
     {"array_decays",

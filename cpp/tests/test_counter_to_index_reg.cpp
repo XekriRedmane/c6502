@@ -1,5 +1,4 @@
-// The asm tests of tests/test_counter_to_index_reg.py, ported. The
-// simulator's runs are in test_counter_to_index_reg_sim.cpp.
+// The asm tests of tests/test_counter_to_index_reg.py, ported.
 #include <algorithm>
 #include <vector>
 

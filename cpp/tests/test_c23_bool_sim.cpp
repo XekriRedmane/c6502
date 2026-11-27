@@ -1,5 +1,3 @@
-// A program that uses C23's `bool`, `true`, `false`, and <stdbool.h>,
-// run in both pipelines, from tests/test_c23_bool.py.
 #include "doctest.h"
 #include "sim_case.h"
 

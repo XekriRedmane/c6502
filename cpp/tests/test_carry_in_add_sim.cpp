@@ -1,6 +1,3 @@
-// `p + b + 1` as one add with the carry set (src/passes/carry_in_add.h),
-// run in both pipelines on values at the edges of each byte, from
-// tests/test_carry_in_add.py.
 #include <cstdint>
 
 #include "doctest.h"

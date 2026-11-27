@@ -1,6 +1,5 @@
 // The `-S -O` text of tests/test_constant_store_order.py's program of
-// the shape of Lode Runner's `fill_hole`. The simulator's runs are in
-// test_constant_store_order_sim.cpp.
+// the shape of Lode Runner's `fill_hole`.
 #include <algorithm>
 #include <stdexcept>
 #include <string>

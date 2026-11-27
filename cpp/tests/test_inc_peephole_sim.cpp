@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_inc_peephole.py: loops whose
-// increments the INC peephole rewrites as `INC` and `BNE` chains give
-// the sums of the ADC chains, across a byte's overflow too, and `++` and
-// `--` of statics return their new values.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -16,10 +12,6 @@ namespace c6502::suite {
 namespace {
 
 namespace inc_peephole_correctness {
-// End-to-end: the optimized program produces the same answer
-// as the unoptimized one, including across byte-overflow
-// boundaries (the BNE / fall-through into the high-byte INC has
-// to fire correctly when the low byte wraps from $FF to $00).
 TEST_CASE("inc_peephole: loop counter 16bit correct sum") {
   // Sum 0..9 = 45. The loop-counter `i++` is the peephole
   // target.

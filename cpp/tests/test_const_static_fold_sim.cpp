@@ -1,7 +1,3 @@
-// Programs whose `static T const` objects the asm-level const-static
-// fold replaces with immediates under -O, run in the simulator, from
-// tests/test_const_static_fold.py. The folded programs compute what the
-// unfolded ones do.
 #include "doctest.h"
 #include "sim_case.h"
 

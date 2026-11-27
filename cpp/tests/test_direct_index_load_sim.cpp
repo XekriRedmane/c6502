@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_direct_index_load.py: an indexed
-// store whose index `apply_direct_index_load` loads straight into X
-// writes the right byte.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -14,7 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// End-to-end correctness.
 TEST_CASE("direct_index_load: indexed store lands correctly") {
   std::string src = R"c(#include <stdint.h>
 static uint8_t * const buf = (uint8_t * const)0x4100;

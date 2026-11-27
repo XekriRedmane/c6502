@@ -1,9 +1,3 @@
-// Programs linked with a linker script (`compile.py -T`) and
-// `[[c6502::section("name")]]`, run in the simulator, from
-// tests/test_linker_script.py: `.data` copied from ROM, a NOLOAD `.bss`
-// cleared, a section at a fixed address, page alignment, a function that
-// ends by calling another unit's falling into it, and internal names two
-// units share.
 #include <optional>
 #include <string>
 #include <vector>

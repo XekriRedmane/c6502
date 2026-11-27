@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_const_shift_mul_sim.py: every constant
-// shift count, and multiplies by constants of the form 2^a + 2^b and
-// 2^a - 2^b, at each integer width, against the values computed here.
-//
 // `tac_to_asm` inlines a constant shift `8q + r` as byte moves and `r`
 // one-bit steps when `inline_shift_ok` (src/passes/shift_cost.h) accepts
 // it, and calls the `asl*` / `lsr*` / `asr*` helper otherwise. Under -O,
@@ -30,7 +26,6 @@
 namespace c6502::suite {
 namespace {
 
-// (C type, bytes)
 const std::vector<std::tuple<std::string, int>> kTypes = {
     {"int", 2}, {"unsigned int", 2}, {"long", 4}, {"unsigned long", 4}, {"long long", 8}, {"unsigned long long", 8}};
 const std::vector<int> kMultipliers = {3,  5,  6,  7,  9,  10, 12,  15,  17,  24,  31,
@@ -42,7 +37,6 @@ constexpr std::size_t kChunk = 40;
 
 std::uint64_t mask_of(int size) { return size == 8 ? ~std::uint64_t{0} : (std::uint64_t{1} << (size * 8)) - 1; }
 
-// Returns `v`'s low `size` bytes as a signed value.
 std::int64_t signed_of(std::uint64_t v, int size) {
   const int bits = size * 8;
   v &= mask_of(size);
@@ -62,7 +56,6 @@ std::vector<Program> programs(const std::string& ctype, int size, std::uint64_t 
   const int bits = size * 8;
   const std::uint64_t mask = mask_of(size);
   const bool is_signed = ctype.rfind("unsigned", 0) != 0;
-  // (name, expression, expected value)
   std::vector<std::tuple<std::string, std::string, std::uint64_t>> ops;
   for (int k = 1; k < bits; ++k) {
     ops.emplace_back(cat("l", k), cat("x << ", k), (x << k) & mask);
@@ -89,7 +82,6 @@ std::vector<Program> programs(const std::string& ctype, int size, std::uint64_t 
   return out;
 }
 
-// Returns `raw` truncated to `size` bytes.
 std::uint64_t truncated(std::uint64_t raw, int size) { return raw & mask_of(size); }
 
 void check(bool optimize) {

@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_lnot_jump_fold.py: `if (!x)` on
-// sources of 1, 2, and 4 bytes, whose test
-// src/passes/optimization/lnot_jump_fold.h turns into a jump of the
-// other sense, gives the same values in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -15,8 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// Differential opt-vs-unopt for `if (!x)` shapes.
-// Checks that `src` returns `want` in both pipelines.
 void both_paths(const std::string& src, std::int64_t want) {
   CHECK(run_c_program(src).return_int_signed() == want);
   CHECK(build_sim(src, true).run().return_int_signed() == want);

@@ -1,7 +1,3 @@
-// The tests of tests/test_bcd_builtins.py: `__c6502_bcd_add` and
-// `__c6502_bcd_sub` of constants fold, the code of the others is one
-// chain of ADC or SBC between SED and CLD, and the programs return the
-// CPU model's results in the TAC interpreter and the simulator.
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -68,8 +64,6 @@ struct Program {
   long long expected;
 };
 
-// Programs whose `main` returns a 16-bit value, which the TAC
-// interpreter and the simulator run.
 const std::vector<Program>& programs() {
   static const std::vector<Program> table = {
       {"byte_add",
@@ -355,7 +349,6 @@ c6502::sim::SimResult run_bcd(const std::string& src, bool optimize) {
   c6502::sim::Simulation s = suite::build_sim(src, optimize);
   const c6502::sim::SimResult r = s.run(3'000'000);
   CHECK_FALSE(r.timed_out);
-  // The program ends with the decimal flag clear.
   CHECK((s.cpu.p & c6502::sim::Cpu::kDecimal) == 0);
   return r;
 }

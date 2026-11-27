@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_carry_halve.py: halved 9-bit sums,
-// whose bit 8 src/passes/carry_halve.h takes from the carry of the low
-// byte's add, give the values computed here in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

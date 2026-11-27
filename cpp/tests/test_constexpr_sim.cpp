@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_constexpr.py: programs that check
-// C23's `constexpr` objects (§6.7.2), the storage-class specifiers of
-// compound literals (§6.5.3.6), and the reads of `static const` objects
-// return 0 or the value computed here in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

@@ -1,6 +1,3 @@
-// A switch that src/passes/jump_table.h dispatches through a table of
-// the cases' addresses, run in both pipelines, from
-// tests/test_jump_table.py.
 #include <vector>
 
 #include "doctest.h"

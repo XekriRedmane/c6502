@@ -1,6 +1,3 @@
-// A program whose branch goes through a label that holds only a `JMP`
-// (src/passes/branch_through_jump.h), run in both pipelines, from
-// tests/test_branch_through_jump.py.
 #include "doctest.h"
 #include "sim_case.h"
 

@@ -1,5 +1,4 @@
-// The unit tests of tests/test_constant_store_order.py, ported. The
-// simulator's runs are in test_constant_store_order_sim.cpp.
+// The unit tests of tests/test_constant_store_order.py, ported.
 #include <string>
 #include <vector>
 

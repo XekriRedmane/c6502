@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_auto.py: a program that checks C23's
-// `auto` (§6.7.2, §6.7.10), with the types it infers from initializers
-// and C99's automatic storage class, returns 0 in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

@@ -1,5 +1,3 @@
-// Tables of pointers that the const-pointer-array dispatch reads, run in
-// both pipelines, from tests/test_dispatch_pointer_array.py.
 #include <string>
 
 #include "doctest.h"

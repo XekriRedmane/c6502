@@ -1,5 +1,4 @@
-// The `-S -O` text of tests/test_carry_in_add.py's program. The
-// simulator's runs are in test_carry_in_add_sim.cpp.
+// The `-S -O` text of tests/test_carry_in_add.py's program.
 #include <string>
 
 #include "compile_case.h"

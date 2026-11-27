@@ -1,5 +1,3 @@
-// The simulator tests of tests/test_enum.py: programs with enumerations
-// (C99 §6.7.2.2) run to the values C gives in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -13,7 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, C source, expected int return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {{"enum", R"c(
         enum color { RED, GREEN = 5, BLUE, LAST = BLUE + 10 };
         typedef enum { OFF, ON } state;

@@ -1,8 +1,3 @@
-// The simulator tests of tests/test_inline_functions.py: programs whose
-// calls of small `static` functions
-// src/passes/optimization/inline_functions.h inlines give the values C
-// does in both pipelines, including the order of an argument's side
-// effects and volatile accesses.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -16,7 +11,6 @@
 namespace c6502::suite {
 namespace {
 
-// (name, C source, expected int return of main)
 const std::vector<std::tuple<std::string, std::string, int>> kCases = {
     // Each argument's side effects happen once, in order, before the
     // body, which reads its parameter twice.

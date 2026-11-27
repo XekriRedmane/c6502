@@ -1,5 +1,3 @@
-// Loops that src/passes/optimization/count_down.h counts down to 0, run
-// in both pipelines, from tests/test_count_down.py.
 #include <string>
 
 #include "doctest.h"

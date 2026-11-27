@@ -1,7 +1,3 @@
-// Loads from static arrays of at most 256 bytes as `LDA arr,X`, and from
-// a constant base with a signed index, run in the simulator, from
-// tests/test_indexed_load.py. Each byte of a multi-byte element must be
-// read.
 #include "doctest.h"
 #include "sim_case.h"
 
@@ -9,7 +5,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Runs `src` under `-O` and returns what `main` returns as a signed int.
 std::int64_t run_optimized(const char* src) {
   const sim::SimResult r = build_sim(src, true).run(5'000'000);
   CHECK_FALSE(r.timed_out);

@@ -1,7 +1,3 @@
-// The inline lowerings of byte division, variable shifts, and the
-// 8-by-8 product, simulated against a model in both pipelines, from
-// tests/test_byte_arith_sim.py.
-//
 // `tac_to_asm` lowers an unsigned byte divided by a constant as a loop
 // of subtractions, a 1- or 2-byte shift by a variable count, or by a
 // constant count that `inline_shift_ok` rejects, as a loop of one-bit

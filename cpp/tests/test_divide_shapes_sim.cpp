@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_divide_shapes.py: a shift-and-subtract
-// divide loop, as Zork's `divu16` (examples/zork/numbers.c) has, and a
-// local array read by index give the values computed here in both
-// pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

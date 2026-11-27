@@ -1,7 +1,3 @@
-// Runs of stores grouped by the value stored
-// (src/passes/constant_store_order.h), in programs with the shape of
-// Lode Runner's `fill_hole`, run in both pipelines, from
-// tests/test_constant_store_order.py.
 #include "doctest.h"
 #include "sim_case.h"
 

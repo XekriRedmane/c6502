@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_loop_rotate.py: signed countdown
-// loops that the TAC loop rotation rotates, and loops it has to leave
-// alone, give the values C does.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -14,11 +11,7 @@
 namespace c6502::suite {
 namespace {
 
-// End-to-end through the simulator: rotated programs return
-// the same result as unrotated ones.
 void run_optimized(const std::string& src, std::int64_t expected) {
-  // Compile via `-S -O`, assemble, simulate
-  // until the program halts, assert the return value matches.
   auto s = build_sim(src, true);
   auto result = s.run(200'000);
   CHECK_FALSE_MESSAGE(result.timed_out, cat("sim timed out at ", result.cycles));
@@ -61,8 +54,6 @@ int main(void) {
 }
 
 void both(const auto& src, const auto& expected) {
-  // Runs `src` through both pipelines and checks that each
-  // returns `expected`.
   for (bool optimize : {false, true}) {
     auto result = build_sim(src, optimize).run(200'000);
     CHECK_FALSE_MESSAGE(result.timed_out, cat("optimize=", optimize));

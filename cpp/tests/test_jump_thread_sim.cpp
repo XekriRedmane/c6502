@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_jump_thread.py: programs whose
-// inlined functions return a constant on some paths, which
-// src/passes/optimization/jump_thread.h threads, give both outcomes in
-// both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

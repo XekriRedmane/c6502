@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_address_attr.py: programs that call
-// a stand-in routine placed at the address `[[c6502::address(addr)]]`
-// gives a function, and that read and write stand-in memory through
-// `extern` objects at fixed addresses.
 #include <cstdint>
 #include <string>
 #include <tuple>

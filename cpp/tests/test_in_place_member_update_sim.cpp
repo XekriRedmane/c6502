@@ -1,7 +1,5 @@
-// Members of static objects computed in their own bytes
-// (src/passes/in_place_member_update.h), run in both pipelines, from
-// tests/test_in_place_member_update.py. Each program returns a value
-// that a wrong rewrite changes.
+// Each program returns a value that a wrong rewrite of
+// src/passes/in_place_member_update.h changes.
 #include <string>
 
 #include "doctest.h"
@@ -11,8 +9,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Runs the declarations of `_PC` followed by `body` in both pipelines
-// and checks what `main` returns.
 void check(const char* body, std::int64_t expected) {
   const std::string src = std::string(R"c(
 #include <stdint.h>

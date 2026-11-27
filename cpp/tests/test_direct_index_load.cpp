@@ -1,5 +1,4 @@
-// The unit tests of tests/test_direct_index_load.py, ported. The
-// simulator's runs are in test_direct_index_load_sim.cpp.
+// The unit tests of tests/test_direct_index_load.py, ported.
 #include "asm_text.h"
 #include "doctest.h"
 #include "passes/direct_index_load.h"

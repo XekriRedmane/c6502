@@ -1,5 +1,3 @@
-// A program whose blocks src/passes/cross_jump.h joins, run in both
-// pipelines, from tests/test_cross_jump.py.
 #include <vector>
 
 #include "doctest.h"

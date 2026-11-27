@@ -1,5 +1,5 @@
 // The tests of tests/test_carry_in_add.py that run the pass on asm,
-// ported. The simulator's runs are in test_carry_in_add_sim.cpp.
+// ported.
 #include <string>
 
 #include "asm_text.h"

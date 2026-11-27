@@ -1,6 +1,5 @@
 // The tests of tests/test_const_qualifier.py that read the `-S -O`
-// text: what a `volatile` read or write keeps. The simulator's runs are
-// in test_const_qualifier_sim.cpp.
+// text: what a `volatile` read or write keeps.
 #include <string>
 
 #include "compile_case.h"

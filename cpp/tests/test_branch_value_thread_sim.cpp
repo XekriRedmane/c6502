@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_branch_value_thread.py: a program whose
-// branches apply_branch_value_thread (src/passes/branch_value_thread.h)
-// sends past the tests its path has already decided stores the values it
-// computes in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

@@ -1,5 +1,5 @@
 // The tests of tests/test_bool.py that read the `-S` text or run the
-// TAC interpreter. The simulator's runs are in test_bool_sim.cpp.
+// TAC interpreter.
 #include <sstream>
 #include <stdexcept>
 #include <string>

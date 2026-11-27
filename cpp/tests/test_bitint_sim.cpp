@@ -1,7 +1,3 @@
-// Every operator on the bit-precise integer types, `_BitInt(N)` for N
-// from 2 to 64 and `unsigned _BitInt(N)` for N from 1 to 64, in the
-// simulator, from test_bitint_sim.py.
-//
 // Each case is one small function that applies one operator to its
 // parameters, so that neither pipeline can fold it, and `main` calls it
 // twice with different operands and stores each result in a global.
@@ -80,10 +76,10 @@ std::string literal(Int v, int size = 8) {
 
 struct Case {
   std::string name;
-  std::string text;                // the function, named f_<name>
-  std::vector<std::string> calls;  // the argument lists of the calls
+  std::string text;
+  std::vector<std::string> calls;
   std::string rtype;
-  int size;                        // bytes of the result
+  int size;
   std::string what;
 };
 
@@ -162,7 +158,6 @@ std::vector<Case> operator_cases() {
         add(op, t + " f_" + tag + "_" + op + "(" + t + " a) { return " + sym + "a; }\n", {cast(c0), cast(c1)}, t,
             size, op);
       }
-      // Conversions out of the type and into it.
       struct Other {
         const char* c;
         int size;

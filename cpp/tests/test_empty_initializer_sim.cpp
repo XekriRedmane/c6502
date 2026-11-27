@@ -1,6 +1,3 @@
-// A program that checks every byte of each kind of object initialized by
-// C23's `{}` or by a braced scalar, in each storage class, run in both
-// pipelines, from tests/test_empty_initializer.py.
 #include <string>
 #include <tuple>
 #include <vector>
@@ -179,8 +176,6 @@ int main(void) {
 }
 )c";
 
-// Returns `text` with every `old` replaced by `with`, as Python's
-// `str.replace` does.
 std::string replace_all(std::string text, const std::string& old, const std::string& with) {
   for (std::size_t at = text.find(old); at != std::string::npos; at = text.find(old, at + with.size())) {
     text.replace(at, old.size(), with);

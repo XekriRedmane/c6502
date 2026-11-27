@@ -1,6 +1,3 @@
-// The simulator tests of tests/test_counter_to_index_reg.py: a delay loop
-// whose counter src/passes/counter_to_index_reg.h moves into an index
-// register runs its passes in both pipelines.
 #include <cstdint>
 #include <string>
 #include <tuple>

@@ -1,6 +1,3 @@
-// Two pointers to one buffer, which the asm-level aliasing predicate
-// must take as possibly the same address, run in both pipelines, from
-// tests/test_asm_aliasing.py.
 #include "doctest.h"
 #include "sim_case.h"
 

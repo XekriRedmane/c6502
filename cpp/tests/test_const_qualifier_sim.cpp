@@ -1,5 +1,3 @@
-// Programs that use the `const` and `volatile` qualifiers (C99 §6.7.3),
-// run in the simulator, from tests/test_const_qualifier.py.
 #include <cstdint>
 #include <string>
 
@@ -10,7 +8,6 @@ namespace c6502::suite {
 
 namespace {
 
-// Checks that `main` returns `want`, read as signed, in both pipelines.
 void check_returns(const std::string& src, std::int64_t want) {
   for (const bool optimize : {false, true}) {
     INFO("optimize=" << optimize);

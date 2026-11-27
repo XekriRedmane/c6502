@@ -1,5 +1,4 @@
-// The `-S -O` text of tests/test_compare_subtract.py's functions. The
-// simulator's runs are in test_compare_subtract_sim.cpp.
+// The `-S -O` text of tests/test_compare_subtract.py's functions.
 #include <stdexcept>
 #include <string>
 #include <vector>

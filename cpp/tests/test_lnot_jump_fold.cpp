@@ -1,6 +1,5 @@
 // The `-S -O` text of tests/test_lnot_jump_fold.py's `if (!a)`, which
-// is one inverted branch with no 0-or-1 value. The simulator's runs are
-// in test_lnot_jump_fold_sim.cpp.
+// is one inverted branch with no 0-or-1 value.
 #include <string>
 
 #include "compile_case.h"

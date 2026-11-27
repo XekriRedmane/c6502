@@ -1,7 +1,3 @@
-// The simulator tests of tests/test_coalescing.py: a byte loop whose
-// counter the asm-level move coalescing merges with its phi computes its
-// sum, and a shift's temporary that the byte merge keeps apart from a
-// live operand gives the value C does.
 #include <cstdint>
 #include <string>
 #include <tuple>
@@ -16,10 +12,8 @@ namespace c6502::suite {
 namespace {
 
 namespace coalescing_end_to_end {
-// Programs going through the full pipeline.
 TEST_CASE("coalescing: uchar loop correct sum") {
-  // Same loop as above, but verify the simulator actually
-  // computes 0+1+2+3+4 = 10 with the coalesced code.
+  // 0 + 1 + 2 + 3 + 4 = 10.
   std::string src = R"c(#include <stdint.h>
 int main(void) {
     uint8_t total = 0;

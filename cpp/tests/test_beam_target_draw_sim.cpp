@@ -1,12 +1,3 @@
-// `beam_target_draw` run in both pipelines with recording stubs for
-// `draw_sprite` and `score_add`, from tests/test_beam_target_draw_sim.py.
-//
-// The scenarios cover the idle gate, the gate on a delta of zero, a
-// chase with no hit at two of the clamp's boundaries, a hit at slot 3
-// (the loop's entry), a hit at slot 0 (after the whole loop), a hit at
-// slot 3 that hides one at slot 0 (the early return), a column too low,
-// a row out of range, and a slot with its flag clear. Each scenario
-// records 16 bytes of state.
 #include <cstdint>
 #include <vector>
 

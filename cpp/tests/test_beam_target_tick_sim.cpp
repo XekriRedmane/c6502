@@ -1,10 +1,3 @@
-// The simulator tests of tests/test_beam_target_tick_sim.py:
-// `beam_target_tick` plays a jingle note while `beam_snd_ctr` is
-// nonnegative as an int8_t, and then dispatches on `beam_state` (attack
-// $FX descends toward `floor_y_table[state & $0F]`, chase $01..$7F
-// ascends toward `floor_ceil[state] + 1`, and idle $00 seeds from
-// `beam_seed_floor` when `beam_tick` is 0). Each scenario logs the state
-// after the call, and both pipelines log the bytes computed by hand.
 #include <cstdint>
 #include <string>
 #include <tuple>

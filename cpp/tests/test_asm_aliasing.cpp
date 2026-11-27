@@ -2,7 +2,6 @@
 // one case per Python test with each of its assertions. The Python
 // tests' module-level state, `set_user_zp_globals` and the
 // `pointer_proof` block, is the `AsmContext` that each call takes here.
-// The simulator's runs are in test_asm_aliasing_sim.cpp.
 #include <memory>
 
 #include "asm_ast.h"

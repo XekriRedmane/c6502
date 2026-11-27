@@ -1,8 +1,5 @@
-// A compare and a subtract of the same operands made one subtract
-// (src/passes/optimization/compare_subtract.h), run in both pipelines,
-// from tests/test_compare_subtract.py. The calls make each compare go
-// both ways, and some signed operands' difference overflows on the side
-// of the branch that doesn't use it.
+// The calls make each compare go both ways, and some signed operands'
+// difference overflows on the side of the branch that doesn't use it.
 #include <cctype>
 #include <string>
 #include <vector>
@@ -25,8 +22,6 @@ struct Case {
   std::vector<Call> calls;
 };
 
-// Returns the part of `text` after the first `after` and before the
-// first `before` that follows it.
 std::string between(const std::string& text, const std::string& after, const std::string& before) {
   const std::size_t start = text.find(after);
   REQUIRE(start != std::string::npos);

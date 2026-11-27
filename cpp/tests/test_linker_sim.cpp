@@ -1,10 +1,3 @@
-// The simulator tests of tests/test_linker.py: units compiled with
-// `-c -O` and linked with the simulator's helper addresses run, with a
-// cycle of calls that save the hardware stack, slots below a full pool,
-// code run through a pointer parameter kept in each function whose slots
-// the link moves apart, `static` functions of one name in two units, and
-// one copy of the halves of tables of row addresses with the same
-// bytes.
 #include <cstdint>
 #include <map>
 #include <set>
@@ -23,7 +16,6 @@
 namespace c6502::suite {
 namespace {
 
-// Returns the `name EQU $addr` bindings in a linked file's text.
 std::map<std::string, std::int64_t> equs(const std::string& text) {
   std::map<std::string, std::int64_t> out;
   for (const std::string& line : lines(text)) {

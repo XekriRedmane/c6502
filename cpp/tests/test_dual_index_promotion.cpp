@@ -1,6 +1,5 @@
 // The tests of tests/test_dual_index_promotion.py that check the pass's
-// instructions, ported. The simulator's runs are in
-// test_dual_index_promotion_sim.cpp.
+// instructions, ported.
 #include <string>
 #include <vector>
 

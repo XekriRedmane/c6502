@@ -1,5 +1,3 @@
-// A program that uses C23's `nullptr`, `nullptr_t`, and <stddef.h>, run
-// in both pipelines, from tests/test_c23_nullptr.py.
 #include "doctest.h"
 #include "sim_case.h"
 

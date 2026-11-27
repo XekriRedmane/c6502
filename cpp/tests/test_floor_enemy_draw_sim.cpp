@@ -1,10 +1,7 @@
-// `floor_enemy_draw` run in both pipelines with a `draw_sprite` that
-// records its arguments, from tests/test_floor_enemy_draw_sim.py.
-//
-// The program also covers the fix to `hwreg_eligibility` for
-// `IndexedData`. Before it, the eligibility scan took an `IndexedData`
-// operand as a Mov peer and pinned a Pseudo to X, and the assembler
-// rejected the result with "unsupported Mov: IndexedData(name='enemy_col',
+// The program covers the fix to `hwreg_eligibility` for `IndexedData`.
+// Before it, the eligibility scan took an `IndexedData` operand as a
+// Mov peer and pinned a Pseudo to X, and the assembler rejected the
+// result with "unsupported Mov: IndexedData(name='enemy_col',
 // ..., index=X()) -> Reg(reg=X())".
 #include <cstdint>
 #include <vector>

@@ -1,6 +1,3 @@
-// Programs whose comparisons src/passes/optimization/cmp_zero_jump_fold.h
-// folds into their jumps or narrows, run in the simulator, from
-// tests/test_cmp_zero_jump_fold.py.
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -15,7 +12,6 @@ namespace c6502::suite {
 
 namespace {
 
-// What `main` returns, read as signed, unoptimized and under -O.
 std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
   return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
 }

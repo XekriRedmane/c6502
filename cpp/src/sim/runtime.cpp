@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "asdl/runtime.h"
+#include "binutils/opcodes.h"
 #include "fp_arith.h"
 #include "rtlib/helpers.h"
 #include "sim/assembler.h"
@@ -229,7 +230,9 @@ Runtime build_runtime(const passes::RuntimeLayout& layout) {
   rt.helper_image.assign(assembled.image.begin() + kHelperOrigin, assembled.image.begin() + assembled.code_end);
   std::int64_t cursor = assembled.code_end;
   rt.symbols["icall"] = cursor;
-  rt.helper_image.insert(rt.helper_image.end(), {0x6C, static_cast<std::uint8_t>(layout.dptr), 0x00});
+  const std::uint8_t jmp_indirect = *binutils::opcodes::opcode("JMP", binutils::opcodes::Mode::kInd);
+  rt.helper_image.insert(rt.helper_image.end(), {jmp_indirect, static_cast<std::uint8_t>(layout.dptr & 0xFF),
+                                                 static_cast<std::uint8_t>(layout.dptr >> 8)});
   cursor = (cursor + 3 + 0xF) & ~std::int64_t{0xF};
   for (const std::string& name : hooked_helpers()) {
     rt.symbols[name] = cursor;

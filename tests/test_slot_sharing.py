@@ -7,9 +7,10 @@ and register parameters, which get no slot.
 their callee's bytes, from the `share` link-metadata records and the
 code, and runs each in both pipelines. `TestAcrossUnits` links two
 units, where a `const` declaration lets a caller keep a value in the
-bytes of a function defined in the other, and checks the linker's
-errors when the promise doesn't hold. `TestPinnedParams` and
-`TestRegisterParams` cover the other two.
+bytes of a function defined in the other, and runs the program.
+`TestPinnedParams` and `TestRegisterParams` cover the other two. The
+tests that read only the `-O` text or a link's errors are doctest
+cases in cpp/tests/test_slot_sharing.cpp.
 
 Under `-O`, a function whose declaration names no register takes its
 leading parameters in A and X (`abi_selection._default_param_registers`),
@@ -199,36 +200,6 @@ int main(void) {
         self.assertEqual(_shares(_codegen(src)), [])
         self._check_runs(src, 10 + 3 + 10)
 
-    def test_global_forwarder_dropped_before_its_share(self) -> None:
-        # `store` passes its parameter on to `push` with it live across
-        # `next_byte`, in another unit, which might call `store` (rule
-        # 3), so `store` can't keep it in `push`'s bytes. `peek` can
-        # keep the value it pops there across `push(7, v)`, since `push`
-        # is static. It had been dropped along with `store`, whose
-        # external linkage made the share's owners global.
-        src = """
-        #include <stdint.h>
-        uint8_t next_byte(void);
-        void fail(void);
-        uint16_t stack[8];
-        uint8_t sp;
-        static void push(uint8_t top [[c6502::in_a]], uint16_t value) {
-            stack[sp++] = value;
-            if (sp > top) fail();
-        }
-        static uint16_t pop(void) { return stack[--sp]; }
-        void store(uint8_t top [[c6502::in_a]], uint16_t value) {
-            if (next_byte() == 0) push(top, value);
-        }
-        uint16_t peek(void) { uint16_t v = pop(); push(7, v); return v; }
-        """
-        asm = _codegen(src)
-        shares = _shares(asm)
-        self.assertEqual(len(shares), 1, shares)
-        self.assertIn("holder=peek", shares[0])
-        self.assertNotIn("member=store:", shares[0])
-        self.assertNotIn("__local_peek__", " ".join(_body(asm, "peek")))
-
     def test_callee_steps_a_copy(self) -> None:
         # `sum` steps `p` through the bytes, which out of SSA is a copy
         # of the parameter, so the parameter's bytes stay as they were
@@ -327,44 +298,12 @@ def _link(sources: list[str]) -> tuple[int, str, str]:
 @no_inlining()
 class TestAcrossUnits(unittest.TestCase):
 
-    def test_const_declaration_lets_the_caller_hold(self) -> None:
-        shares = _shares(_codegen(_UNIT_USE))
-        self.assertEqual(len(shares), 1, shares)
-        self.assertIn("member=add_page:", shares[0])
-        self.assertIn("holder=main", shares[0])
-        self.assertIn("live=main:add_page", shares[0])
-
-    def test_without_const_nothing_is_held(self) -> None:
-        src = _UNIT_USE.replace("*const p", "*p")
-        self.assertEqual(_shares(_codegen(src)), [])
-
     def test_linked_program_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([_UNIT_DEF, _UNIT_USE])
         self.assertEqual(rc, 0, err)
         self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          _PAGES_SUM)
-
-    def test_something_it_calls_writes_the_bytes(self) -> None:
-        # `add_page` passes its parameter on to `scan`, so the two
-        # share bytes, and then `reset` passes `scan` another pointer
-        # while `main` still holds its own there.
-        src = """
-        #include <stdint.h>
-        uint16_t total;
-        uint8_t zeros[256];
-        static void scan(uint8_t i [[c6502::in_a]], const uint8_t *p) {
-            do { total += p[i]; i++; } while (i != 0);
-        }
-        static void reset(void) { scan(0, zeros); }
-        void add_page(uint8_t i [[c6502::in_a]], const uint8_t *const p) {
-            scan(i, p);
-            reset();
-        }
-        """
-        rc, _, err = _link([src, _UNIT_USE])
-        self.assertNotEqual(rc, 0)
-        self.assertIn("`reset`", err)
 
 
 # A routine at $D000 that returns the sum of the X bytes at ($E6),Y:
@@ -444,19 +383,6 @@ class TestPinnedParams(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 self.assertEqual(_run(src, optimize), 3 + 20)
 
-    def test_copied_when_calling_another_unit(self) -> None:
-        # `elsewhere` might call a function that takes its argument at
-        # $30.
-        asm = _codegen("""
-        void elsewhere(void);
-        unsigned char f(
-            const unsigned char *p [[c6502::zeropage(0x30)]]) {
-            elsewhere();
-            return *p;
-        }
-        """)
-        self.assertEqual(_body(asm, "f")[0], "LDA __zpabi_f__p_0")
-
     def test_needs_zp_abi(self) -> None:
         src = """
         unsigned char f(const char *s [[c6502::zeropage(0xE6)]]) {
@@ -471,14 +397,6 @@ class TestPinnedParams(unittest.TestCase):
         # Without -O, the function takes it on the soft stack,
         # as its callers pass it.
         self.assertEqual(_run(src, False), 3)
-
-    def test_declarations_agree(self) -> None:
-        with self.assertRaisesRegex(AbiSelectionError, "disagree"):
-            _codegen("""
-            void f(const char *s [[c6502::zeropage(0xE6)]]);
-            void f(const char *s) { (void)s; }
-            int main(void) { f("a"); return 0; }
-            """)
 
     def test_linked(self) -> None:
         from sim.linked import build_linked_sim
@@ -513,42 +431,9 @@ class TestPinnedParams(unittest.TestCase):
                 sim.mpu.memory[addr:addr + len(code)] = code
                 self.assertEqual(sim.run().return_int(), 10 + 5)
 
-    def test_runtime_block_moves_off_it(self) -> None:
-        src = """
-        [[c6502::zp_abi, c6502::address(0xD000)]]
-        void put(const unsigned char *p [[c6502::zeropage(0x04)]]);
-        unsigned char data[1];
-        int main(void) { put(data); return 0; }
-        """
-        asm = _codegen(src)
-        equs = _equs(asm)
-        size = int(re.search(r"hargs_size=(\d+)", asm).group(1))
-        block = set(range(equs["HARGS"], equs["HARGS"] + size))
-        for name in ("SSP", "FP", "DPTR"):
-            block |= {equs[name], equs[name] + 1}
-        self.assertFalse(block & {0x04, 0x05})
-
-    def test_recorded_for_the_linker(self) -> None:
-        asm = _codegen(_TOTAL + """
-        unsigned char data[1];
-        int main(void) { return total(data, 1); }
-        """)
-        self.assertIn("pinned=$E6,$E7,", asm)
-
 
 @needs_c6502cpp
 class TestRegisterParams(unittest.TestCase):
-
-    def test_no_slot(self) -> None:
-        asm = _codegen("""
-        unsigned char out;
-        void put(register unsigned char k [[c6502::in_a]],
-                 unsigned char *p) { *p = k; }
-        int main(void) { put(5, &out); return out; }
-        """)
-        equs = _equs(asm)
-        self.assertNotIn("__zpabi_put__k", equs)
-        self.assertEqual(equs["__zpabi_put__p_0"], 0x80)
 
     def test_kept_in_its_register_sets_no_flags(self) -> None:
         # From the calls fuzzer: `p1`'s local stays in X, where it
@@ -603,20 +488,6 @@ class TestPassedToTwoCallees(unittest.TestCase):
         return n * 16 + calls;
     }
     """
-
-    def test_one_share(self):
-        asm = _codegen(self._SRC)
-        shares = _shares(asm)
-        self.assertEqual(len(shares), 1, shares)
-        for f in ("is_a", "is_b", "is_ab"):
-            self.assertIn(f"member={f}:", shares[0])
-        equs = _equs(asm)
-        self.assertEqual(equs["__zpabi_is_a__c"], equs["__zpabi_is_b__c"])
-        self.assertEqual(equs["__zpabi_is_ab__c"], equs["__zpabi_is_b__c"])
-        # Nothing is copied between the calls.
-        self.assertFalse(any("__zpabi_" in line
-                             for line in _body(asm, "is_ab")),
-                         _body(asm, "is_ab"))
 
     def test_runs(self):
         # 'a' and 'b' are separators, 'c' and 'd' aren't. is_ab('a')

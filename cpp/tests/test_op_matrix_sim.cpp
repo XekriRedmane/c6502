@@ -110,7 +110,12 @@ Int start_value(const std::string& kind, int size) {
   return hex_repeat("", "A5", size);
 }
 
-std::pair<Int, Int> apply(const std::string& op, Int x, int size, bool is_signed) {
+struct Effect {
+  Int value;
+  Int object_after;
+};
+
+Effect apply(const std::string& op, Int x, int size, bool is_signed) {
   const Int p = size == 1 ? wrap(x, 2, true) : wrap(x, size, is_signed);
   const auto w = [&](Int v) { return wrap(v, size, is_signed); };
   if (op == "preinc") return {w(p + 1), w(p + 1)};
@@ -227,7 +232,7 @@ std::pair<std::vector<std::string>, std::string> function(const Case& c) {
   } else if (c.use == "after") {
     body = "    " + expr + ";\n    return " + obj + ";\n";
   } else if (c.use == "if") {
-    const Int value = apply(c.op->name, c.start, c.type.size, c.type.is_signed).first;
+    const Int value = apply(c.op->name, c.start, c.type.size, c.type.is_signed).value;
     body = "    if (" + expr + " == (" + t + ")(" + literal(value, c.type.is_signed) + ")) return 1;\n    return 0;\n";
   } else {
     body = "    return id_" + tag(t) + "(" + expr + ");\n";

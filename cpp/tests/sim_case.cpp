@@ -50,6 +50,11 @@ sim::Simulation build_sim(const std::string& source, Pipeline pipeline) {
   return build_sim(source, optimized(pipeline));
 }
 
+PipelineReturns both_paths(const std::string& source) {
+  return {build_sim(source, Pipeline::kUnoptimized).run().return_int_signed(),
+          build_sim(source, Pipeline::kOptimized).run().return_int_signed()};
+}
+
 sim::SimResult run_c_program(const std::string& source, bool optimize, std::uint64_t max_cycles) {
   return build_sim(source, optimize).run(max_cycles);
 }

@@ -3,21 +3,12 @@
 // tests/test_strength_reduction.py. The rewritten programs under -O give
 // what the unoptimized pipeline's helper calls give.
 #include <string>
-#include <utility>
 
 #include "doctest.h"
 #include "sim/cpu_run.h"
 #include "sim_case.h"
 
 namespace c6502::suite {
-
-namespace {
-
-std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
-}
-
-}  // namespace
 
 TEST_CASE("strength_reduction sim: two multiplies into one global") {
   // A global keeps its name in SSA form, so each multiply's temporaries

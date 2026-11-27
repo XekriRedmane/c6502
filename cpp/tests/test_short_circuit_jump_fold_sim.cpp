@@ -3,20 +3,11 @@
 // tests/test_short_circuit_jump_fold.py. Under -O they give what the
 // unoptimized pipeline gives.
 #include <string>
-#include <utility>
 
 #include "doctest.h"
 #include "sim_case.h"
 
 namespace c6502::suite {
-
-namespace {
-
-std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
-}
-
-}  // namespace
 
 TEST_CASE("short_circuit_jump_fold sim: && on unsigned chars") {
   const auto [a, b] = both_paths(R"c(#include <stdint.h>

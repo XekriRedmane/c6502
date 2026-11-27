@@ -5,7 +5,6 @@
 // was such a destination has no prologue.
 #include <sstream>
 #include <string>
-#include <utility>
 
 #include "compile_case.h"
 #include "doctest.h"
@@ -14,10 +13,6 @@
 namespace c6502::suite {
 
 namespace {
-
-std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
-}
 
 std::string extract_function_body(const std::string& text, const std::string& name) {
   std::string out;

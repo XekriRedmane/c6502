@@ -29,6 +29,15 @@ sim::Simulation build_sim(const std::string& source, const SimOptions& options =
 sim::Simulation build_sim(const std::string& source, bool optimize);
 sim::Simulation build_sim(const std::string& source, Pipeline pipeline);
 
+struct PipelineReturns {
+  std::int64_t unoptimized;
+  std::int64_t optimized;
+  bool operator==(const PipelineReturns&) const = default;
+};
+
+// Returns what `main` returns, as an `int`, in each pipeline.
+PipelineReturns both_paths(const std::string& source);
+
 sim::SimResult run_c_program(const std::string& source, bool optimize = false,
                              std::uint64_t max_cycles = sim::kDefaultMaxCycles);
 

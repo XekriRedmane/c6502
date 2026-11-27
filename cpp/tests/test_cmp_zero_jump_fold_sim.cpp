@@ -10,14 +10,6 @@
 
 namespace c6502::suite {
 
-namespace {
-
-std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
-}
-
-}  // namespace
-
 TEST_CASE("cmp_zero_jump_fold sim: a compare stored to a static another function reads is kept") {
   // The compare's result goes to a static that another function reads.
   // Its one use in `check` is the jump, but the store must stay. The fold
@@ -36,28 +28,28 @@ static void apply(uint16_t n) {
     r = n;
 }
 int main(void) { apply(check(7, 0xFFFE)); return (int)r; }
-)c") == std::pair<std::int64_t, std::int64_t>{7, 7});
+)c") == PipelineReturns{7, 7});
 }
 
 TEST_CASE("cmp_zero_jump_fold sim: a uint8_t == 0 that holds") {
   CHECK(both_paths(R"c(#include <stdint.h>
 int f(uint8_t a) { if (a == 0) return 1; return 2; }
 int main(void) { return f(0); }
-)c") == std::pair<std::int64_t, std::int64_t>{1, 1});
+)c") == PipelineReturns{1, 1});
 }
 
 TEST_CASE("cmp_zero_jump_fold sim: a uint8_t == 0 that doesn't hold") {
   CHECK(both_paths(R"c(#include <stdint.h>
 int f(uint8_t a) { if (a == 0) return 1; return 2; }
 int main(void) { return f(5); }
-)c") == std::pair<std::int64_t, std::int64_t>{2, 2});
+)c") == PipelineReturns{2, 2});
 }
 
 TEST_CASE("cmp_zero_jump_fold sim: a uint8_t != 0") {
   CHECK(both_paths(R"c(#include <stdint.h>
 int f(uint8_t a) { if (a != 0) return 1; return 2; }
 int main(void) { return f(5); }
-)c") == std::pair<std::int64_t, std::int64_t>{1, 1});
+)c") == PipelineReturns{1, 1});
 }
 
 TEST_CASE("cmp_zero_jump_fold sim: a uint16_t == 0 in a conditional expression") {
@@ -65,7 +57,7 @@ TEST_CASE("cmp_zero_jump_fold sim: a uint16_t == 0 in a conditional expression")
   CHECK(both_paths(R"c(#include <stdint.h>
 int f(uint16_t a) { return a == 0 ? 10 : 20; }
 int main(void) { return f(0) + f(7); }
-)c") == std::pair<std::int64_t, std::int64_t>{30, 30});
+)c") == PipelineReturns{30, 30});
 }
 
 TEST_CASE("cmp_zero_jump_fold sim: a loop on a narrow ordering compare ends with its count") {

@@ -151,7 +151,9 @@ the function itself.
     SSA-renamed extend source. Every narrowing looks through such a
     `Copy` to the extend behind it, since copy propagation keeps one
     that changes the signedness while the extend has other readers
-    (`i < sizeof a`, with `sizeof` an `unsigned int`).
+    (`i < sizeof a`, with `sizeof` an `unsigned int`). The operand and
+    each copy's source must be SSA names, since a global's one
+    definition in the function may come after its read.
   - `fold_narrow_and_jump_at` (`kAndZero`): folds `(ZeroExtend(uchar);
     BitwiseAnd(_, 0x80); JumpIf*)` to `JumpIfMasked` when the operand
     narrows to 1 byte — direct `LDA / BPL/BMI` at asm lowering instead

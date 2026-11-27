@@ -120,9 +120,14 @@ std::optional<asdl::Int> integer_value(const ir::Type_val& v) {
   return bit_precise::raw_value(c->const_);
 }
 
+// Whether the definition of `val` that the def index gives is the one
+// its read sees. In SSA form that holds only for an SSA name: a global
+// or an address-taken local may be written after the read, on another
+// path, or by another function, so a one-use global copied from an
+// extend in a later loop isn't that extend.
 bool narrowable_use(const ir::Var& val, const UseCount& use_count, const NameSet* ssa_dsts) {
-  if (ssa_dsts != nullptr && ssa_dsts->contains(val.name)) {
-    return true;
+  if (ssa_dsts != nullptr) {
+    return ssa_dsts->contains(val.name);
   }
   return count_of(use_count, val.name) == 1;
 }

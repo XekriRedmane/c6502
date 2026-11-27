@@ -2,6 +2,7 @@
 // text. The simulator runs stay in Python.
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "compile_case.h"
@@ -167,4 +168,35 @@ TEST_CASE("cmp_zero_jump_fold: a global byte compared with a constexpr byte is a
   const std::string body = text.substr(at);
   CHECK(suite::contains(body, "CMP   #$63"));
   CHECK_FALSE(suite::contains(body, "BVC"));
+}
+
+TEST_CASE("cmp_zero_jump_fold: a global isn't narrowed through a copy the loop after it makes") {
+  // `z < k` was narrowed through `z = (p ? i : i)` in the loop, which
+  // `z`'s one read doesn't see, into a compare of `i` before the loop
+  // set it (fuzz.stmts seed 854). The IR check reported the read of `i`
+  // that its definition doesn't dominate.
+  const std::string src =
+      "unsigned int z;\n"
+      "void f(int p, unsigned char k) {\n"
+      "  if (z < k) {\n"
+      "    for (unsigned char i = 0; i < 4; i++) z = (p ? i : i);\n"
+      "  }\n"
+      "}\n"
+      "int main(void) { z = 10; f(3, 5); return z; }\n";
+  suite::Options o;
+  o.optimize = true;
+  const suite::Tac tac = suite::tac_program(src, o);
+  for (const auto& tl : tac.program.top_level) {
+    const auto* fn = std::get_if<c6502::tac_ast::Function>(&tl);
+    if (fn == nullptr || fn->name != "f") continue;
+    const c6502::tac_ast::JumpIfCmp* jump = nullptr;
+    for (const auto& ins : fn->instructions) {
+      jump = std::get_if<c6502::tac_ast::JumpIfCmp>(&ins);
+      if (jump != nullptr) break;
+    }
+    REQUIRE(jump != nullptr);
+    const auto* left = std::get_if<c6502::tac_ast::Var>(&jump->src1);
+    const auto* right = std::get_if<c6502::tac_ast::Var>(&jump->src2);
+    CHECK(((left != nullptr && left->name == "z") || (right != nullptr && right->name == "z")));
+  }
 }

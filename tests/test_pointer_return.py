@@ -1,6 +1,8 @@
 """A function returning a pointer returns it in A (low byte) and X
 (high byte), as an `unsigned int` comes back, under both calling
-conventions and through a function pointer."""
+conventions and through a function pointer.
+
+The `-S` text is checked in cpp/tests/test_pointer_return.cpp."""
 
 import unittest
 
@@ -44,11 +46,6 @@ class TestPointerReturn(unittest.TestCase):
                 )
                 self.assertFalse(out.timed_out)
                 self.assertEqual(out.return_int(), 30 + 60 + 80 + 21 + 3)
-
-    def test_no_hargs(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._PROGRAM, optimize=True)
-        self.assertNotIn("HARGS+1", asm.split("@zp-link-meta-end")[1])
 
 
 if __name__ == "__main__":

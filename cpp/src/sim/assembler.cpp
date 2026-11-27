@@ -879,8 +879,7 @@ void Emitter::compare(const ir::Type_operand& left, const ir::Type_operand& righ
   if (left_reg == nullptr) {
     fail("Compare left must be a register; got " + repr(left));
   }
-  const bool cmp = isa<ir::A>(left_reg->reg);
-  const char* mn = cmp ? "CMP" : isa<ir::X>(left_reg->reg) ? "CPX" : "CPY";
+  const char* mn = isa<ir::A>(left_reg->reg) ? "CMP" : isa<ir::X>(left_reg->reg) ? "CPX" : "CPY";
   if (const auto* imm = as<ir::Imm>(right)) {
     out.push_back(op_code(mn, Mode::kImm));
     out.push_back(imm_byte(imm->value));
@@ -890,27 +889,12 @@ void Emitter::compare(const ir::Type_operand& left, const ir::Type_operand& righ
   } else if (is_data_or_zp(right)) {
     zp_or_abs(mn, resolve_abs(right), out);
   } else if (const auto* d = as<ir::IndexedData>(right)) {
-    if (!cmp) {
-      fail("Compare with left=" + repr(left) +
-           " can't use an IndexedData right (CPX/CPY have no absolute,X / absolute,Y "
-           "addressing modes)");
-    }
     abs_indexed(mn, resolve_indexed(*d), d->index, out);
   } else if (needs_ldy_setup(right)) {
-    if (!cmp) {
-      fail("Compare with left=" + repr(left) + " requires Imm/Data/ZP right; got " +
-           repr(right));
-    }
     indy(mn, right, out);
   } else if (isa<ir::IndirectY>(right)) {
-    if (!cmp) {
-      fail("Compare with left=" + repr(left) + " can't use IndirectY right");
-    }
     indy_no_y_setup(mn, out);
   } else if (isa<ir::IndirectZpY, ir::IndirectZp>(right)) {
-    if (!cmp) {
-      fail("Compare with left=" + repr(left) + " can't use an indirect right");
-    }
     if (const auto* zy = as<ir::IndirectZpY>(right)) {
       indy_zp_no_y_setup(mn, zy->address, out);
     } else {

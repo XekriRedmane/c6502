@@ -20,6 +20,9 @@ Coverage:
   * Asm shape: the canonical `static T * const` indexed write
     collapses to a single `STA $XXXX,X` instruction.
   * End-to-end correctness via the sim.
+
+The `-S` text is checked in
+cpp/tests/test_recognize_indexed_store_source.cpp.
 """
 from __future__ import annotations
 
@@ -27,69 +30,6 @@ import unittest
 
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestIndexedStoreAsmShape(unittest.TestCase):
-    """Source-level checks on the emitted asm."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_canonical_indexed_store_collapses(self) -> None:
-        # The textbook case: a `static T * const` with an
-        # uchar offset folds to `STA $XXXX,X`. The full chain
-        # is: const-static read fold + reassoc + recognize.
-        src = (
-            "#include <stdint.h>\n"
-            "static uint8_t * const buf = (uint8_t * const)0x4123;\n"
-            "void put(uint8_t value, uint8_t col) {\n"
-            "    buf[col] = value;\n"
-            "}\n"
-            "int main(void) { put(0x42, 5); return 0; }\n"
-        )
-        asm = self._compile(src)
-        # Expect `STA $4123,X` somewhere — the canonical indexed-
-        # absolute store with a folded 16-bit base.
-        self.assertIn("STA   $4123,X", asm)
-        # No DPTR routing for this access.
-        # (Other accesses might still use DPTR; we only assert the
-        # presence of the optimized form.)
-
-    def test_const_offset_indexed_store(self) -> None:
-        # Combine a `static T * const` with an indexing offset
-        # constant: `buf[K + col] = v` where K is a compile-time
-        # constant. Reassoc folds K into the base, then recognize
-        # fires.
-        src = (
-            "#include <stdint.h>\n"
-            "static uint8_t * const buf = (uint8_t * const)0x4000;\n"
-            "void put(uint8_t value, uint8_t col) {\n"
-            "    buf[100 + col] = value;\n"
-            "}\n"
-            "int main(void) { put(0x77, 3); return 0; }\n"
-        )
-        asm = self._compile(src)
-        # Base is 0x4000 + 100 = 0x4064.
-        self.assertIn("STA   $4064,X", asm)
-
-    def test_int_index_does_not_fold(self) -> None:
-        # `int col` is 2-byte typed; the high byte isn't
-        # provably zero, so the absolute,X form is unsound. The
-        # unoptimized indirect path stays.
-        src = (
-            "#include <stdint.h>\n"
-            "static uint8_t * const buf = (uint8_t * const)0x4000;\n"
-            "void put(uint8_t value, int col) {\n"
-            "    buf[col] = value;\n"
-            "}\n"
-            "int main(void) { put(0x42, 5); return 0; }\n"
-        )
-        asm = self._compile(src)
-        # No absolute,X store here. The address is computed at
-        # runtime through DPTR.
-        self.assertNotIn("STA   $4000,X", asm)
 
 
 @needs_c6502cpp

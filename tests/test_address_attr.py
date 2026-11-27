@@ -2,159 +2,16 @@
 `extern` objects (`cpp/src/passes/zp_globals.h`, "Fixed addresses outside
 zero page").
 
-Covers parsing in each position, the rules the type checker
-enforces (no definition, every declaration agreeing), placement
-errors, the generated `EQU` lines, simulator runs against a stand-in
-routine and stand-in memory, and linking several units that use the
-same fixed names.
+Covers simulator runs against a stand-in routine and stand-in memory.
+The tests of the type checker's rules, the generated `EQU` lines, the
+conventions such a function may have, and links of units that use the
+same fixed names are doctest cases in cpp/tests/test_address_attr.cpp.
 """
 from __future__ import annotations
 
-import io
-import re
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
 
-from errors import TypeCheckError
 from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-
-def _codegen(src: str, optimize: bool = True) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _equ(asm: str) -> dict[str, int]:
-    return {
-        m.group(1): int(m.group(2), 16)
-        for m in re.finditer(r"^(\S+)\tEQU\t\$([0-9A-F]+)$", asm, re.M)
-    }
-
-
-class TestTypeCheck(unittest.TestCase):
-
-    def test_definitions_rejected(self) -> None:
-        bad = {
-            "tentative definition":
-                "unsigned char x [[c6502::address(0xC000)]];\n",
-            "initializer":
-                "extern unsigned char x [[c6502::address(0xC000)]]"
-                " = 1;\n",
-            "later definition":
-                "extern unsigned char x [[c6502::address(0xC000)]];\n"
-                "unsigned char x = 3;\n",
-            "function defined later":
-                "[[c6502::address(0x1000)]] void f(void);\n"
-                "void f(void) {}\n",
-            "function defined earlier":
-                "void f(void) {}\n"
-                "[[c6502::address(0x1000)]] void f(void);\n",
-            "conflicting function addresses":
-                "[[c6502::address(0x1000)]] void f(void);\n"
-                "[[c6502::address(0x2000)]] void f(void);\n",
-            "conflicting object addresses":
-                "extern unsigned char x [[c6502::address(0xC000)]];\n"
-                "extern unsigned char x [[c6502::address(0xC001)]];\n",
-            "block-scope static":
-                "int main(void) { static unsigned char x "
-                "[[c6502::address(0xC000)]]; return x; }\n",
-            "automatic":
-                "int main(void) { unsigned char x "
-                "[[c6502::address(0xC000)]]; return x; }\n",
-        }
-        for label, src in bad.items():
-            with self.subTest(label):
-                with self.assertRaises(TypeCheckError):
-                    _codegen(src)
-
-    def test_block_scope_extern(self) -> None:
-        asm = _codegen(
-            "int main(void) {\n"
-            "  extern unsigned char x [[c6502::address(0xC000)]];\n"
-            "  return x;\n"
-            "}\n"
-        )
-        self.assertEqual(_equ(asm)["x"], 0xC000)
-
-
-class TestCodegen(unittest.TestCase):
-
-    def test_equs_and_absolute_store(self) -> None:
-        src = (
-            "[[c6502::zp_abi, c6502::address(0xFDED)]]\n"
-            "extern void COUT(register unsigned char c);\n"
-            "extern volatile unsigned char scratch "
-            "[[c6502::address(0x0779)]];\n"
-            "void f(void) { COUT(0xC1); scratch = 0x91; }\n"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _codegen(src, optimize=optimize)
-                equ = _equ(asm)
-                self.assertEqual(equ["COUT"], 0xFDED)
-                self.assertEqual(equ["scratch"], 0x0779)
-                self.assertIn("JSR   COUT", asm)
-                self.assertIn("STA   scratch", asm)
-                # No pointer is staged in DPTR for the store.
-                self.assertNotRegex(asm, r"STA\s+DPTR|\(DPTR\)")
-                # Nothing is defined for either name.
-                self.assertNotRegex(asm, r"(?m)^(COUT|scratch):")
-                self.assertIn("COUT\tEQU\t$FDED", asm)
-                self.assertIn("scratch\tEQU\t$0779", asm)
-                # The argument is in A, so COUT's parameter slot is
-                # never written and gets no EQU.
-                self.assertNotIn("__zpabi_COUT", asm.split("@zp-link")[0])
-
-    def test_without_zp_abi_uses_soft_stack(self) -> None:
-        # The default zp_abi promotion under -O doesn't
-        # apply to a function with a fixed address.
-        src = (
-            "[[c6502::address(0x1000)]] void f(unsigned char c);\n"
-            "void g(unsigned char c) { f(c); }\n"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _codegen(src, optimize=optimize)
-                call = asm.index("JSR   f")
-                self.assertIn("STA   (SSP),Y", asm[:call])
-                self.assertNotIn("__zpabi_f_", asm)
-
-
-class TestConventionErrors(unittest.TestCase):
-
-    def test_rejected_declarations(self) -> None:
-        from errors import AbiSelectionError
-        bad = {
-            "register without zp_abi": (
-                "[[c6502::address(0x1000)]]\n"
-                "void f(register unsigned char c);\n"
-                "void g(void) { f(1); }\n"
-            ),
-            "parameter not in a register": (
-                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
-                "void f(register unsigned char a, unsigned char b);\n"
-                "void g(void) { f(1, 2); }\n"
-            ),
-            "4-byte result": (
-                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
-                "unsigned long f(void);\n"
-                "void g(void) { f(); }\n"
-            ),
-            "address taken": (
-                "[[c6502::zp_abi, c6502::address(0x1000)]]\n"
-                "void f(register unsigned char c);\n"
-                "void g(void) { void (*p)(unsigned char) = f; p(1); }\n"
-            ),
-        }
-        for label, src in bad.items():
-            for optimize in (False, True):
-                with self.subTest(label, optimize=optimize):
-                    with self.assertRaises(AbiSelectionError):
-                        _codegen(src, optimize=optimize)
 
 
 class TestSim(unittest.TestCase):
@@ -316,61 +173,6 @@ class TestSim(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 got = build_sim(src, optimize=optimize).run().return_int()
                 self.assertEqual(got & 0xFFFF, 0xC800)
-
-
-@needs_c6502cpp
-class TestLink(unittest.TestCase):
-
-    _ROM = (
-        "[[c6502::zp_abi, c6502::address(0xFDED)]]\n"
-        "extern void COUT(register unsigned char c);\n"
-        "extern volatile unsigned char KBD "
-        "[[c6502::address(0xC000)]];\n"
-    )
-
-    def _compile(self, src: str, path: Path) -> None:
-        from compile import main as compile_main
-        with patch("sys.stdin", io.StringIO(src)):
-            self.assertEqual(compile_main([
-                "compile.py", "-", "-c", "-O",
-                "-o", str(path),
-            ]), 0)
-
-    def _link(self, paths: list[Path], out: Path) -> tuple[int, str]:
-        from tests.link_helpers import link_capture_stderr
-        return link_capture_stderr(paths, out)
-
-    def test_fixed_names_bound_once(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.o", "b.o", "out"))
-            self._compile(
-                self._ROM + "void say(unsigned char c);\n"
-                "int main(void) { say(KBD); return 0; }\n", a,
-            )
-            self._compile(
-                self._ROM + "void say(unsigned char c) { COUT(c); }\n", b,
-            )
-            rc, err = self._link([a, b], out)
-            self.assertEqual(rc, 0, err)
-            from tests.link_helpers import linked_text
-            text = linked_text(out)
-            self.assertEqual(text.count("COUT\tEQU\t$FDED"), 1)
-            self.assertEqual(text.count("KBD\tEQU\t$C000"), 1)
-
-    def test_conflicting_addresses_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            a, b, out = (Path(tmp) / n for n in ("a.o", "b.o", "out"))
-            self._compile(
-                "[[c6502::address(0xFDED)]] void out(unsigned char c);\n"
-                "void f(void) { out(1); }\n", a,
-            )
-            self._compile(
-                "[[c6502::address(0xFDF0)]] void out(unsigned char c);\n"
-                "void g(void) { out(2); }\n", b,
-            )
-            rc, err = self._link([a, b], out)
-            self.assertEqual(rc, 1)
-            self.assertIn("'out' is at $FDF0", err)
 
 
 if __name__ == "__main__":

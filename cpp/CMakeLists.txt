@@ -92,3 +92,11 @@ target_compile_definitions(c6502_tests PRIVATE C6502_SOURCE_ROOT="${C6502_ROOT}"
 
 enable_testing()
 add_test(NAME c6502_tests COMMAND c6502_tests)
+# The checks after Python (README.md): the golden files, whose last line
+# counts the jobs that differ, and the frozen captures.
+add_test(NAME check_golden COMMAND c6502cpp check-golden --root "${C6502_ROOT}" -j 12
+         WORKING_DIRECTORY "${C6502_ROOT}")
+set_tests_properties(check_golden PROPERTIES FAIL_REGULAR_EXPRESSION " [1-9][0-9]* differ")
+add_test(NAME check_frozen COMMAND c6502cpp check-frozen "${C6502_ROOT}/cpp/tests/frozen"
+         WORKING_DIRECTORY "${C6502_ROOT}")
+set_tests_properties(check_frozen PROPERTIES FAIL_REGULAR_EXPRESSION "MISMATCH|DIFFER")

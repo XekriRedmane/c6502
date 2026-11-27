@@ -4,8 +4,8 @@
 
 ```sh
 uv run python -m unittest                                          # all
-uv run python -m unittest tests.test_golden                         # one module
-uv run python -m unittest tests.test_chapter_1.TestChapter1Valid   # one class
+uv run python -m unittest tests.test_sim_smoke                      # one module
+uv run python -m unittest tests.test_sim_smoke.TestBasics           # one class
 C6502_CHECK_IR=1 uv run python -m unittest                         # with IR checks
 ```
 

@@ -352,7 +352,7 @@ Key runtime conventions:
 # --config, and add -DCMAKE_BUILD_TYPE=Release to the first command.
 cmake -S cpp -B cpp/build -G "Visual Studio 17 2022" -A x64
 cmake --build cpp/build --config Release --parallel
-ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ unit tests
+ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ tests, check-golden, check-frozen
 cpp/build/bin/c6502cpp check-golden -j 12      # the compiler against golden/
 cpp/build/bin/c6502cpp check-golden -j 12 --update   # golden/ again, after a change made on purpose
 cpp/build/bin/c6502cpp check-frozen            # the passes against cpp/tests/frozen

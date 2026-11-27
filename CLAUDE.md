@@ -41,8 +41,8 @@ and drive the compiler from there.
   (sim/lockstep.py).
 - `binutils/elf.py` and `binutils/opcodes.py` read executables and
   decode opcodes for the simulator.
-- `bit_precise.py` and `builtin_functions.py` are read by the tests,
-  and `builtin_functions.py` by the simulator's BCD hooks too.
+- `builtin_functions.py` is read by the tests and by the simulator's
+  BCD hooks.
   `diagnostics.py` receives the warnings that cpp_backend.py passes
   back from a compile, which the tests collect with it.
 - `passes/runtime_layout.py`, `passes/dataclass_fields.py`, and
@@ -732,12 +732,6 @@ Root-level files:
   (`diagnostics::warn`, `Collecting`), and `c6502cpp compile` prints
   each C input's to stderr as `<file>: warning: line N: <message>`,
   before any error (`print_warnings` in cpp/src/compile_command.cpp).
-- `bit_precise.py` — C23's bit-precise types in Python, for the
-  tests. The compiler's are cpp/src/bit_precise.h: `kBitIntMaxWidth`,
-  the storage size and type of each, the layout of the TAC constants
-  of the 3-, 5-, 6-, and 7-byte integers, the width of a `wb`
-  constant, and wrapping at N bits. Its comments describe the
-  representation.
 - `builtin_functions.py` — the builtins in Python, for the
   simulator's hooks and the tests. The compiler's are
   cpp/src/builtin_functions.h: the builtins' names and argument

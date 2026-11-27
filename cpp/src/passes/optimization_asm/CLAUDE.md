@@ -73,7 +73,7 @@ lives in [../optimization/CLAUDE.md](../optimization/CLAUDE.md).
   them) added to `frame_names`, until a run spills nothing new.
   Eighteen 8-byte values live at once in a soft-stack function had
   spilled while an array index stayed in Y across their reads
-  (`TestFrameAccessWritesY` in `tests/test_asm_regalloc.py`).
+  (cpp/tests/test_asm_regalloc_sim.cpp).
 - `apply_coloring.h` — applies the coloring map produced by
   `regalloc` to every operand in the function.
 - `cfg.h` — asm-level control-flow graph (basic blocks, dominators,

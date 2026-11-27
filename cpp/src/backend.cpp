@@ -31,6 +31,7 @@
 #include "passes/registry_control_flow.h"
 #include "passes/text_stages.h"
 #include "passes/zp_globals.h"
+#include "sim/cpu_run.h"
 #include "stage_checks.h"
 #include "tac_sim_modes.h"
 
@@ -395,10 +396,11 @@ std::string respond(const std::string& text) {
   const std::string mode(lines.value("mode"));
   const bool text_stage = mode == "lex" || mode == "parse" || mode == "resolve" || mode == "tac";
   if (mode != "source" && mode != "source-text" && !text_stage && mode != "objects" &&
-      mode != "link" && !tac_sim_modes::is_tac_mode(mode)) {
+      mode != "link" && !tac_sim_modes::is_tac_mode(mode) && mode != "cpu-run") {
     throw std::runtime_error("unknown backend mode " + mode);
   }
   const json::Value kwargs = json::parse(lines.value("args"));
+  if (mode == "cpu-run") return sim::cpu_run::respond(kwargs, lines.section("image"));
   // `check_ir` turns the IR checks on for the request, as
   // `C6502_CHECK_IR=1` or `ir_check.enable()` does in Python.
   const passes::ir_check::Enabled checks(ca::boolean(kwargs.get("check_ir"), false));

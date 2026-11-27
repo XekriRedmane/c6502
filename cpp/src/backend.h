@@ -142,6 +142,11 @@ namespace c6502::backend {
 // interpreter on a source, with the request of the mode `source`
 // (src/tac_sim_modes.h describes their responses).
 //
+// The mode `cpu-run` runs the simulator's CPU for the lockstep mode of
+// sim/harness.py. Its request has an `image` section of the 65,536
+// bytes of memory in place of `source`, and src/sim/cpu_run.h gives its
+// arguments and its response.
+//
 // Throws `std::runtime_error` for a request that can't be read, and
 // passes on the `InternalError`s of the passes.
 std::string respond(const std::string& text);

@@ -1,0 +1,68 @@
+// The simulator tests of tests/test_coalescing.py: a byte loop whose
+// counter the asm-level move coalescing merges with its phi computes its
+// sum, and a shift's temporary that the byte merge keeps apart from a
+// live operand gives the value C does.
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <vector>
+
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
+
+namespace c6502::suite {
+namespace {
+
+namespace coalescing_end_to_end {
+// Programs going through the full pipeline.
+TEST_CASE("coalescing: uchar loop correct sum") {
+  // Same loop as above, but verify the simulator actually
+  // computes 0+1+2+3+4 = 10 with the coalesced code.
+  std::string src = R"c(#include <stdint.h>
+int main(void) {
+    uint8_t total = 0;
+    for (uint8_t i = 0; i < 5; i++) total = total + i;
+    return total;
+}
+)c";
+  auto s = build_sim(src, true);
+  auto result = s.run(5'000'000);
+  CHECK_FALSE(result.timed_out);
+  CHECK((result.return_int() & 0xFFFF) == 10);
+}
+
+}  // namespace coalescing_end_to_end
+
+namespace byte_merge_sees_whole_class {
+// fuzz.stmts seed 1921: in `p *= 5` (`(p << 2) + p`) the shift
+// temp was put in p's slot, though p is read after the shift. The
+// byte-level check looked only at names still in the graph, which
+// left out p's byte that the move pairs had already merged.
+TEST_CASE("coalescing: shift temp not merged with live operand") {
+  std::string src = R"c(int g2 = 0;
+signed char g4;
+void f(unsigned int p) {
+    unsigned char w;
+    if (g2 == 0) {
+        w = 0;
+        do {
+            if ((w | (p *= 5))) { }
+        } while (++w < 2);
+    }
+    g4 = (2 ^ (p -= 255));
+}
+int main(void) { f(6); return g4; }
+)c";
+  for (bool optimize : {false, true}) {
+    INFO("optimize=" << optimize);
+    auto got = build_sim(src, optimize).run();
+    CHECK(got.return_int_signed() == -107);
+  }
+}
+
+}  // namespace byte_merge_sees_whole_class
+
+}  // namespace
+}  // namespace c6502::suite

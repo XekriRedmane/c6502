@@ -2810,6 +2810,805 @@ and go with it in group R, or need R to keep what they read.
   modules of "What step 9's Python keeps", and the imports change with
   their module's name.
 
+## Step 9: no Python left
+
+Step 9 moves the rest of the repository's Python to C++ and then
+removes Python from the repository. What is left is the simulator
+(sim/, on py65), the test suite, the fuzzers, and the models and
+generators that they and the build read. Robert restated the goal on
+26 Nov 2026 as reducing the repository's use of Python to zero. Each
+Python piece stays as the reference until its C++ replacement gives
+the same results, and the comparisons with it are the checks of the
+port, as they were in steps 2 to 8. This section records the step's
+decisions, lists what still runs in Python, classifies the suite's
+tests, proposes the checks, splits the step into groups, and lists
+the questions that are still open. The survey was made on 26 Nov 2026
+from main at dbb62a86, by reading the files and counting with
+scripts, and nothing was built or run for it. A claim marked
+"(inferred)" comes from reading the code paths, and nothing was run
+to check it.
+
+### The step's decisions
+
+Robert decided these on 26 Nov 2026.
+
+1. **The simulator's hooks follow `fp_arith`.** The C++ simulator's
+   hooks for the helpers with no 6502 code (the FP arithmetic, the
+   conversions, the comparisons, and the 64-bit helpers) compute with
+   cpp/src/fp_arith.h, so that the simulator, the TAC interpreter, and
+   constant folding give the same results. Where the Python hooks
+   differ ("The Python hooks" below), the tests that depend on the old
+   behavior get new expected values, and each change is listed when
+   it lands.
+2. **asdl.py's generator is ported to C++,** as a tool that the build
+   runs, and it is checked by regenerating the checked-in
+   cpp/generated/ byte for byte.
+3. **The C++ fuzzers reproduce CPython's `random` exactly.** The port
+   copies its seeding and `_randbelow` on `std::mt19937`, with SHA-512
+   for the string seed in fuzz/bit_precise_types.py, so every seed
+   keeps its meaning, and golden/fuzz/ checks each generator's port
+   byte for byte.
+4. **Tests whose checks golden/ already covers are dropped with a
+   note.** They are the chapter harnesses (test_chapter_1.py to
+   test_chapter_19.py and test_invalid_programs.py),
+   test_sim_chapters.py's comparison with `EXPECTED_RETURNS`, which
+   equals golden/tacsim.txt, and the tests that compare the examples'
+   checked-in `.asm` files with the compiler's output, which are
+   byte-identical to golden/O/. "The tests golden/ covers" below is the
+   note, with the golden job that covers each test and the evidence. The
+   simulator's runs of the corpus (test_sim_asm.py,
+   test_sim_asm_optimized.py, and test_sim_differential.py) are outside
+   this set and are ported.
+
+Robert's standing rules apply to every group. The groups run one at a
+time, never in parallel, and each starts on Robert's go-ahead once the
+one before it is merged, checked, and pushed. Each group works in its
+own worktree, commits there, and adds C++ tests with what it ports.
+Every build and test run goes through tools/run_exclusive.sh, since
+the machine has the CPU for one build at a time. A bug found along the
+way is fixed, with a test. A Python piece stays as the reference until
+its C++ replacement matches it, and then it goes.
+
+### What still runs in Python
+
+The repository tracks 237 Python files of 49,829 lines at dbb62a86,
+counted with `git ls-files` and `wc -l`.
+
+| Directory | Files | Lines |
+|---|---|---|
+| tests/ | 192 | 34,841 |
+| the root's modules | 15 | 5,278 |
+| sim/ | 9 | 5,271 |
+| fuzz/ | 10 | 2,185 |
+| rtlib/ | 2 | 1,018 |
+| binutils/ | 3 | 598 |
+| passes/ | 4 | 294 |
+| tools/ | 1 | 195 |
+| .claude/ | 1 | 149 |
+
+pyproject.toml depends on `py65>=1.2.0`, and on `pytest` and
+`pytest-xdist` in its dev group. uv.lock (118 lines), requirements.txt
+(`py65==1.2.0`), and .python-version (`3.11`) go with it. The
+installed py65 is 1.2.0. cpp/CMakeLists.txt runs no Python, and the
+repository has no CI configuration, Makefile, or batch or PowerShell
+script.
+
+**The shims and cpp_backend.py.** compile.py (184 lines), nm.py (55),
+and objdump.py (42) are shims over `c6502cpp compile`, `nm`, and
+`objdump` through `cpp_backend.run_tool`. compile.py also holds
+`_run_source`, which the tests call on 158 lines of 99 modules,
+`_run_stage` (17 calls in 3 modules), `main`, which 20 test modules
+call in process with `sys.stdin`, `sys.stdout`, and `sys.stderr`
+patched, `inline_small_functions`, which tests/no_inlining.py patches
+for 15 modules, and `_source_errors`. cpp_backend.py (548 lines) finds
+c6502cpp, writes the `c6502-backend 3` requests of cpp/src/backend.h,
+reads the framed responses, and raises each `CompileError` again as
+the class of errors.py that its `python_type()` names. The work behind
+every one of its functions is in C++ already. `backend::respond`
+serves the modes `lex`, `parse`, `resolve`, `tac`, `source-text`,
+`source`, `objects`, and `link`, `tac_sim_modes::respond` serves
+`tac-run`, `tac-observe`, and `tac-falls-off`, and
+`compile_command::run(argv, options)` runs a whole command line in
+process and returns its writes and its status, as `check-golden` runs
+it. A C++ test library can call these functions, or the stage
+functions behind them, so the tests that compile a source and check
+the result take no new compiler work.
+
+**errors.py and diagnostics.py.** errors.py (175 lines) has 26 classes
+with Lark's hierarchy of the syntax errors, and 20 test modules import
+it. The tests depend on three relations in the hierarchy. They catch
+`UnexpectedToken` and `UnexpectedCharacters` as `UnexpectedInput`, a
+`ZpGlobalError` as a `TypeCheckError`, and a `FrameSizeError` as a
+`ValueError`. The C++ `CompileError` (cpp/src/errors.h) carries the
+class's name and the message, with no hierarchy, and 34 C++ test files
+already compare `python_type()`, in 41 places. diagnostics.py (68
+lines) collects the `_Bool` warnings for test_c23_bool.py and
+test_c23_nullptr.py, and cpp/src/diagnostics.h's `Collecting` does the
+same in C++.
+
+**The IR modules, ir_dump.py, and asdl.py.** The four generated IR
+modules hold 2,278 lines. sim/assembler.py assembles an `asm_ast`
+program, bit_precise.py reads `c99_ast` and `tac_ast`, and four test
+modules (test_bcd_builtins.py, test_bin_to_bcd.py,
+test_empty_initializer.py, and test_stdbit.py) `eval` the text of
+`--tac` with `tac_ast`'s classes to walk the program. ir_dump.py (442
+lines) reads the finished asm program that `sim.harness.compile_to_asm`
+gets from the backend's `source` mode, writes the helpers' dump for
+tools/rtlib_table.py, and is tested by test_ir_dump.py. The dump
+format itself stays in C++, since cpp/tests/frozen/ and the helpers'
+table hold dumps. asdl.py (1,068 lines) writes the Python IR modules
+and the C++ IR classes. Its parser of the `.asdl` files is lines 25 to
+248, the Python generator lines 250 to 437, and `generate_cpp` lines
+438 to 1040, so about 820 lines port to C++. cpp/generated/'s eight IR
+files hold 27,004 lines. Their `repr` and `pretty` reproduce Python's
+dataclass repr and pretty.py's text, which the golden files hold in
+messages and in the output of `--parse`, `--resolve`, and `--tac`, so
+both formats stay as they are. Commits touched the `.asdl` files 28
+times in November, and none has since 19 Nov.
+
+**The models.** bit_precise.py (187 lines) is read only by
+test_bitint_sim.py, for `min_width`, `value_range`, `storage_bytes`,
+and `wrap`, and cpp/src/bit_precise.h has all of them but `min_width`,
+which is one line. builtin_functions.py (225 lines) is read by
+sim/runtime.py and four test modules, and cpp/src/builtin_functions.h
+covers every use. main.py (6 lines) and tests/asm_compare.py (75
+lines) have no importer, so either can be deleted at any time.
+asm_compare.py ran py65's line assembler and compile.py in a
+subprocess, and its last users were probably the Zork examples that
+c7ea0133 removed on 16 Nov 2026 (inferred from that commit's message).
+
+**The simulator.** sim/ runs on py65's `MPU`, and the C++ tree has no
+6502 CPU.
+
+| Module | Lines | What it does | C++ now |
+|---|---|---|---|
+| sim/assembler.py | 1,699 | assembles the finished `asm_ast` program into a 64K image, each function and static in source order from the origin | `instruction_size` alone (cpp/src/sim/assembler.h) |
+| sim/harness.py | 343 | compiles through the backend's `source` mode, builds the image, runs py65, and returns a `SimResult` | the backend |
+| sim/runtime.py | 641 | the boot stub at $0600, the helpers at $E000 with `icall`, and the Python hooks at trap addresses | fp_arith.h and builtin_functions.h |
+| sim/linked.py | 103 | loads an executable's segments, checks the helpers' addresses, and gives `defsym_args` | the ELF reader (cpp/src/binutils/elf.h) |
+| sim/apple2.py | 293 | Zork's Apple II, with a 40-by-24 text screen, the Monitor's routines as hooks, a printer, and RWTS over `.dsk` images | nothing |
+| sim/lode_runner.py | 530 | Lode Runner's machine, which decodes each instruction's effective address to trap $C000-$C0FF | `binutils::opcodes::decode` |
+| sim/ali_baba.py | 1,289 | Ali Baba's machine, whose Monitor stand-ins charge the ROM's cycles | `opcodes::decode` and the ELF reader |
+| sim/disk2.py | 365 | a Disk II controller, a nibble at a time | nothing |
+
+Of the suite's 187 test modules, 149 import something from sim/, 142
+of them sim/harness.py, and fuzz/runner.py is the fuzzers' one user. A
+program reaches the simulator in two ways. The harness path compiles
+the source to the finished asm program, builds the runtime for the
+layout that the symbols SSP, FP, HARGS, and DPTR give, assembles the
+program with sim/assembler.py at $0800, installs the boot stub and the
+helpers, and starts py65 at $0600. The linked path copies an
+executable's segments to their `paddr`, so the program's layout is the
+linker's. The run loop runs a hook when PC is at a trap address and
+returns as `RTS` does, in 0 cycles (6 in sim/ali_baba.py). It stops
+when the byte at PC is $00, so the boot stub's `BRK` never executes,
+or when the cycles reach `max_cycles`, 10,000,000 by default. One test
+checks exact cycles, test_bin_to_bcd.py's 712 for `bin16_to_bcd` and
+15 more where its loop's `BNE` crosses a page, and three modules
+compare the cycles of the two pipelines. The games count cycles for
+their run limits, for WAIT and PREAD, and in Ali Baba for the Disk II
+motor, which keeps spinning for a time after it is switched off
+(`DiskII.spinning(cycles)`), so their runs depend on py65's counts.
+
+`SimResult.return_long` and `return_longlong` read `rt_mod.HARGS`,
+which is always the classic $04, so a program whose runtime block
+moved would have its wide return read from the wrong bytes. No test
+was found that reaches this (inferred).
+
+**The Python hooks.** Every hook reads its inputs from HARGS and writes
+its outputs there. The hooks that run are those of the helpers with no
+6502 code, which are `mul64`, `udivmod64`, `sdivmod64`, `asl64`,
+`asr64`, and `lsr64`, the conversions between integers and floating
+values with `f2d` and `d2f`, `fadd` to `fdiv` and `dadd` to `ddiv`, and
+the ordering helpers `flt`, `fle`, `dlt`, and `dle`. sim/runtime.py's
+table of hooks also holds hooks for the 19 helpers with 6502 code, which
+are never installed. Decision 1 makes the C++ hooks follow fp_arith
+wherever the Python hooks differ from it.
+
+- A float result too large for a single, such as `fmul` of 3e38 by 2,
+  makes `struct.pack` raise `OverflowError`, which fails the run, and
+  so does `d2f` of a finite double too large for a single. fp_arith
+  gives an infinity. (The pack was checked, and the path through the
+  hook is inferred.)
+- `fdiv` and `ddiv` handle a zero divisor themselves. A zero dividend
+  gives the positive quiet NaN, a negative one minus infinity, and any
+  other plus infinity, so `1.0 / -0.0` gives plus infinity, and so
+  does a NaN divided by 0. IEEE 754 gives minus infinity and the NaN,
+  and fp_arith follows the SSE unit (inferred from its comments).
+- With a NaN operand, the result is whatever the host's arithmetic
+  gives, packed with its sign and payload, where fp_arith returns the
+  first NaN operand made quiet.
+- The conversions to integers write 0 for a NaN or an infinity, where
+  fp_arith returns no value and the TAC interpreter raises
+  `ValueError` or `OverflowError` (cpp/src/tac_sim.cpp, around line
+  1224). A C++ hook that matches the interpreter stops the run with
+  the same error. That is this survey's reading of decision 1, and
+  Robert may prefer a value for the hook to write.
+
+A finite value out of range wraps modulo 2^N in the hooks, although
+their docstring says 0. fp_arith's `TruncatedInt::wrapped`, which the
+TAC interpreter writes the result with, wraps the same way, so no
+expected value moves for it. `f2d` makes a signaling NaN quiet
+(`0x7F800001` becomes `0x7FF8000020000000`, checked), and whether
+`single_bits_to_double_bits` does the same wasn't checked. No fuzzer
+generates `float` or `double` code, so the changes reach only the
+chapter programs and the tests of floating point.
+
+**The runtime helpers' source.** rtlib/helpers.py (1,012 lines) builds
+the 19 helpers with 6502 code as `asm_ast.Function`s, with shared
+builders such as `_negate_n_inplace` and `_copy_n_via_a`, and its
+docstrings explain each algorithm. tools/rtlib_table.py (195 lines)
+writes their dump into cpp/generated/rtlib_helpers.cpp (687 lines),
+which is the only form the C++ compiler reads, and rejects helpers
+that call one another in a cycle. sim/runtime.py assembles the Python
+functions themselves at $E000. passes/runtime_layout.py (239 lines) is
+still read, for `helper_footprints`, `CLASSIC`, and `RuntimeLayout`,
+by sim/ and four test modules, and passes/dataclass_fields.py and
+type_check_error.py go with it and errors.py. binutils/elf.py and
+opcodes.py have complete C++ ports (cpp/src/binutils/elf.* and
+opcodes.*), and they go when sim/ and the tests stop importing them.
+
+**The fuzzers.** fuzz/ holds 2,185 lines in 10 files. The generators,
+exprs.py (228 lines), calls.py (244), stmts.py (1,040, with an
+interpreter of its own that gives each program's `// expect: N`), and
+bit_precise_types.py (78), import only the standard library and each
+other. They call six methods of `random.Random`, which are `random`,
+`choice`, `randint`, `getrandbits`, `shuffle`, and `choices` with
+weights, and they seed nine generators with integer expressions such
+as `seed * 7919 + 1` and one with the string `f"bitint{seed}"`.
+Regression tests, brain/, and docs/ cite seeds (`fuzz.stmts` seed 1921
+in test_coalescing.py, for one), and golden/fuzz/ holds the 300
+programs of seeds 0 to 99 of `calls`, `exprs`, and `stmts`. The
+generators compute with Python's unbounded integers, which 128-bit
+integers would hold, except that a 64-bit unsigned value shifted left
+by up to 63 bits takes unsigned 128-bit arithmetic or a mask before
+the shift (inferred from the operators). runner.py (203 lines) runs
+each program in the TAC interpreter and in the simulator in both
+pipelines, with the IR checks on, and reduce.py (160) and tac_passes.py
+(45) call only the backend's TAC modes and one regular expression.
+fuzz/build_yarpgen.py builds YARPGen at commit 1adb290f with
+fuzz/yarpgen.patch, using CMake and Ninja from PyPI through `uvx` and
+Zig's bundled clang, and fuzz/yarpgen.py runs it and merges its three
+files into one program. Nothing runs the fuzzers on a schedule. The
+last full run, on 25 Nov 2026, found nothing wrong in seeds 0 to 299
+of `exprs`, `calls`, and `stmts` and 0 to 99 of `yarpgen`.
+
+**What c6502cpp takes from the Python layout.** `is_checkout` in
+cpp/src/compile_command.cpp (line 761) finds include/ by looking for a
+directory that holds both compile.py and include/stdint.h, and the
+fallback through `C6502_SOURCE_ROOT` makes the same test, so compile.py
+can't go until the test looks for another file. The argparse program
+names are `compile.py`, `nm.py` (cpp/src/binutils/nm.cpp, line 125),
+and `objdump.py` (cpp/src/binutils/objdump.cpp, line 189), and
+compile_command.cpp has 13 string literals that start with
+`"compile.py`. The golden manifests hold the names in their command
+lines and messages, on 105 lines of golden/links.txt, 876 of
+golden/cli.txt, 1,788 of each stage's manifest, and 4,483 of
+golden/cO.txt.
+
+**The rest.** .claude/skills/ruminate/scripts/extract-conversations.py
+(149 lines) comes from brainmaxxing and mines Claude Code's
+transcripts, and the compile-example skill runs `uv run python
+compile.py`, `unittest`, and `pytest` on about 10 command lines.
+README.md has 29 `uv run` commands, CLAUDE.md 22, cpp/README.md 14,
+fuzz/CLAUDE.md 9, and tests/CLAUDE.md 6, and the user guides in docs/
+and 11 notes in brain/ have a few more. The C++ sources mention a
+Python module or a `.py` file on 14,460 lines of 506 files, mostly in
+comments that give the Python module a function was ported from.
+
+### The tests
+
+The suite had 1,325 tests in 187 modules on 26 Nov 2026, counted
+statically. 1,228 of them are methods written as `def test`, and six
+modules add the other 97 with `setattr` at import, so that pytest-xdist
+spreads them over its workers (test_bitint_sim.py 40,
+test_invalid_programs.py 17, test_bin_to_bcd.py 16,
+test_op_matrix_sim.py 16, test_sim_asm.py 4, and
+test_sim_differential.py 4). The run of 25 Nov 2026 reported 1,325
+passed and 22 skipped, and whether the 22 lie inside the static count
+wasn't traced, so G1 counts the tests as pytest collects them. Two
+scripts sorted each test by what it reaches, following each module's
+own helpers to a fixed point, with overrides by hand for 17 modules
+whose helpers the first script couldn't follow. The two halves of the
+suite were sorted by slightly different rules, which the table merges.
+A test that runs the simulator counts as a simulator test even when it
+checks text as well, so the table overstates how many tests check
+behavior alone.
+
+| Kind | Tests | Group |
+|---|---|---|
+| text, errors, the command line, and links without a run | 476 | G1 |
+| the TAC interpreter, without the simulator | 19 | G1 |
+| covered by golden/, dropped by decision 4 | 64 | G1 |
+| test_golden.py's runs of `check-golden` and `check-frozen` | 2 | G1 |
+| a Python module tested for itself | 80 | the module's group |
+| the simulator, through the harness or a linked executable | 662 | G4 |
+| the games | 22 | G5 |
+
+**Text, errors, and the command line.** Each of these compiles a source
+with fixed flags and checks the `-S` text, the `--tac`, `--parse`, or
+`--lex` text, an exit status, or an error's class and message, by
+substring, pattern, order, or count. test_compile.py (69) and
+test_parser.py (69) are the largest, and about 100 of these tests sit in
+modules whose other tests run the simulator. Every Python behavior
+that they depend on has a stand-in in C++ already.
+
+- `compile.main` in process, with the streams patched, becomes
+  `compile_command::run` with `Options::read_stdin` and
+  `Outcome::writes`, and argparse's `SystemExit` becomes
+  `Outcome::exited` with status 2.
+- An error's class becomes the name `python_type()` gives. The chapter
+  harnesses and others pass when the error is any class of a group, so
+  a table of names stands in for the hierarchy, such as
+  `UnexpectedToken` and `UnexpectedCharacters` for Lark's
+  `UnexpectedInput`. Two tests of test_parser.py pass on Lark's
+  `VisitError` as well as on the class the C++ parser raises, and
+  their ports name that class alone.
+- Three tests check that stderr holds no "Traceback", which becomes a
+  check that the command printed no `internal error` line.
+- The four modules that `eval` the `--tac` text take the TAC program
+  from `c99_to_tac` and the TAC optimizer in process.
+- tests/no_inlining.py's patch and `cpp_backend.enable_ir_check`
+  become the `inline` and `check_ir` options of the compile, which the
+  backend's request already has as fields.
+- `diagnostics.collecting()` becomes a `diagnostics::Collecting` around
+  the compile.
+- 14 modules of the first half, and more of the second, cut one
+  function's lines out of the `-S` text with a helper of their own,
+  which one C++ helper replaces.
+
+test_optimization_docs.py (7) reads docs/optimizations/README.md
+against `c6502cpp pass-order`, and its checks move beside
+cpp/tests/test_pass_order.cpp, which reads `pass_order::listing()`.
+test_address_attr.py's `TestLink` (2) and test_binutils.py's
+`TestTools` (6) link through `compile.main`, and their C++ forms read
+the executable with `elf::read` and the C++ objdump.
+`TestTools.test_link_and_run` runs the executable as well, so it goes
+to G4. test_binutils.py's `TestAgainstDasm` (3) runs dasm in a
+subprocess and skips without it, so it becomes a ctest test that runs
+when dasm is on the PATH.
+test_optimization.py (2) only checks that `return 42` compiles under
+`--tac`, `--tac -O`, `-S`, and `-S -O` from stdin, which golden/tac.txt,
+tacO.txt, unopt.txt, O.txt, and cli.txt cover, but it is outside
+decision 4's set, so G1 ports it unless Robert adds it.
+
+**The TAC interpreter.** These tests, in 16 modules, run `main` in the
+TAC interpreter through `tests.test_sim_chapters._run_program`, which is
+`cpp_backend.tac_main`, and test_tac_sim_optimized.py runs
+fuzz/tac_passes.py's observer. A doctest helper over the interpreter
+that returns `main`'s value or the error's class and message serves
+them, as `compile_to_tac` in cpp/tests/test_tac_sim_optimized.cpp
+shows. Two of test_tac_sim_optimized.py's three programs are
+reductions of chapter files for which golden/tacsim.txt records `found
+null`, and the third has no golden counterpart, so all three are
+ported.
+
+**Tests of Python modules.** These go with the module they test, or
+become tests of its C++ counterpart.
+
+- test_asdl.py (32) tests asdl.py's parser and its Python generator,
+  and goes in R with them. test_asdl_cpp.py (7) goes to G2, which
+  makes its comparison a ctest test of the C++ generator and its other
+  six tests doctest cases.
+- test_rtlib_table.py (5) tests tools/rtlib_table.py and goes in G2.
+  test_type_checking.py's `TestTypeEquality` (5) tests the equality of
+  c99_ast.py's dataclasses and goes in R.
+- test_ir_dump.py (12) tests ir_dump.py, and its comparison with
+  c6502cpp on the four dumps of tests/ir_dump/ becomes a doctest of
+  their round trip in G1. cpp/tests/test_ir.cpp already tests the C++
+  format's writer, reader, and errors.
+- test_binutils.py's `TestElf` (4) tests binutils/elf.py, and
+  cpp/tests/test_binutils.cpp has cases of the same three checks. G1
+  compares their damaged inputs one by one, which the survey didn't.
+- test_bcd_builtins.py's `TestArithmetic` (2) checks
+  builtin_functions.py's `adc_byte` and `sbc_byte` against py65's
+  decimal mode, and becomes G3's check of the C++ CPU against
+  builtin_functions.h. test_bin_to_bcd.py's `TestModel` (2) and
+  `TestHelper` (5) run the helper's code on py65, with the 712 cycles,
+  and go to G4 on the C++ CPU.
+- test_element_rmw.py's `TestEmit` (1) checks sim/assembler.py's
+  encodings, and goes to G4 with the assembler's port.
+- test_fuzz_tools.py (5) runs the Python fuzzers on a few seeds, and
+  goes to G6.
+
+**The simulator.** The simulator's tests sit in about 140 modules, 57
+of which run nothing else, and 21 of the tests run the TAC interpreter
+as well. G4 ports what they use of the Python harness.
+
+- A compile in either pipeline, run until the boot stub's `BRK` or a
+  cap on the cycles. 30 modules of the second half pass `max_cycles`,
+  and test_volatile_named.py's wait loop passes only when the run
+  times out.
+- `SimResult`'s registers, PC, SP, cycles, memory, `timed_out`, and
+  the return accessors, `sim.symbols`, and `sim.runtime.HARGS`, which
+  nine modules read.
+- Memory written before the run, in 7 modules, such as stand-in code
+  at $D000 for a fixed-address routine and a byte of KBD.
+- Linked executables, with the simulator's helpers through
+  `defsym_args` and with the runtime library's (test_runtime_library.py
+  clears the simulator's helpers to check that only the linked copies
+  run).
+- The hooks, which every program with `float`, `double`, or 64-bit
+  arithmetic reaches, among them test_sim_asm.py's,
+  test_sim_differential.py's, and test_op_matrix_sim.py's.
+
+19 modules of the first half and 8 of the second compute their
+expected values with a model in Python, which becomes C++ code in the
+test. The exceptions are the models of `bit_precise` (in
+test_bitint_sim.py, about 200 lines) and of the BCD builtins. The
+compiler folds constants with their C++ forms, so a test against those
+would compare the folds with the code that made them. Their expected
+values become tables frozen from the Python models while those exist.
+test_runtime_library.py draws its operands from `random.Random`
+seeded with strings such as `"bin16_to_bcd"`, which G1's port of
+CPython's `random` reproduces. test_runtime_helpers.py's 65 tests
+compile constant expressions such as `6 * 7` without `-O`, and
+golden/unopt/tests/chapter_3/valid/mult.s shows `2 * 3` compiled to an
+inline loop with no `JSR mul16`, so many of them probably reach the
+inline lowerings and no helper (inferred from that one text), and its
+docstring is probably stale. G4 finds out what it covers before
+porting it. The three runs of the corpus walk test_sim_chapters.py's
+`EXPECTED_RETURNS`, 515 chapter files with values traced by hand,
+less its `SKIPPED` (about 48) and test_sim_asm.py's `SKIPS` (12). They
+are the only check of what the corpus's programs compute in the two
+pipelines, since a change made on purpose passes `check-golden` after
+`--update` whether or not the programs still compute the right values.
+
+**The games.** Lode Runner's `TestRuns` (3), Zork's `TestSessions`
+(2), and Ali Baba's `TestOriginal` (6), `TestRuns` (6), and
+`TestReadmeLink` (2) read files from the reverse-engineering
+repositories, which `LODE_RUNNER_DIR`, `ZORK_DSK`, and `ALI_BABA_DIR`
+(after the ali_baba_reveng project's build.py) name, so they run only
+on Robert's machine. Ali Baba's `TestDisk` (3) round-trips disk images
+through sim/disk2.py with `random`, and runs anywhere. tests/CLAUDE.md
+gives Lode Runner's `test_demo`, at about four minutes, as the suite's
+slowest test. test_zork_interpreter.py's `test_no_runtime_helpers`
+checks examples/zork/interpreter.asm with two patterns and goes to G1
+with the text tests.
+
+#### The tests golden/ covers
+
+This is decision 4's note. golden/unopt.txt, O.txt, lex.txt,
+parse.txt, resolve.txt, tac.txt, and tacsim.txt each have a job for
+every one of the 1,432 `.c` files under tests/chapter_*/, of which 631
+are in `invalid_*` buckets, and each job of golden/unopt.txt records
+the command's exit status and its stderr.
+
+- **test_chapter_1.py to test_chapter_18.py** (41 tests) compile each
+  file of their chapter and check that it compiles, or that it raises
+  one of the front end's classes. In golden/unopt.txt, 609 of the
+  chapters' `valid/` jobs have status 0 and 24 have status 1, and 629
+  of the `invalid_*` jobs have status 1 and 2 have status 0. The
+  status-1 `valid/` jobs are the pins of `_INCOMPATIBLE_VALID` and
+  `_EXPECTED_FAILURES_CODEGEN`, and the two status-0 invalid ones are
+  chapter_18's `_INVALID_PARSE_VALID_IN_C23`, a match of the counts
+  that wasn't checked file by file. The manifest holds the one-line
+  message and no class, so the class of each error goes unchecked.
+  The pin lists' comments, which say why each file is pinned, move to
+  tests/STATUS.md.
+- **test_invalid_programs.py** (17) checks that each rejected program
+  gives a source error and no internal error. All 629 rejected jobs of
+  golden/unopt.txt have a stderr line with `: error: `, and no job
+  records a raised exception, which is how an internal error would
+  appear (inferred from cpp/README.md's description of the manifests).
+  golden/O.txt covers the same files under `-O`.
+- **test_chapter_19.py** (1 test over 168 files) runs each program of
+  chapter_19 in the TAC interpreter and compares `main`'s value with
+  upstream's expected_results.json or with one of its 20 overrides.
+  golden/tacsim.txt has a job for each file. Of its results, 133 equal
+  upstream's value, 20 differ, which are the 20 entries of
+  `_C6502_OVERRIDES` (matched by count), and 14 are errors, which are
+  the files of `_NEEDS_LIBC` with messages such as an unknown function
+  `double_isnan`. The comparison with upstream's file, which stays in
+  the repository, isn't run again, and this paragraph records it as of
+  dbb62a86.
+- **test_sim_chapters.py's test** (1 test over 515 files).
+  golden/tacsim.txt's `result` equals the value traced by hand in
+  `EXPECTED_RETURNS` for all 515 files, compared with a script (none
+  missing, none different). Once someone runs `check-golden --update`
+  over a wrong value, nothing compares the interpreter's result with the
+  trace. The table stays, as the expected values of the simulator's runs
+  of the corpus, which G4 ports.
+- **test_example_outputs.py** (1). All 19 examples/*.asm files are
+  byte-identical to golden/O/examples/*.s, compared with `cmp`.
+- **test_ali_baba.py's `TestGoldOutputs`** (1), **test_lode_runner.py's
+  `TestGoldOutputs.test_units`** (1), and **test_zork_interpreter.py's
+  `TestGoldOutputs.test_units_and_link`** (1). The 14 units of Ali
+  Baba, the 12 of Lode Runner, and the 11 of Zork are byte-identical to
+  golden/O/examples/<game>/*.s, which golden/O.txt compiles with the
+  same `-S -O`. golden/links.txt's jobs `game zork` and `game
+  lode_runner` compile the units with `-c -O`, link them with the
+  example's script, and hold the SHA-256 of the executable (61,780
+  bytes for Zork). The Zork test also compares `objdump.py -D` of the
+  executable with examples/zork/interpreter.asm, and since the hash
+  fixes the executable's bytes, that comparison adds a check of
+  objdump alone, which cpp/tests/test_binutils.cpp tests too (its
+  cases weren't read for this survey).
+
+With the comparisons gone, nothing checks that examples/*.asm still
+equals the compiler's output, which is an open question below.
+
+### The checks
+
+`check-golden`, `check-frozen`, and the C++ tests stay the checks of
+the compiler, and every group runs them. The port's own checks are
+these, and those that compare with Python run only while Python is
+installed, which is why the reference stays until each group's
+comparison has passed.
+
+- **The ported tests.** A Python test goes once its C++ case passes in
+  the MSVC and GCC builds, checked one test at a time as step 8's G6 to
+  G8 did, and a case written by hand checks each assertion of the
+  Python test it replaces.
+- **CPython's `random`.** CPython 3.11 writes vectors of each method's
+  results on integer and string seeds, which are frozen under
+  cpp/tests/frozen, and golden/fuzz/ then checks that the generators
+  write each program byte for byte.
+- **The generators.** asdl.py's port writes cpp/generated/'s eight IR
+  files byte for byte, and the C++ builders of the helpers give the
+  dump that cpp/generated/rtlib_helpers.cpp holds, captured once.
+- **The CPU.** py65 writes single-step vectors for each of the 256
+  opcodes, from random states with page crossings forced in the indexed
+  modes and the branches, each with the state before and after, the
+  cycles, and every byte written. They are frozen under
+  cpp/tests/frozen, so that they stay the reference once py65 is gone.
+  Then the CPU runs in lockstep with py65 on the corpus. Tom Harte's
+  SingleStepTests describe the NMOS 6502 itself, which differs from py65
+  in the flags of decimal mode and in the undocumented opcodes, so
+  py65's own vectors are the reference here.
+- **The harness.** The C++ assembler's image and symbols equal
+  sim/assembler.py's on every program of the corpus, and every program
+  the simulator tests run gives the same registers, cycles, and memory
+  in both harnesses, apart from the hook calls that decision 1 changes.
+- **The games.** On each script, for the original and for the C
+  program, the C++ machine's events equal the Python machine's,
+  including the PC and the cycle count that the tests leave out of
+  their comparison, and so does a hash of the CPU's state at each
+  event and at the end.
+- **The fuzzers.** The C++ runner's result for each seed equals the
+  Python runner's on seeds 0 to 299 of `exprs`, `calls`, and `stmts`
+  and 0 to 99 of `yarpgen`.
+
+### The groups
+
+Each group's Python stays as the reference until its comparisons pass,
+and goes in that group when nothing else reads it, or in R otherwise.
+Each group updates the CLAUDE.md files and documents that describe
+what it moves. The order is G1 to G6 and then R, one at a time.
+
+The groups follow the outline Robert gave for the survey, except where
+the survey's findings gave a reason to change it.
+
+- The port of CPython's `random` moves from the fuzzers to G1, since
+  test_runtime_library.py (G4) and test_ali_baba.py's `TestDisk` (G5)
+  draw from `random.Random` too, and with the port in the test library
+  their C++ forms draw the same values.
+- G1's helpers call `compile_command::run` and the stage functions
+  that `backend::respond` and `tac_sim_modes::respond` call, rather
+  than the request text, so that R can remove `c6502cpp backend`, its
+  request format, and its frames once Python stops calling them.
+- G2 gives sim/runtime.py the helpers through a new `c6502cpp
+  helper-dump` command and `helper_footprints` through the existing
+  `c6502cpp helper-footprints`, so that rtlib/helpers.py and
+  tools/rtlib_table.py go in G2, where they would otherwise stay until
+  G4.
+- The lockstep runs of the games move from the CPU's group to G5,
+  since they run on the game machines.
+
+G2 depends on nothing before it, and G3 on nothing but py65. G4 builds
+on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
+`random` and G4's simulator.
+
+- **G1. The test library and the tests that run no simulator.** G1
+  writes a C++ test library over `compile_command::run`, the stage
+  functions, the TAC interpreter, and the nm and objdump mains. Its
+  compile takes a source, a stage, `-O`, inlining, `check_ir`, link
+  metadata, preprocessor arguments, and a file name, and returns the
+  text, stderr, the error's name and message, and the warnings. The
+  library also holds a helper that cuts a function's lines out of the
+  `-S` text, the table of error names by group, and CPython's `random`
+  (MT19937 with `init_by_array`, `random`, `getrandbits`, `_randbelow`,
+  `choice`, `randint`, `shuffle`, `choices` with weights, and string
+  seeds through SHA-512, about 150 lines for SHA-512 alone, inferred).
+  G1 ports the 476 tests of text, errors, and the command line, the 19
+  of the TAC interpreter, test_ir_dump.py's round trip, and
+  test_optimization_docs.py, checks `TestElf` against test_binutils.cpp,
+  turns test_golden.py into two ctest entries, and drops the 64 tests of
+  decision 4. Its files are new helpers and cases in cpp/tests/,
+  cpp/CMakeLists.txt, the test modules it empties or edits, and
+  tests/STATUS.md. Its checks are the vectors of CPython's `random` and
+  the ported tests'.
+- **G2. The generators.** G2 ports asdl.py's parser and `generate_cpp`
+  to a C++ tool of 1,000 to 1,400 lines (inferred from the Python's
+  size), which CMake builds and runs on the four `.asdl` files. The
+  proposal is that the build writes into cpp/generated/, which stays
+  checked in so that a change's generated diff is reviewed, and a ctest
+  case regenerates into a temporary directory and compares byte for
+  byte. asdl.py keeps its Python half until R. rtlib/helpers.py's
+  builders are ported under cpp/src/rtlib/ with their docstrings, which
+  the survey recommended over making the dump the source (which carries
+  no comments) or writing the helpers as dasm text (which the footprints
+  and call edges can't read), and a doctest checks that their
+  `helper_dump()` equals the text of cpp/generated/rtlib_helpers.cpp,
+  captured once. The rejection of helpers that call one another in a
+  cycle becomes a doctest case. rtlib/helpers.py, tools/rtlib_table.py,
+  cpp/generated/rtlib_helpers.cpp, test_rtlib_table.py, and
+  test_asdl_cpp.py go. Its files are asdl.py, a new cpp/tools/ (or a
+  `c6502cpp` command), cpp/CMakeLists.txt, cpp/generated/,
+  cpp/src/rtlib/, cpp/src/main.cpp, rtlib/, tools/, sim/runtime.py,
+  passes/runtime_layout.py, and the test modules that read
+  rtlib.helpers. Its checks are the byte-for-byte regeneration, the
+  dump's equality, and the suite's simulator tests on the helpers read
+  from c6502cpp.
+- **G3. A C++ 6502 CPU.** G3 writes a CPU in cpp/src/sim/cpu.* that
+  matches py65 1.2.0 instruction by instruction. It keeps PC, A, X, Y,
+  SP, P, and a 64-bit cycle count, starts with SP at $FF and P at $30,
+  pushes P with B and bit 5 set, and sets both after `PLP` and `RTI`.
+  Zero-page indexed modes wrap in page 0, `(zp,X)` and `(zp),Y` read the
+  pointer's high byte from `(zp+1) & $FF`, and `JMP ($xxFF)` reads the
+  high byte from $xx00. A word read at $FFFF, which raises `IndexError`
+  in py65, is an error (inferred from `WordAt`). The cycle table comes
+  from py65's `cycletime` and `extracycles`, written while py65 is
+  installed and checked in, with one more cycle for a page crossing in
+  the abs,X, abs,Y, and (zp),Y reads, and one or two for a taken branch.
+  In decimal mode, A and C follow `adc_byte` and `sbc_byte`, and Z, N,
+  and V come from the result before adjustment, checked against py65 on
+  all 256 x 256 x 2 inputs. Each of the 105 opcodes py65 leaves
+  undefined advances PC by 2 in 0 cycles and changes nothing else.
+  Nothing raises an interrupt. The CPU has a trap table checked before
+  each fetch, a callback before each instruction, and read and write
+  callbacks on an address range, which keep a read-modify-write's read
+  before its write (inferred from the games' `_access`). A temporary
+  Python tool writes the single-step vectors, and a backend mode
+  `cpu-run` runs the CPU from a given state and image until a stop
+  address or a count and returns the state, the bytes written, and a
+  digest of the state after each instruction. A lockstep mode of
+  sim/harness.py runs py65 and the C++ CPU between hook calls and stops
+  at the first difference, on the chapter corpus in both pipelines, the
+  `*_sim.py` tests, and a few thousand fuzz seeds. Whether the original
+  games execute an undefined opcode is unknown, and G5's lockstep runs
+  show it. Its files are cpp/src/sim/cpu.* with the cycle table,
+  cpp/tests/frozen/, new cases in cpp/tests/, cpp/src/backend.*,
+  sim/harness.py, and the vector tool under tools/.
+- **G4. The simulator harness in C++.** G4 ports sim/assembler.py
+  beside `instruction_size`, and writes the runtime (the boot stub, the
+  helpers at $E000 from G2's builders, `icall`, and the trap table from
+  the next multiple of 16), the hooks on fp_arith and
+  `builtin_functions::bin_to_bcd`, the loader of linked executables
+  with the simulator's `--defsym` pairs, and `SimResult` with its
+  accessors and `symbols`, in cpp/src/sim/ and the test library. The
+  hooks land in a commit of their own after the rest matches Python.
+  Each difference that the comparison of whole runs then finds is
+  traced to a hook call whose inputs fall in one of the four cases of
+  "The Python hooks", and the test that shows it gets its new expected
+  value, which the commit and the Status entry list. A test of a `long`
+  returned by a program whose runtime block moved checks
+  `return_long`, on the Python harness first, and the Python accessor
+  is fixed if it fails. G4 ports the 662 simulator tests, with
+  `EXPECTED_RETURNS`, `SKIPPED`, `SKIPS`, and test_sim_differential.py's
+  tables as data, the models in C++ or as frozen tables, the 712
+  cycles of `bin16_to_bcd`, and the shards of `setattr` as ctest runs
+  of filtered doctest invocations (inferred, since nothing in cpp/
+  does that today). sim/assembler.py and sim/harness.py stay, for the
+  fuzzers' runner, until G6, and sim/runtime.py and sim/linked.py for
+  the games until G5. Its files are cpp/src/sim/, cpp/tests/, and the
+  simulator's test modules. Its checks are the image and symbols on
+  the corpus, the whole runs against the Python harness, and the
+  ported tests.
+- **G5. The game machines.** G5 ports the game machines, about 2,500
+  lines of Python, to cpp/src/sim/, on G3's callbacks. Zork's Apple II
+  has the Monitor's HOME, CLREOL, VTAB, RDKEY, GETLN1, COUT, and COUT1,
+  a printer at $C100, RWTS at $2900 over images by slot and drive, the
+  text window and scrolling, the scripts of keys and lines, the stops at
+  `BRK`, at a `JMP` to itself, and at the end of the script, and RDKEY's
+  step of RNDL and RNDH (`_step_random`), which is ported exactly, since
+  Zork moves the player with random numbers after the troll's fight
+  (inferred from the tests' comments). Lode Runner's machine records
+  each access to $C000-$C0FF with CRC-32s of the hi-res pages, gives
+  KBD's value from the script, reads the paddles as $80 and the buttons
+  as up, hooks RWTS at $B7B5 over a copy of the disk, and loads the C
+  program over the original with $5F00-$8E52 cleared and SP at $07. Ali
+  Baba's adds the Disk II in slot 6 with its wide protection track and
+  its motor's spin-down by cycles, the Monitor stand-ins with the ROM's
+  cycles (`_WAIT_CYCLES`, and 2,833 for PREAD), a hook's `RTS` of 6
+  cycles, `_delay_loop`, which runs three kinds of delay loop in one
+  step with the same registers, flags, memory, and cycles, and the
+  `coverage` listing. G5 ports the 22 game tests. Its files are
+  cpp/src/sim/, cpp/tests/, tests/test_lode_runner.py,
+  test_zork_interpreter.py, and test_ali_baba.py, and sim/apple2.py,
+  lode_runner.py, ali_baba.py, disk2.py, runtime.py, and linked.py. Its
+  check is the comparison of the events with the Python machines' on
+  every script, and a difference is found again by replaying with full
+  traces from the last event that matched. It runs only where the three
+  variables are set.
+- **G6. The fuzzers.** G6 ports the fuzzers to C++, on G1's `random`.
+  The generators write each program byte for byte, with 128-bit
+  arithmetic where Python's integers were unbounded. The runner
+  compiles, interprets, and simulates each program in process, writes
+  `ERR <class>: <message>` cut to 120 characters, `TIMEOUT`, and the
+  backend's limits as fuzz/runner.py does, and takes `--start`,
+  `--count`, `--out`, and `-j` with the results in seed order. Seeds can
+  run on threads only if the compiler's globals are per thread.
+  `diagnostics::Collecting` is, but the IR-check switch and the other
+  globals weren't checked (inferred), so the runner starts a process per
+  seed until they are. The reducer, tac_passes.py as a command, and the
+  YARPGen driver and its merge of three files follow, and
+  test_fuzz_tools.py's 5 tests go to doctest. sim/assembler.py and
+  sim/harness.py go with fuzz/'s Python. Its files are fuzz/, a new
+  directory of the C++ fuzzers under cpp/, cpp/src/main.cpp,
+  fuzz/CLAUDE.md, and README.md. Its checks are golden/fuzz/ and the
+  runner's results on the seeds of "The checks", and the reducer's
+  output, equal to the Python reducer's, on programs that a pass broken
+  on purpose makes fail.
+- **R. The removal.** R comes last. First `is_checkout` stops looking
+  for compile.py. Then compile.py, nm.py, objdump.py, cpp_backend.py,
+  errors.py, diagnostics.py, the four IR modules, ir_dump.py, asdl.py,
+  bit_precise.py, builtin_functions.py, main.py, sim/, binutils/*.py,
+  passes/*.py, what is left in tests/ (cpp_build.py, no_inlining.py,
+  link_helpers.py, asm_compare.py, `__init__.py`, and test_asdl.py and
+  `TestTypeEquality`), the temporary tools, pyproject.toml, uv.lock,
+  requirements.txt, and .python-version go, and so do `c6502cpp
+  backend` with its request format and frames, `cpu-run`, and
+  `helper-dump`, which nothing calls any more. The program names
+  change if Robert decides so. README.md, CLAUDE.md, cpp/README.md,
+  and the CLAUDE.md files of tests/, fuzz/, examples/, rtlib/, sim/,
+  binutils/, and passes/ give C++ commands, and so do the user guides
+  of docs/ that show a command (linker_scripts.md, attributes.md,
+  architecture.md, optimizations/README.md and the documents
+  unroll.md, inline_functions.md, leaf_zp_abi.md, and sim_findings.md)
+  and the brain/ notes that give one. The C++ comments that name the
+  Python module a function was ported from are left as the record of
+  where it came from, and a comment that tells a reader to run Python
+  changes. The check is that `git ls-files '*.py'` lists nothing, that
+  no document outside this one and docs/drafts/ gives a Python
+  command, and that fresh MSVC and GCC builds pass ctest,
+  `check-golden`, and `check-frozen`.
+
+### Open questions for Robert
+
+1. **.claude/'s Python.** The question is whether "no Python" covers
+   .claude/skills/ruminate/scripts/extract-conversations.py (149
+   lines, from brainmaxxing, which ruminate's SKILL.md runs with `uv
+   run python`), and the compile-example skill's `uv run` command
+   lines, which also name sim/assembler.py and the Python test
+   harnesses. The
+   reflect skill runs `python ~/.claude/skills/exact-edits/eol.py`,
+   which is outside the repository.
+2. **YARPGen's build.** fuzz/build_yarpgen.py builds YARPGen with
+   CMake and Ninja from PyPI through `uvx`, Zig's bundled clang, and
+   `-DYARPGEN_INT_BITS=16`. The repository already depends on CMake
+   and a C++20 compiler, so an `ExternalProject_Add` target or a short
+   shell script could do the same, but whether YARPGen at that commit
+   builds with MSVC wasn't checked. The commit that added the build
+   (53fe6efd, 11 Nov 2026) gives no reason for Zig's clang, probably
+   because no C++ toolchain had been set up then (inferred).
+3. **The program names.** The messages and the usage say `compile.py`,
+   `nm.py`, and `objdump.py`, and the golden manifests hold the names
+   on up to 4,483 lines each. Step 8 left the rename to step 9 (its
+   choice 1 suggested `c6502` or `c6502cc`, `c6502-nm`, and
+   `c6502-objdump`). The rewrite is mechanical, through `check-golden
+   --update`, and the question is whether it happens and when, in R
+   or in a commit of its own whose golden diff holds the names alone.
+4. **The checkout marker.** `is_checkout` finds include/ by looking
+   for compile.py beside include/stdint.h. Before R, the test is
+   changed to look for another file, such as cpp/CMakeLists.txt, and
+   the question is which file.
+5. **examples/*.asm.** Once decision 4 drops their comparisons, the
+   checked-in `.asm` files of the examples and the three games, and
+   examples/zork/interpreter.asm, are copies that nothing checks. They
+   could stay with a check that each equals golden/O/'s text, or go,
+   leaving golden/ as the only copy.
+6. **The harness's assembler.** The plan ports sim/assembler.py, so
+   that the images are the same bytes and the comparison with py65 is
+   exact. The alternative compiles with `-c`, links with the
+   simulator's `--defsym`s, and loads the executable as sim/linked.py
+   does. That drops 1,699 lines but changes every program's layout,
+   and possibly its zero-page slots and its cycles (inferred). The
+   switch could also come after Python is gone.
+7. **The conversions of a NaN or an infinity.** The question is
+   whether the C++ hook stops the run with the TAC interpreter's
+   error, as this plan reads decision 1, or writes a value.
+
 ## Status
 
 - 19 Nov 2026: decisions made, groundwork started.
@@ -4047,3 +4846,12 @@ and go with it in group R, or need R to keep what they read.
   one user, and the Dockerfile,
   docker-compose.yml, and docker-entrypoint.sh went, since the image
   was no longer needed.
+- 26 Nov 2026: the survey and plan of step 9 ("Step 9: no Python
+  left") were made from main at dbb62a86. Robert decided the same
+  day that the C++ simulator's hooks follow `fp_arith`, that asdl.py's
+  generator is ported to C++, that the C++ fuzzers reproduce CPython's
+  `random` exactly, and that the tests whose checks golden/ already
+  covers are dropped with a note, which the section gives. The plan
+  splits the step into the groups G1 to G6 and R, each run on his
+  go-ahead after the one before it, and lists seven questions for
+  him.

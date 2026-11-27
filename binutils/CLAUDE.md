@@ -131,6 +131,7 @@ symbol, and each output section as `SEG` and `ORG` (`RORG` when it
 runs elsewhere), naming each address operand after the symbol there
 or the object it's inside (`src+1`). An absolute instruction with an
 operand below $100 gets dasm's `.w` extension. The examples check in
-this listing of their linked programs (`tests/link_helpers.listing`).
+this listing of their linked programs (`suite::listing` in
+cpp/tests/compile_case.h).
 `tests/test_binutils.py` checks with dasm, where it's installed, that
 the listing assembles into the executable's bytes.

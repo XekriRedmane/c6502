@@ -503,22 +503,25 @@ the golden files under `golden/`, and a change to the output made on
 purpose rewrites them with `check-golden --update`, whose diff is the
 review of the change (cpp/README.md, "The checks after Python").
 
-The runs of the two example programs read files from each program's
+The runs of the three example games read files from each game's
 reverse-engineering project, which aren't in this repository. Without
-them, the runs are skipped, and the comparisons of each unit's output
-with its checked-in `.asm` file still run.
+them, doctest reports the runs as skipped, and the comparisons of each
+unit's output in golden/ still run.
 
 - `ZORK_DSK` names the disk image of Zork I r15, `Zork I r15 (4am
   crack).dsk` from
   [zorki-r15-reveng](https://github.com/XekriRedmane/zorki-r15-reveng).
-  `tests/test_zork_interpreter.py` then plays two sessions on the
+  cpp/tests/test_zork_interpreter_sim.cpp then plays two sessions on the
   compiled interpreter and on Zork's own, read from that image.
 - `LODE_RUNNER_DIR` names the directory of
   [lode_runner_reveng](https://github.com/XekriRedmane/lode_runner_reveng),
   which holds `main.bin`, `lode_runner.do`, and `main.asm`.
-  `tests/test_lode_runner.py` then plays three scripts of keys on the
-  compiled game and on the original. The demo takes about four
-  minutes.
+  cpp/tests/test_lode_runner_sim.cpp then plays three scripts of keys
+  on the compiled game and on the original.
+- `ALI_BABA_DIR` names the directory of
+  [ali_baba_reveng](https://github.com/XekriRedmane/ali_baba_reveng)
+  after its `build.py`. cpp/tests/test_ali_baba_sim.cpp then plays six
+  scripts on the compiled game and on the original.
 
 [tests/CLAUDE.md](tests/CLAUDE.md) describes how the tests are
 organized.

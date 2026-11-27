@@ -38,9 +38,9 @@ loads the story after itself. Its README compares it with Zork's code,
 and cpp/tests/test_zork_interpreter.cpp checks that the listing of the
 linked executable, `objdump.py -D`, is interpreter.asm. When `ZORK_DSK`
 names the game's disk image, `Zork I r15 (4am crack).dsk` from that
-repository, tests/test_zork_interpreter.py plays two sessions on it and
-on Zork's own interpreter (read from the same image) and compares every
-Monitor and RWTS call.
+repository, cpp/tests/test_zork_interpreter_sim.cpp plays two
+sessions on it and on Zork's own interpreter (read from the same
+image) and compares every Monitor and RWTS call.
 Each `.c` file's header quotes the lines of `main.asm` it translates.
 The interpreter grew out of smaller examples of single routines
 (`zork_<routine>.c`) and of Zork's `save` instruction and z-string
@@ -59,12 +59,13 @@ at `$8E00`, where the game's DOS jumps when the editor formats a
 disk. What doesn't fit there yet goes in `$9000`-`$9AFF`, which the
 original never touches. Each `.c` file's header quotes the lines of
 `main.asm` it translates and lists its departures from the original.
-`tests/test_lode_runner.py` checks each unit's output against its
-`.asm` file and, when `LODE_RUNNER_DIR` names the reverse-engineering
-project's directory (which holds `main.bin`, `lode_runner.do`, and
-`main.asm`), plays three scripts on the linked program and on the
-original, on the stand-in Apple II in `sim/lode_runner.py`, and
-compares every soft-switch access and RWTS call. There's no checked-in
+golden/O.txt checks each unit's output, and
+cpp/tests/test_lode_runner_sim.cpp, when `LODE_RUNNER_DIR` names the
+reverse-engineering project's directory (which holds `main.bin`,
+`lode_runner.do`, and `main.asm`), plays three scripts on the linked
+program and on the original, on the stand-in Apple II in
+cpp/src/sim/lode_runner.h, and compares every soft-switch access and
+RWTS call. There's no checked-in
 listing of the linked program. Its README describes how the program
 is built and compared, and each file's size against the original's.
 
@@ -79,14 +80,14 @@ the units, so `ali_baba.ld` puts the program in the spans the original's
 code and tables filled, plus `$A900-$B2FF`, which the original never
 touches. `UNITS.md` records which routines and tables each unit has and
 the decisions behind the header, and `notes/` has each unit's
-departures and size by routine. `tests/test_ali_baba.py` checks each
-unit's output against its `.asm` file and, when `ALI_BABA_DIR` names
+departures and size by routine. golden/O.txt checks each unit's
+output, and cpp/tests/test_ali_baba_sim.cpp, when `ALI_BABA_DIR` names
 the reverse-engineering project's directory (after its `build.py` has
 made `output/main.bin`, `main.asm`, and `main.sym`), plays six scripts
 on the linked program and on the original, on the stand-in Apple II in
-`sim/ali_baba.py` with the Disk II of `sim/disk2.py`, and compares
-every soft-switch access, Monitor call, and call into the disk code,
-and the disks they leave. Its README describes the comparison and each
+cpp/src/sim/ali_baba.h with the Disk II of cpp/src/sim/disk2.h, and
+compares every soft-switch access, Monitor call, and call into the
+disk code, and the disks they leave. Its README describes the comparison and each
 file's size against the original's.
 
 The program has `static` variables with initial values that `-O`

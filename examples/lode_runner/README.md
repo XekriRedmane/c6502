@@ -72,16 +72,17 @@ The program has `static` variables with initial values that `-O`
 promotes into zero page, and their initial bytes are stored by the
 `__zp_init` the linker writes. Neither the reset vector's `cold_start`
 nor `main` calls it, so something has to run `__zp_init` first. The
-test harness does (`sim.lode_runner.program_machine`).
+test harness does (`lode_runner::program_machine` in
+cpp/src/sim/lode_runner.h).
 
 ## How it's compared
 
-`tests/test_lode_runner.py` checks each unit's output against its
-`.asm` file. With `LODE_RUNNER_DIR` set to the reverse-engineering
+golden/O.txt checks each unit's output against a fresh compile. With `LODE_RUNNER_DIR` set to the reverse-engineering
 project's directory, which holds `main.bin` (the original's 48K memory
 image), `lode_runner.do` (the game's disk), and `main.asm`, it also
 plays three scripts on the C program and on the original, on the
-stand-in Apple II in `sim/lode_runner.py`.
+stand-in Apple II in cpp/src/sim/lode_runner.h
+(cpp/tests/test_lode_runner_sim.cpp).
 
 - The demo. Nothing is pressed, the attract mode plays its three
   levels, and the high scores show.

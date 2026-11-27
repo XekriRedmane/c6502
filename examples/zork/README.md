@@ -69,14 +69,15 @@ is checked in, and to its object, which the link reads. The link
 writes the ELF executable `interpreter`. Neither the objects nor the
 executable are checked in. `interpreter.asm` is the executable's
 listing in dasm's syntax, with a `SEG` and an `ORG` for each output
-section, and `sim/linked.py` runs the executable.
-`tests/test_zork_interpreter.py` checks
+section, and cpp/src/sim/harness.h's `build_linked_sim` loads the
+executable for the simulator. golden/O.txt and golden/links.txt check
 each unit's output and the linked program against fresh compiles, and
-checks that the program calls none of the runtime's helpers and
-doesn't use the soft stack. With `ZORK_DSK` set to the path of `Zork I
-r15 (4am crack).dsk` from the repository above, it also plays two
-sessions on this interpreter and on Zork's own and compares them. The
-disk image isn't part of this repository.
+cpp/tests/test_zork_interpreter.cpp checks that the program calls none
+of the runtime's helpers and doesn't use the soft stack. With
+`ZORK_DSK` set to the path of `Zork I r15 (4am crack).dsk` from the
+repository above, cpp/tests/test_zork_interpreter_sim.cpp also plays
+two sessions on this interpreter and on Zork's own and compares them.
+The disk image isn't part of this repository.
 
 ## How it's put together
 
@@ -138,8 +139,8 @@ its own bytes in that range too.
 
 ## Compared with Zork's own code
 
-**Behavior.** `tests/test_zork_interpreter.py` plays two sessions on
-`sim/apple2.py`, a stand-in Apple II with the Monitor's text routines,
+**Behavior.** cpp/tests/test_zork_interpreter_sim.cpp plays two
+sessions on cpp/src/sim/apple2.h, a stand-in Apple II with the Monitor's text routines,
 the keyboard and line input, a printer, and RWTS over the disk image.
 The first walks into the cellar, saves, fights the troll until it
 kills the player, which moves the player with random numbers,

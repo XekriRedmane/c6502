@@ -16,8 +16,9 @@ optimizer pass and at the asm stage boundaries
 (cpp/src/passes/ir_check.h), and a test that needs the checks whatever
 the variable says calls `cpp_backend.enable_ir_check()`. The fuzzers
 always run with them. `C6502_SIM_LOCKSTEP=1` runs the C++ CPU beside
-py65 in every `Simulation.run` and fails a test at the first
-instruction where they differ (sim/lockstep.py).
+py65 in every `Simulation.run` and every run of a game's machine, and
+fails a test at the first instruction where they differ
+(sim/lockstep.py).
 
 In parallel, with pytest and pytest-xdist (dev dependencies; `uv
 sync` installs them):
@@ -46,9 +47,6 @@ cpp/tests/test_<topic>_sim.cpp, through `suite::build_sim`
 
 The modules left test Python code that a later group ports or removes.
 
-- `test_zork_interpreter.py`, `test_lode_runner.py`, and
-  `test_ali_baba.py` run the games on sim/'s machines, which group G5
-  ports (below).
 - `test_fuzz_tools.py` runs the Python fuzzers on a few seeds, for
   group G6, and `test_sim_assembler.py` tests sim/assembler.py, which
   the fuzzers' runner still uses.
@@ -57,21 +55,20 @@ The modules left test Python code that a later group ports or removes.
   equality, and binutils/elf.py, which go in group R.
 - `test_sim_chapters.py` holds `_run_program`, the TAC interpreter's
   run of a program, which fuzz/runner.py imports.
-- `cpp_build.py`, `link_helpers.py` (`linked_text`, which
-  test_zork_interpreter.py reads), `no_inlining.py`, and
-  `asm_compare.py`, which nothing imports, go in group R.
+- `cpp_build.py`, which test_fuzz_tools.py reads, and `no_inlining.py`
+  and `asm_compare.py`, which nothing imports, go in group R.
 
 ## The multi-unit examples
 
-`test_zork_interpreter.py`, `test_lode_runner.py`, and
-`test_ali_baba.py` cover the three programs in `examples/` that are
-linked from several units with a linker script. golden/O.txt holds
-each unit's `-S -O` text and golden/links.txt each linked program's
-digest, so these modules hold only the runs of the programs, which
-need files from the reverse-engineering projects, aren't in this
-repository, and are skipped without them. On Robert's machine those
-projects are cloned in F:/Projects, and the full suite runs with these
-set (and c6502_tests runs its comparisons with dasm when
+The three programs in `examples/` that are linked from several units
+with a linker script are covered by golden/O.txt, which holds each
+unit's `-S -O` text, golden/links.txt, which holds each linked
+program's digest, and the doctest cases of step 9's G5, which play the
+games on the C++ machines (cpp/README.md, "The games' machines"). The
+plays need files from the reverse-engineering projects, which aren't in
+this repository, and are skipped without them. On Robert's machine
+those projects are cloned in F:/Projects, and c6502_tests runs the
+plays with these set (and its comparisons with dasm when
 `F:/dasm-2.20.14.1-win-x64` is on the PATH):
 
 ```sh
@@ -82,36 +79,27 @@ ALI_BABA_DIR=F:/Projects/ali_baba_reveng
 ```
 
 - cpp/tests/test_zork_interpreter.cpp compares the linked program's
-  `objdump.py -D` listing with its checked-in copy. With `ZORK_DSK` set
-  to Zork I's disk image, test_zork_interpreter.py plays two sessions
-  on the C interpreter and on Zork's own, read from the same image, and
-  compares every Monitor and RWTS call.
-- `test_lode_runner.py` builds the program in `setUpClass`. With
-  `LODE_RUNNER_DIR` set to the lode_runner_reveng directory, `TestRuns`
-  plays three scripts of keys, `test_demo` (the attract mode),
-  `test_game` (a game that ends in the high-score table), and
-  `test_editor` (an edit, a save, a cleared level, and a game played
-  from the editor), on the C program and on the original, on
-  `sim/lode_runner.py`'s stand-in Apple II. The two streams of
-  soft-switch accesses and RWTS calls must be the same up to the
-  event at which the original's run ends, and so must the disks at
-  the end. On a difference, the failure message shows the events
-  around the first one, each with the routine or function it came
-  from. The demo, which runs both programs for about four minutes, is
-  the slowest test of the suite, so each script is a test method of
-  its own, which a worker of `-n auto` takes alone.
-- `test_ali_baba.py` round-trips disk images through `sim/disk2.py`.
-  With `ALI_BABA_DIR` set to the ali_baba_reveng directory (after its
-  `build.py`), `TestOriginal` plays six scripts on the original (the
-  attract mode, a game, a save to a blank disk, a load, a visit to the
-  forest's chests and shops, and a game in which a second character
-  joins and Ali Baba retires) and checks what each reaches, and
-  `TestRuns` plays them on the linked C program too and requires the
-  same events, on `sim/ali_baba.py`, and the same disks.
-  `TestReadmeLink` links the program by the README's command, with no
-  `--defsym`, and plays the game script on it. `uv run python -m
-  tests.test_ali_baba coverage` lists the original's routines no script
-  reaches.
+  `objdump.py -D` listing with its checked-in copy, and
+  test_zork_interpreter_sim.cpp plays two sessions on the C interpreter
+  and on Zork's own, read from the disk image, and compares every
+  Monitor and RWTS call.
+- cpp/tests/test_lode_runner_sim.cpp plays three scripts of keys, the
+  attract mode, a game that ends in the high-score table, and an edit,
+  a save, a cleared level, and a game played from the editor, on the C
+  program and on the original. The two streams of soft-switch accesses
+  and RWTS calls must be the same up to the event at which the
+  original's run ends, and so must the disks at the end. On a
+  difference, the failure message shows the events around the first
+  one, each with the routine or function it came from.
+- cpp/tests/test_ali_baba_sim.cpp plays six scripts on the original
+  (the attract mode, a game, a save to a blank disk, a load, a visit to
+  the forest's chests and shops, and a game in which a second character
+  joins and Ali Baba retires) and checks what each reaches, then plays
+  them on the linked C program too and requires the same events and
+  disks, and plays the game on the program linked by the README's
+  command, with no `--defsym`. test_disk2.cpp round-trips disk images
+  through the Disk II. `c6502cpp game-run ali_baba coverage` lists the
+  original's routines no script reaches.
 
 ## Chapter corpora
 

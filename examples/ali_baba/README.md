@@ -96,13 +96,12 @@ leaves it. The program has `static` variables with initial values that
 
 ## How it's compared
 
-`tests/test_ali_baba.py` checks each unit's output against its `.asm`
-file. With `ALI_BABA_DIR` set to the reverse-engineering project's
+golden/O.txt checks each unit's output against a fresh compile. With `ALI_BABA_DIR` set to the reverse-engineering project's
 directory, which holds the game's disk image and, after `build.py`,
 `output/main.bin` (the original's memory image, `$0500-$BFFF`),
 `output/main.asm`, and `output/main.sym`, it also plays six scripts
 on the C program and on the original, on the stand-in Apple II in
-`sim/ali_baba.py`:
+cpp/src/sim/ali_baba.h (cpp/tests/test_ali_baba_sim.cpp):
 
 - The attract mode. Nothing is pressed, and the title tune and the
   border animation play.
@@ -124,7 +123,7 @@ A script is the keys, each pressed before a numbered `KBD` read, and
 the disk swaps, found by running the original. Both programs start
 from the image as the loader leaves it, and the C program is loaded
 over it with the linker script's regions cleared. The Apple II's Disk
-II is emulated a nibble at a time (`sim/disk2.py`), so the game's own
+II is emulated a nibble at a time (cpp/src/sim/disk2.h), so the game's own
 disk code runs as it would on the machine, copy-protection check
 included, and the Monitor routines the game calls are stand-ins with
 the ROM's results. The simulator records every soft-switch access,
@@ -135,12 +134,12 @@ recorded, since the C program calls the HRCG directly where the
 original goes through `COUT`.
 
 The six scripts run on the program linked with the simulator's runtime
-helpers (`sim.linked.defsym_args`), and the game also runs on the
+helpers (`sim::defsym_args`), and the game also runs on the
 program linked by the command above, which holds its own copy of
 `bin16_to_bcd` from the runtime library.
 
 The six scripts run 337 of the 387 code labels in the spans the C
-program replaces (`uv run python -m tests.test_ali_baba coverage`
+program replaces (`c6502cpp game-run ali_baba coverage`
 lists the rest). The code that no script reaches includes the menu
 that picks one of several mobs in a cell, attacks that open or topple an object,
 the weapons and armor other than the oak club and the leather armor,

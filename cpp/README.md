@@ -298,10 +298,23 @@ cpp/
                       sim/linked.py: `build_sim` of an asm program,
                       `build_linked_sim` of an executable, `Simulation`,
                       and `SimResult` (step 9, G4)
+    sim/apple2.*      Zork's Apple II, from sim/apple2.py (step 9, G5)
+    sim/lode_runner.* Lode Runner's machine, from sim/lode_runner.py
+    sim/disk2.*       the Disk II, a nibble at a time, from sim/disk2.py
+    sim/ali_baba.*    Ali Baba's machine, from sim/ali_baba.py
+    sim/game_machine.*  what Lode Runner's and Ali Baba's machines share:
+                      the decoding of a soft-switch access, the CRC of a
+                      hi-res page, and the names of routines
+    sim/games.*       the games' scripts and the setups the tests play
+                      them in
+    sim/game_run.*    `c6502cpp game-run`, which plays a script and
+                      writes its events
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
     compile_case.*    the library of the tests of whole compiles (step 9)
     sim_case.*        the library's runs of a source in the simulator
+    game_case.*       the build of a multi-unit example for the games'
+                      cases
     sim_chapters.*    the tables of the simulator's runs of the corpus:
                       each chapter program's traced return, the skips,
                       and the known optimizer divergences
@@ -3580,6 +3593,48 @@ tests. The command and the case were removed once both comparisons
 passed, because the captures and the records they read were written
 by scripts that aren't in the repository, so neither can be run
 again.
+
+## The games' machines
+
+src/sim/apple2.h, lode_runner.h, ali_baba.h, and disk2.h are the
+stand-in Apple IIs that Zork's interpreter, Lode Runner, and Ali Baba
+run on (step 9, G5), ported from sim/apple2.py, lode_runner.py,
+ali_baba.py, and disk2.py. Each runs its own loop over `Cpu::step`, as
+the Python machines ran py65's step, and decodes each instruction's
+soft-switch access before it runs (`game::soft_switch_access`), as the
+Python machines did, rather than through the CPU's read and write
+callbacks, which would also see accesses such as `JMP ($C0xx)` that
+the Python decoding leaves out. src/sim/games.h holds the scripts the
+games are played with and the setups the tests play them in.
+cpp/tests/test_zork_interpreter_sim.cpp, test_lode_runner_sim.cpp, and
+test_ali_baba_sim.cpp play them, and they run only where ZORK_DSK,
+LODE_RUNNER_DIR, and ALI_BABA_DIR name the games' files (doctest
+reports them as skipped otherwise). test_disk2.cpp runs everywhere.
+
+`c6502cpp game-run GAME SCRIPT` plays one script on the original, or
+with `--exe` on a linked C program, and writes each event with its PC,
+its cycle count, and a CRC-32 of the CPU's registers and cycles, then
+the machine's state at the end (src/sim/game_run.h). `c6502cpp game-run
+ali_baba coverage` lists the original's routines that the scripts
+reach, which `python -m tests.test_ali_baba coverage` did.
+
+The machines were checked against the Python ones in two ways.
+
+- With `C6502_SIM_LOCKSTEP=1`, the Python machines' loops record each
+  stretch of instructions between two of their own writes or changes
+  of the registers as a segment, and the C++ CPU runs the same segments
+  through `cpu-run`, each for as many instructions as on py65
+  (sim/lockstep.py's `MachineRecorder`).
+- tools/compare_game_machines.py plays every script on the original
+  and on the C programs on the Python machine, writes the same text as
+  `game-run`, and compares the two. At a difference it runs both sides
+  again with a `step` line for each instruction after the last event
+  that matched. It runs again while sim/'s machines are in the
+  repository:
+
+  ```sh
+  C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_game_machines.py -j 10
+  ```
 
 ## Status
 

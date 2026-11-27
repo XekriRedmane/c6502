@@ -94,8 +94,8 @@ which doesn't read an address field. When it's the game's first RWTS
 call, RWTS steps ten half tracks from track 0, where it takes the head
 to be, the head ends over half tracks 18 to 20 (tracks 9 and 10), and
 that check fails all the same. Once a read has found the track the
-head is over, the check passes: after the game script of
-tests/test_ali_baba.py, three calls of LOAD_SCENE_DATA each got the
+head is over, the check passes: after the game script
+(cpp/src/sim/games.h), three calls of LOAD_SCENE_DATA each got the
 carry clear from DISK_READ_FIELD, and without `WIDE_TRACK` each got it
 set.
 

@@ -5496,3 +5496,112 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   test_sim_assembler.py came, and the 22 skips were the subtests of
   test_sim_asm.py and test_sim_differential.py for the 11 programs of
   `SKIPS`, which went with those modules. No GCC build was made.
+- 27 Nov 2026: group G5 of step 9 is done. The games' machines are in
+  C++, and the 22 tests of the games are doctest cases.
+  - cpp/src/sim/apple2.h is sim/apple2.py, Zork's Apple II, with the
+    Monitor's routines over the text window, the printer at $C100,
+    RWTS at $2900 over images by slot and drive, the scripts of keys
+    and lines, the stops, and RDKEY's step of RNDL and RNDH.
+    lode_runner.h is sim/lode_runner.py, disk2.h is sim/disk2.py, and
+    ali_baba.h is sim/ali_baba.py, with the protection track, the
+    motor's spin-down by cycles, the Monitor stand-ins with the ROM's
+    cycles, the 6 cycles of a hook's RTS, the delay loops taken in one
+    step, the readers of main.asm and main.sym, and `coverage`.
+    game_machine.h holds what Lode Runner's and Ali Baba's machines
+    share, and games.h holds the scripts and the setups the tests
+    played them in. `c6502cpp game-run GAME SCRIPT [--exe PATH]` plays a
+    script on the original or on a linked C program and writes each
+    event and the machine's state at the end, and `c6502cpp game-run
+    ali_baba coverage` replaces `python -m tests.test_ali_baba
+    coverage`.
+  - The games ran in lockstep with py65 first, before any machine was
+    ported. sim/lockstep.py's `MachineRecorder`, which the three Python
+    machines call around each instruction with `C6502_SIM_LOCKSTEP=1`,
+    makes a segment of each stretch of instructions between two of the
+    machine's own writes or changes of the registers, and `cpu-run` runs
+    each segment for as many instructions as py65 ran, through a new
+    `instructions` field of a segment. The three game modules passed with
+    the mode on, in 42 runs of a machine (the scripts and the calls of
+    `__zp_init`), with 506,351,199 instructions in 19,256,875 segments
+    and no difference: 27,637,459 instructions on Zork's machine,
+    301,765,203 on Lode Runner's, and 176,948,537 on Ali Baba's. A py65
+    with `LDA #` broken on purpose after 5,000 of them was caught in the
+    chunk where it happened.
+  - tools/compare_game_machines.py compares the C++ machines with the
+    Python ones. It plays each script on the Python machine, on the
+    original and on the C programs (Ali Baba's linked both with the
+    simulator's helpers and by the README), writes the text that
+    `game-run` writes, and compares the two: each event with its PC, its
+    cycle count, and a CRC-32 of the CPU's registers and cycles as it
+    was recorded, and at the end the registers, a CRC-32 of memory and
+    of each disk, the instructions executed, and the undefined opcodes
+    among them. At a difference both sides run again with the registers
+    after each instruction from the last event that matched. It runs
+    again from the repository while sim/'s machines are there:
+
+    ```sh
+    C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_game_machines.py -j 10
+    ```
+
+    | Game | Runs | Events | Instructions |
+    |---|---|---|---|
+    | Zork, 2 sessions, original and C | 4 | 28,770 | 27,637,459 |
+    | Lode Runner, 3 scripts, original and C | 6 | 2,814,402 | 301,765,203 |
+    | Ali Baba, 6 scripts, original and C, and the game linked by the README | 13 | 1,765,122 | 110,429,068 |
+    | in all | 23 | 4,608,294 | 439,831,730 |
+
+    Every run was equal on the first build of the machines, and so was
+    the coverage listing (337 of the 387 routines of the C program's
+    spans). No run executes an undefined opcode, which answers G3's
+    question about the originals. A build with one cycle added to WAIT
+    was caught at Ali Baba's first WAIT event, and the replay showed the
+    cycle at the first step after the event before it, which shows that
+    the comparison sees a single cycle. A first run of the tool linked
+    the C programs from objects named `zork-main.o` and so on, which the
+    linker scripts don't place, since they place sections by the
+    objects' names, and its Zork program made 8 calls more than the
+    original. The tool now names each object after its unit.
+
+  | Module | Ported | Dropped | Left in Python |
+  |---|---|---|---|
+  | test_zork_interpreter.py | 2 | 0 | none |
+  | test_lode_runner.py | 3 | 0 | none |
+  | test_ali_baba.py | 17 | 0 | none |
+  | in all | 22 | 0 | 0 |
+
+  test_ali_baba.py's 17 are `TestOriginal`'s 6, `TestRuns`'s 6,
+  `TestReadmeLink`'s 2, and `TestDisk`'s 3, which draw their sectors
+  from py_random on the Python test's seeds. The plays run only where
+  ZORK_DSK, LODE_RUNNER_DIR, and ALI_BABA_DIR are set, and doctest
+  reports them as skipped otherwise. The 22 take about 22 seconds,
+  where the Python suite's game modules took 12.5 minutes on 10 workers
+  in the lockstep run. tests/link_helpers.py went with
+  test_zork_interpreter.py, its last reader.
+
+  The plan changed in four places once the code was read.
+  - The machines run their own loops over `Cpu::step` and decode each
+    instruction's soft-switch access before it runs, as the Python
+    machines do, rather than through the CPU's read and write callbacks
+    and `Cpu::run`. The callbacks also see accesses the Python decoding
+    leaves out, such as `JMP ($C0xx)`, and the Python machines check
+    their stop between an instruction and the next cycle check, which
+    `Cpu::run` doesn't offer.
+  - sim/runtime.py stays, since sim/harness.py imports it for the
+    fuzzers' runner (G6). sim/apple2.py, lode_runner.py, ali_baba.py,
+    disk2.py, and linked.py stay too, with the comparison, so that it
+    runs again while the Python simulator is in the repository, and they
+    go with sim/ in R.
+  - The games' lockstep runs needed a count of instructions for each
+    segment of `cpu-run` and a recorder in the machines' loops, since a
+    machine writes memory between two instructions.
+  - The Python machines' `screen` and `level_map`, which nothing calls,
+    weren't ported.
+
+  The fresh MSVC build gave 11,165 doctest cases passed (124,209
+  assertions) and none skipped. Run alone, the cases of the games gave
+  24 passed, the 22 ported and Zork's two listing checks. ctest gave 76
+  of 76, `check-golden` 19,678 jobs with 0 differing, and `check-frozen`
+  no difference. The suite, with `C6502_CHECK_IR=1` and the games' files
+  present, gave 60 passed, against 82 at the base, and the 22 tests of
+  the three game modules account for the difference. No GCC build was
+  made.

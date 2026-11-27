@@ -9,10 +9,14 @@ group G3 wrote the CPU (cpp/src/sim/cpu.h) and G4 the assembler, the
 runtime, and the harness (cpp/src/sim/assembler.h, runtime.h, and
 harness.h, which cpp/README.md, "The simulator's harness", describes),
 which the C++ tests run programs on. G4 checked the C++ harness against
-this one on every run of the Python suite. What is here stays for the
-games' machines, which G5 ports (apple2.py, lode_runner.py,
-ali_baba.py, disk2.py, runtime.py, and linked.py), and for the fuzzers'
-runner, which G6 ports (assembler.py and harness.py). The C++ hooks
+this one on every run of the Python suite. G5 ported the games'
+machines to cpp/src/sim/ (apple2.h, lode_runner.h, ali_baba.h, and
+disk2.h, cpp/README.md, "The games' machines"), and the games' tests
+are doctest cases. What is here stays for the fuzzers' runner, which G6
+ports (assembler.py, harness.py, runtime.py, and lockstep.py), and the
+Python machines (apple2.py, lode_runner.py, ali_baba.py, disk2.py, and
+linked.py) stay for tools/compare_game_machines.py, which compares the
+C++ machines with them, until group R removes sim/. The C++ hooks
 compute with fp_arith, and the hooks of runtime.py differ from them for
 a float that overflows a single, a zero divisor, a NaN operand, and the
 conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
@@ -60,7 +64,7 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
   lines come from a script. Every call is recorded in `calls`, so two
   programs can be compared call for call, and `run` stops at a `BRK`,
   a `JMP` to itself, or a line input with the script used up.
-  `tests/test_zork_interpreter.py` uses it.
+  cpp/src/sim/apple2.h is its port.
 - `lode_runner.py` — `Machine`, a stand-in Apple II for Broderbund's
   Lode Runner and examples/lode_runner. It records every access to
   the soft switches at `$C000-$C0FF` and every call of RWTS (a Python
@@ -70,7 +74,7 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
   Keys come from a script indexed by the number of KBD reads. The
   soft switches are found by decoding each instruction's address
   before it runs. `original_machine` and `program_machine` set up the
-  two programs. `tests/test_lode_runner.py` uses it.
+  two programs. cpp/src/sim/lode_runner.h is its port.
 - `ali_baba.py` — `Machine`, a stand-in Apple II for Electronic Arts'
   Ali Baba and examples/ali_baba, built like `lode_runner.py`. It
   records every soft-switch access, every call of a Monitor routine
@@ -85,7 +89,7 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
   HRCG and the disk code staged in page 1), and `program_machine`
   loads a linked executable over the same image, runs `__zp_init`,
   and enters `main`. `coverage` reports which of the original's
-  routines a run executes. `tests/test_ali_baba.py` uses it.
+  routines a run executes. cpp/src/sim/ali_baba.h is its port.
 - `disk2.py` — a Disk II controller and drives emulated a nibble at a
   time: a `.dsk` image converted to DOS 3.3 tracks (address and data
   fields, 6-and-2 encoding, the sector skew) and back, stepper phases
@@ -93,7 +97,7 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
   disk moves one nibble per read of the data latch, so what code reads
   doesn't depend on its timing. `WIDE_TRACK` reads the half tracks
   around track 5 as track 5, as the wide track Ali Baba's copy
-  protection checks would read.
+  protection checks would read. cpp/src/sim/disk2.h is its port.
 - `runtime.py` — runtime stub: zero-page reservations, boot stub,
   reset vector, and Python-implemented hooks for the 6502 helpers
   (`mul*` / `divmod*` / `asl*` / `asr*` / `lsr*`, plus FP slots). Each
@@ -108,8 +112,13 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
   hook calls, with a digest of the state after each instruction, and
   one `cpu-run` request (`cpp_backend.cpu_run`) runs the same segments
   on the C++ CPU. The first difference raises `LockstepError` with both
-  states at the instruction. `C6502_SIM_LOCKSTEP_LOG=<dir>` appends each
-  run's counts to `<dir>/lockstep-<pid>.txt`. It goes with py65.
+  states at the instruction. The games' machines call its
+  `MachineRecorder` around each instruction in the same mode, which
+  makes a segment of each stretch of instructions between two of the
+  machine's own changes to memory or the registers and runs each on the
+  C++ CPU for as many instructions as on py65.
+  `C6502_SIM_LOCKSTEP_LOG=<dir>` appends each run's counts to
+  `<dir>/lockstep-<pid>.txt`. It goes with py65.
 - The runtime helpers' 6502 code, which `build_runtime` assembles
   at $E000, is built in C++ (cpp/src/rtlib/CLAUDE.md), and
   `build_runtime` reads it through `cpp_backend.helper_program`, which
@@ -120,8 +129,8 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
 
 - See `docs/sim_findings.md` for known divergences between the
   Python-trap runtime and the 6502-asm runtime.
-- The games' tests (tests/test_zork_interpreter.py, test_lode_runner.py,
-  and test_ali_baba.py) and fuzz/runner.py drive it.
+- fuzz/runner.py drives it, and tools/compare_game_machines.py drives
+  the games' machines.
 - `build_sim(optimize=False)` runs the same passes as `compile.py
   -S`, including the peephole fixedpoint, so unoptimized sim
   tests execute the code the CLI emits.

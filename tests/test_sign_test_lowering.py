@@ -3,7 +3,9 @@ a signed `x` (`tac_to_asm.Translator._translate_sign_test`): the sign
 bit of the high byte, moved into C by `ASL` and into a zero by `ROL`.
 And for the unsigned orderings kept as a value
 (`_translate_unsigned_ordering`), where `a < b` is the carry of `b - a
-- 1`, `CLC` and `SBC`."""
+- 1`, `CLC` and `SBC`.
+
+The `-S` text is checked in cpp/tests/test_sign_test_lowering.cpp."""
 
 from __future__ import annotations
 
@@ -57,23 +59,6 @@ class TestSignTest(unittest.TestCase):
                         self.assertEqual(got_lt, int(v < 0), msg=f"{v} < 0")
                         self.assertEqual(mem[ge + k], int(v >= 0),
                                          msg=f"{v} >= 0")
-
-    def test_no_subtract(self):
-        from compile import _run_source
-        src = ("#include <stdint.h>\n"
-               "#include <stdbool.h>\n"
-               "uint16_t a, b;\n"
-               "bool n, p;\n"
-               "int main(void) {\n"
-               "    n = (int16_t)(a ^ b) < 0;\n"
-               "    p = (int16_t)a >= 0;\n"
-               "    return 0;\n"
-               "}\n")
-        asm = _run_source("codegen", src, optimize=True)
-        body = asm[asm.index("\nmain:"):]
-        self.assertNotIn("SBC", body)
-        self.assertNotIn("BVC", body)
-        self.assertEqual(body.count("ROL"), 2)
 
 
 _UNSIGNED_PAIRS = ((0, 0), (0, 1), (1, 0), (5, 5), (0x7F, 0x80),
@@ -153,15 +138,6 @@ class TestUnsignedOrdering(unittest.TestCase):
         "    return n;\n"
         "}\n"
     )
-
-    def test_carry_return_needs_no_rol(self):
-        # `return level > l;` from a function that returns its `bool`
-        # in C is the subtract alone, `LDA level; CLC; SBC l`.
-        from compile import _run_source
-        asm = _run_source("codegen", self._CARRY, optimize=True)
-        body = asm[asm.index("\nbeats:"):asm.index("\nmain:")]
-        self.assertNotIn("ROL", body)
-        self.assertNotIn("EOR", body)
 
     def test_carry_return_runs(self):
         for optimize in (False, True):

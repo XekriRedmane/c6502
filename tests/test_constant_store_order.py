@@ -3,7 +3,10 @@ stored, constant or loaded from memory, so each value is loaded once.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in
+cpp/tests/test_constant_store_order_source.cpp."""
 
 import unittest
 
@@ -77,19 +80,6 @@ int main(void) {
             with self.subTest(optimize=optimize):
                 got = build_sim(self._FILL, optimize=optimize).run()
                 self.assertEqual(got.return_int(), 820)
-
-    def test_fill_loads_each_byte_once(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._FILL, optimize=True)
-        lines = asm.split("\nmain:\n")[1].splitlines()
-        # The first load of each table byte stores it into the local
-        # and then into the global.
-        for table, glob in (("ROWS", "GROW"), ("COLS", "GCOL")):
-            load = f"   LDA   {table},X"
-            self.assertEqual(lines.count(load), 1)
-            at = lines.index(load)
-            self.assertTrue(lines[at + 1].startswith("   STA   __local_main__"))
-            self.assertEqual(lines[at + 2], f"   STA   {glob}")
 
     def test_store_into_source_runs(self):
         # The rows read are 8, 7, 3 (stored by the iteration before), and 5.

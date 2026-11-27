@@ -2,7 +2,10 @@
 target tests what the jump's own path decided goes past the test, a
 conditional jump that the code before it decided becomes a `Jump` or
 goes, and a conditional jump's target block is placed right after the
-`Jump` that follows it."""
+`Jump` that follows it.
+
+The `-S` text is checked in
+cpp/tests/test_known_compare_thread_source.cpp."""
 
 from __future__ import annotations
 
@@ -103,18 +106,6 @@ class TestRuns(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 r = build_sim(src, optimize=optimize).run()
                 self.assertEqual(r.return_int(), expected)
-
-    def test_second_compare_goes(self):
-        # handle_timers in examples/lode_runner/timers.c: one compare
-        # with 20 before the `if` and none in it.
-        from compile import _run_source
-        asm = _run_source("codegen", _program(
-            "if (t == 20 || t == 10) r = t == 20 ? 0x37 : 0x38;"),
-            optimize=True)
-        start = asm.index("\nf:")
-        body = asm[start:asm.index("\nmain:", start)]
-        self.assertEqual(body.count("CMP   #$14"), 1)
-        self.assertEqual(body.count("JMP"), 0)
 
 
 if __name__ == "__main__":

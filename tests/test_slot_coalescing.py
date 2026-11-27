@@ -3,7 +3,9 @@ copy of a parameter takes the parameter's own slot.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_slot_coalescing.cpp."""
 
 from __future__ import annotations
 
@@ -72,14 +74,6 @@ class TestRuns(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 r = build_sim(_MULU16, optimize=optimize).run()
                 self.assertEqual(r.return_int(), _expected())
-
-    def test_no_copy_of_the_parameters(self):
-        from compile import _run_source
-        asm = _run_source("codegen", _MULU16, optimize=True)
-        body = asm[asm.index("\nmul:"):asm.index("\ndiv:")]
-        self.assertNotIn("__local_mul__a", body)
-        self.assertIn("ASL   __zpabi_mul__a_0", body)
-        self.assertIn("changes=__zpabi_mul__a_0", asm)
 
 
 if __name__ == "__main__":

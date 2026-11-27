@@ -196,12 +196,12 @@ Machine program_machine(const std::vector<std::uint8_t>& image, const binutils::
                         const std::vector<std::uint8_t>& disk, const std::vector<KeyPress>& keys) {
   Cpu cpu;
   std::copy_n(image.begin(), std::min<std::size_t>(image.size(), 0x10000), cpu.memory.begin());
-  std::fill(cpu.memory.begin() + kCodeStart, cpu.memory.begin() + kCodeEnd, 0);
+  std::fill(cpu.memory.begin() + kCodeStart, cpu.memory.begin() + kCodeEnd, std::uint8_t{0});
   for (const binutils::elf::Segment& seg : exe.segments) {
     if (seg.paddr < 0 || seg.paddr + seg.memsz > 0x10000) {
       throw std::runtime_error("the executable has a segment outside $0000-$FFFF");
     }
-    std::fill_n(cpu.memory.begin() + seg.paddr, seg.memsz, 0);
+    std::fill_n(cpu.memory.begin() + seg.paddr, seg.memsz, std::uint8_t{0});
     std::copy(seg.data.begin(), seg.data.end(), cpu.memory.begin() + seg.paddr);
   }
   cpu.sp = 0x07;

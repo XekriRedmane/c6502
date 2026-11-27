@@ -11,7 +11,14 @@
 namespace c6502::sim::games {
 
 std::optional<std::string> env(const char* name) {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
   const char* value = std::getenv(name);
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
   if (value == nullptr || *value == '\0') return std::nullopt;
   return std::string(value);
 }
@@ -78,8 +85,8 @@ void set_up_zork(ZorkRun& run, const Bytes& dsk, const ZorkSession& session) {
   apple2::Apple2& a = run.machine;
   a.keys.assign(session.keys.begin(), session.keys.end());
   a.lines.assign(session.lines.begin(), session.lines.end());
-  a.disks[{0x60, 1}] = dsk;
-  a.disks[{0x60, 2}] = Bytes(dsk.size(), 0);
+  a.disks[{std::uint8_t{0x60}, std::uint8_t{1}}] = dsk;
+  a.disks[{std::uint8_t{0x60}, std::uint8_t{2}}] = Bytes(dsk.size(), 0);
   a.boot_screen();
   run.cpu.memory[0x7C] = 0x60;
   run.cpu.memory[0x7F] = 16;
@@ -183,7 +190,7 @@ LodeRunnerFiles LodeRunnerFiles::read(const std::string& dir) {
 Bytes lode_runner_disk(const Bytes& master, LodeRunnerDisk disk) {
   Bytes out = master;
   const std::size_t at = apple2::dsk_sector(12, 15);
-  if (disk == LodeRunnerDisk::kGame) std::fill_n(out.begin() + static_cast<std::ptrdiff_t>(at), 80, 0);
+  if (disk == LodeRunnerDisk::kGame) std::fill_n(out.begin() + static_cast<std::ptrdiff_t>(at), 80, std::uint8_t{0});
   if (disk == LodeRunnerDisk::kEditor) out.at(at + 255) = 0;
   return out;
 }

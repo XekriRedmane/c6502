@@ -527,8 +527,15 @@ def _first_difference(a: list[str], b: list[str]) -> int | None:
     return None if len(a) == len(b) else min(len(a), len(b))
 
 
+class Comparison(NamedTuple):
+    equal: bool
+    events: int
+    instructions: int
+    report: list[str]
+
+
 def compare(game: str, script: str, program: str, exe: Path | None,
-            events: int | None, out_dir: Path) -> tuple[bool, int, int, list[str]]:
+            events: int | None, out_dir: Path) -> Comparison:
     t = time.time()
     py, _ = python_run(game, script, exe, events)
     t_py = time.time() - t
@@ -541,15 +548,15 @@ def compare(game: str, script: str, program: str, exe: Path | None,
     n_events = sum(1 for ln in py if ln.startswith(("event ", "call ")))
     if script == "coverage":
         i = _first_difference(py[:-2], cpp)
-        return i is None, 0, 0, [
-            f"{stem}: {'equal' if i is None else f'line {i} differs'}"]
+        return Comparison(i is None, 0, 0, [
+            f"{stem}: {'equal' if i is None else f'line {i} differs'}"])
     instructions = int(py[-1].split(" instructions ")[1].split()[0])
     undefined = next(ln for ln in py if ln.startswith("undefined"))
     i = _first_difference(py, cpp)
     if i is None:
-        return True, n_events, instructions, [
+        return Comparison(True, n_events, instructions, [
             f"{stem}: equal, {n_events} events, {instructions} instructions, "
-            f"{undefined}, Python {t_py:.0f} s, C++ {t_cpp:.1f} s"]
+            f"{undefined}, Python {t_py:.0f} s, C++ {t_cpp:.1f} s"])
     report = [f"{stem}: line {i} differs",
               f"  python: {py[i] if i < len(py) else '(none)'}",
               f"  c++:    {cpp[i] if i < len(cpp) else '(none)'}"]
@@ -570,7 +577,7 @@ def compare(game: str, script: str, program: str, exe: Path | None,
                    f"    before: {ps[j - 1] if j > 0 else '(the event)'}",
                    f"    python: {ps[j] if j < len(ps) else '(none)'}",
                    f"    c++:    {cs[j] if j < len(cs) else '(none)'}"]
-    return False, n_events, instructions, report
+    return Comparison(False, n_events, instructions, report)
 
 
 def main() -> int:
@@ -610,20 +617,20 @@ def main() -> int:
         futures = {pool.submit(compare, g, s, p, None, None, out_dir): (g, s, p) for g, s, p in first}
         for future in as_completed(futures):
             g, s, p = futures[future]
-            same, n, k, report = future.result()
-            counts[(g, s)] = n
+            c = future.result()
+            counts[(g, s)] = c.events
             if (g, s, p) in runs:
-                print("\n".join(report), flush=True)
-                ok &= same
-                totals = [totals[0] + 1, totals[1] + n, totals[2] + k]
+                print("\n".join(c.report), flush=True)
+                ok &= c.equal
+                totals = [totals[0] + 1, totals[1] + c.events, totals[2] + c.instructions]
         second = [(g, s, p) for g, s, p in runs if p != "original"]
         futures = {pool.submit(compare, g, s, p, exes[(g, p)], counts.get((g, s)), out_dir): (g, s, p)
                    for g, s, p in second}
         for future in as_completed(futures):
-            same, n, k, report = future.result()
-            print("\n".join(report), flush=True)
-            ok &= same
-            totals = [totals[0] + 1, totals[1] + n, totals[2] + k]
+            c = future.result()
+            print("\n".join(c.report), flush=True)
+            ok &= c.equal
+            totals = [totals[0] + 1, totals[1] + c.events, totals[2] + c.instructions]
     print(f"{totals[0]} runs, {totals[1]} events, {totals[2]} instructions: "
           f"{'all equal' if ok else 'DIFFERENT'} (texts in {out_dir})")
     return 0 if ok else 1

@@ -1,19 +1,17 @@
 """cpp/src/passes/return_in_zero_page.h: a `static` function returning a
 pointer returns it in a zero-page object of its own, `F@ret`.
 
-`TestRewrite` checks which functions the TAC rewrite chooses and the
-instructions it writes. `TestPrograms` runs programs that use the
-returned pointer in each way the pass and the asm passes after it
-have to keep right, in the simulator with and without `-O`.
-`TestCodegen` checks that a read through the result right after the
-call reads through `F@ret`, with no copy."""
+`TestPrograms` runs programs that use the returned pointer in each way
+the pass and the asm passes after it have to keep right, in the
+simulator with and without `-O`. That a read through the result right
+after the call reads through `F@ret`, with no copy, is checked in
+cpp/tests/test_return_in_zero_page_source.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.no_inlining import no_inlining
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -82,24 +80,6 @@ class TestPrograms(unittest.TestCase):
                     result = build_sim(src, optimize=optimize).run()
                     self.assertFalse(result.timed_out)
                     self.assertEqual(result.return_int_signed(), expected)
-
-
-@needs_c6502cpp
-@no_inlining()
-class TestCodegen(unittest.TestCase):
-
-    def test_read_right_after_the_call_goes_through_the_object(self):
-        from compile import _run_source
-        src = (
-            "#include <stdint.h>\n"
-            "uint8_t *base;\n"
-            "static uint8_t *addr(uint8_t n) { return base + n * 9; }\n"
-            "uint8_t get(uint8_t n) { return addr(n)[4]; }\n"
-        )
-        asm = _run_source("codegen", src, optimize=True)
-        get = asm[asm.index("\nget:\n"):]
-        self.assertIn("LDA   (addr@ret),Y", get)
-        self.assertNotIn("STA", get[:get.index("RTS")])
 
 
 if __name__ == "__main__":

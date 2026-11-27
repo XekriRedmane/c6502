@@ -802,7 +802,20 @@ class Machine:
         `stop`, called after each event, returns true ("stop"), or the
         program reaches a `BRK` ("brk", which is also what a call of a
         ROM routine without a hook runs into). A hook ends the run when
-        it returns a string, which `run` returns."""
+        it returns a string, which `run` returns. With
+        `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs the same instructions
+        (`sim.lockstep.MachineRecorder`)."""
+        from sim import lockstep
+        rec = (lockstep.MachineRecorder(self.mpu, "ali_baba")
+               if lockstep.enabled() else None)
+        try:
+            return self._run(max_cycles, stop, rec)
+        finally:
+            if rec is not None:
+                rec.finish()
+
+    def _run(self, max_cycles: int,
+             stop: Callable[["Machine"], bool] | None, rec) -> str:
         mpu = self.mpu
         mem = mpu.memory
         hooks = self.hooks
@@ -855,12 +868,16 @@ class Machine:
                     value = (mpu.a if reg == 1 else mpu.x if reg == 2
                              else mpu.y)
                     self._access(ea, op_access[op], value, pc)
+            if rec is not None:
+                rec.before()
             mpu.pc = (pc + 1) & 0xFFFF
             mpu.excycles = 0
             mpu.addcycles = extracycles[op]
             instruct[op](mpu)
             mpu.pc &= 0xFFFF
             mpu.processorCycles += cycletime[op] + mpu.excycles
+            if rec is not None:
+                rec.after()
             if stop is not None and len(events) != n_events:
                 n_events = len(events)
                 if stop(self):
@@ -1175,7 +1192,7 @@ def _install_helpers(machine: Machine, symbols: dict[str, int],
         mem[at:at + len(runtime.helper_image)] = runtime.helper_image
     for addr, fn in runtime.hooks.items():
         def hook(fn=fn) -> None:
-            fn(mem)
+            fn(machine.mpu.memory)
             machine._rts()
         machine.hooks[addr] = hook
 

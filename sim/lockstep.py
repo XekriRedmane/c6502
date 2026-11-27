@@ -226,3 +226,168 @@ def _check(trace: _Trace, image: bytes, start: dict, hooks, max_cycles: int) -> 
         with open(os.path.join(log_dir, f"lockstep-{os.getpid()}.txt"), "a",
                   encoding="utf-8") as f:
             f.write(f"{total} {len(trace.digests)} {trace.stops[-1]}\n")
+
+
+# A chunk of a machine's run goes to the C++ CPU in one request once it
+# holds this many instructions or segments.
+_CHUNK_INSTRUCTIONS = 2_000_000
+_CHUNK_SEGMENTS = 20_000
+
+
+class MachineRecorder:
+    """Records a game machine's run on py65 (sim/apple2.py,
+    lode_runner.py, and ali_baba.py) and runs it on the C++ CPU too. The
+    machine calls `before` just before it executes an instruction and
+    `after` just after. Whatever the machine changes in between, with its
+    hooks, its soft switches, or a delay loop taken in one step, starts a
+    new segment, whose patches are the bytes the machine wrote and whose
+    registers are the machine's, and each segment runs on the C++ CPU for
+    exactly as many instructions as it ran on py65. The run is sent in
+    chunks, each from the memory py65 had when it began, and compared as
+    `run` compares a harness run. `finish` sends the last chunk and puts
+    the machine's memory back."""
+
+    def __init__(self, mpu, label: str) -> None:
+        self.mpu = mpu
+        self.label = label
+        self.original = mpu.memory
+        self.mem = _RecordingMemory(self.original)
+        self.log = self.mem.log
+        mpu.memory = self.mem
+        self.instructions = 0
+        self.segment_count = 0
+        self._start_chunk()
+
+    def _start_chunk(self) -> None:
+        self.image = bytes(self.mem)
+        self.segments: list[dict] = []
+        self.digests: list[array.array] = []
+        self.written: list[dict[int, int]] = []
+        self.ends: list[tuple] = []
+        self.end: tuple | None = None
+        self.chunk_instructions = 0
+        self.log.clear()
+
+    def _state(self) -> tuple:
+        mpu = self.mpu
+        return (mpu.pc, mpu.a, mpu.x, mpu.y, mpu.sp, mpu.p,
+                mpu.processorCycles)
+
+    def before(self) -> None:
+        state = self._state()
+        if self.log or state != self.end:
+            pc, a, x, y, sp, p, cycles = state
+            self.segments.append({
+                "pc": pc, "a": a, "x": x, "y": y, "sp": sp, "p": p,
+                "cycles": cycles,
+                "patches": [[addr, v] for addr, v in self.log],
+            })
+            self.digests.append(array.array("I"))
+            self.written.append({})
+            self.ends.append(state)
+            self.log.clear()
+
+    def after(self) -> None:
+        state = self._state()
+        record = _RECORD(*state)
+        log = self.log
+        if log:
+            record += b"".join(_WRITE(a, v) for a, v in log)
+            self.written[-1].update(log)
+            log.clear()
+        self.digests[-1].append(zlib.crc32(record))
+        self.ends[-1] = state
+        self.end = state
+        self.chunk_instructions += 1
+        if (self.chunk_instructions >= _CHUNK_INSTRUCTIONS
+                or len(self.segments) >= _CHUNK_SEGMENTS):
+            self._flush()
+
+    def _requests(self, segments: list[dict], counts: list[int]) -> list[dict]:
+        return [dict(seg, instructions=n) for seg, n in zip(segments, counts)]
+
+    def _flush(self) -> None:
+        if self.segments:
+            self._check()
+            self.instructions += self.chunk_instructions
+            self.segment_count += len(self.segments)
+        self._start_chunk()
+
+    def _check(self) -> None:
+        import cpp_backend
+        counts = [len(d) for d in self.digests]
+        results = cpp_backend.cpu_run(
+            self.image, self._requests(self.segments, counts), stops=[],
+            stop_at_brk=False, max_cycles=2**64 - 1)
+        if len(results) != len(self.segments):
+            raise LockstepError(
+                f"{self.label}: the C++ CPU ran {len(results)} segments of a "
+                f"chunk, and py65 {len(self.segments)}")
+        for k, got in enumerate(results):
+            want = self.digests[k]
+            if got["digests"] != want:
+                n = min(len(got["digests"]), len(want))
+                i = next((j for j in range(n) if got["digests"][j] != want[j]), n)
+                self._report(k, i)
+            if got["stop"] != "count" or got["instructions"] != counts[k]:
+                raise LockstepError(
+                    f"{self.label}: segment {k} of a chunk ran {counts[k]} "
+                    f"instructions on py65, and the C++ CPU ended with "
+                    f"{got['stop']} after {got['instructions']}")
+            if got["state"] != self.ends[k]:
+                raise LockstepError(
+                    f"{self.label}: segment {k} of a chunk ends at "
+                    f"{_fmt(self.ends[k])} in py65 and at {_fmt(got['state'])} "
+                    "in the C++ CPU")
+            if got["writes"] != self.written[k]:
+                diff = sorted(set(got["writes"].items())
+                              ^ set(self.written[k].items()))
+                raise LockstepError(
+                    f"{self.label}: segment {k} of a chunk writes differ at "
+                    f"{_fmt_writes(diff[:8])}")
+
+    def _report(self, k: int, i: int) -> None:
+        """Raises `LockstepError` for instruction `i` of segment `k` of the
+        chunk, with py65's state before and after it, found by replaying
+        the chunk's segments on a fresh py65 from the chunk's image, and
+        the C++ CPU's after it."""
+        import cpp_backend
+        from py65.devices.mpu6502 import MPU
+        fresh = MPU()
+        fresh.memory = _RecordingMemory(self.image)
+        counts = [len(d) for d in self.digests[:k]] + [i]
+        for seg, n in zip(self.segments[:k + 1], counts):
+            fresh.pc, fresh.a, fresh.x, fresh.y = seg["pc"], seg["a"], seg["x"], seg["y"]
+            fresh.sp, fresh.p, fresh.processorCycles = seg["sp"], seg["p"], seg["cycles"]
+            for addr, v in seg["patches"]:
+                fresh.memory[addr] = v
+            for _ in range(n):
+                fresh.step()
+        before = _state(fresh)
+        fresh.memory.log.clear()
+        fresh.step()
+        after = _state(fresh)
+        cpp = cpp_backend.cpu_run(
+            self.image, self._requests(self.segments[:k + 1], counts[:k] + [i + 1]),
+            stops=[], stop_at_brk=False, max_cycles=2**64 - 1)[-1]
+        raise LockstepError(
+            f"{self.label}: after {self.instructions} instructions, chunk "
+            f"segment {k}, instruction {i}, from {_fmt(before)}: py65 gives "
+            f"{_fmt(after)} and writes {_fmt_writes(fresh.memory.log)}, and the "
+            f"C++ CPU gives {_fmt(cpp['state'])} and writes "
+            f"{_fmt_writes(cpp['last_writes'])}")
+
+    def finish(self) -> None:
+        """Compares the rest of the run and puts the machine's memory, as
+        py65 left it, back in the object it started with."""
+        try:
+            self._flush()
+        finally:
+            self.original[:] = self.mem
+            self.mpu.memory = self.original
+        log_dir = os.environ.get("C6502_SIM_LOCKSTEP_LOG")
+        if log_dir:
+            with open(os.path.join(log_dir, f"lockstep-{os.getpid()}.txt"),
+                      "a", encoding="utf-8") as f:
+                f.write(f"{self.instructions} {self.segment_count} "
+                        f"{self.label}\n")

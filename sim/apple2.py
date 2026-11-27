@@ -263,7 +263,18 @@ class Apple2:
             other_hooks: dict | None = None) -> str:
         """Steps the MPU until the program ends, and returns why: "brk",
         "halt" (a jump to itself), "input used up", or raises if it runs
-        past `max_cycles`."""
+        past `max_cycles`. With `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs
+        the same instructions (`sim.lockstep.MachineRecorder`)."""
+        from sim import lockstep
+        mpu = self.mpu
+        rec = lockstep.MachineRecorder(mpu, "apple2") if lockstep.enabled() else None
+        try:
+            return self._run(max_cycles, other_hooks, rec)
+        finally:
+            if rec is not None:
+                rec.finish()
+
+    def _run(self, max_cycles: int, other_hooks: dict | None, rec) -> str:
         mpu = self.mpu
         mem = mpu.memory
         hooks = dict(other_hooks or {})
@@ -286,7 +297,11 @@ class Apple2:
                     raise Stop("brk")
                 if op == 0x4C and mem[pc + 1] | mem[pc + 2] << 8 == pc:
                     raise Stop("halt")
+                if rec is not None:
+                    rec.before()
                 mpu.step()
+                if rec is not None:
+                    rec.after()
         except Stop as stop:
             self.stop_reason = stop.reason
             return stop.reason

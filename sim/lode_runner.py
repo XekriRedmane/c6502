@@ -270,7 +270,20 @@ class Machine:
         """Steps the MPU until `max_cycles` have run ("cycles"), or until
         `stop`, called after each event, returns true ("stop"), or the
         program halts with a `BRK` ("brk"). A hook ends the run when it
-        returns a string, which `run` returns."""
+        returns a string, which `run` returns. With
+        `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs the same instructions
+        (`sim.lockstep.MachineRecorder`)."""
+        from sim import lockstep
+        rec = (lockstep.MachineRecorder(self.mpu, "lode_runner")
+               if lockstep.enabled() else None)
+        try:
+            return self._run(max_cycles, stop, rec)
+        finally:
+            if rec is not None:
+                rec.finish()
+
+    def _run(self, max_cycles: int,
+             stop: Callable[["Machine"], bool] | None, rec) -> str:
         mpu = self.mpu
         mem = mpu.memory
         hooks = self.hooks
@@ -314,12 +327,16 @@ class Machine:
                         ea = mem[zp] | mem[(zp + 1) & 0xFF] << 8
                     if ea >> 8 == 0xC0:
                         self._access(ea, op_access[op], pc)
+                if rec is not None:
+                    rec.before()
                 mpu.pc = (pc + 1) & 0xFFFF
                 mpu.excycles = 0
                 mpu.addcycles = extracycles[op]
                 instruct[op](mpu)
                 mpu.pc &= 0xFFFF
                 mpu.processorCycles += cycletime[op] + mpu.excycles
+                if rec is not None:
+                    rec.after()
             if stop is not None and len(events) != n_events:
                 n_events = len(events)
                 if stop(self):

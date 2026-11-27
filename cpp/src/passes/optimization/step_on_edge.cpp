@@ -31,6 +31,24 @@ bool writes(const ir::Type_instruction& instr, std::string_view name) {
   return false;
 }
 
+std::string_view variable_of(std::string_view ssa_name) {
+  const auto dot = ssa_name.rfind('.');
+  if (dot == std::string_view::npos || dot + 1 == ssa_name.size()) {
+    return ssa_name;
+  }
+  for (const char c : ssa_name.substr(dot + 1)) {
+    if (c < '0' || c > '9') {
+      return ssa_name;
+    }
+  }
+  return ssa_name.substr(0, dot);
+}
+
+bool same_variable(const ir::Type_val& v, std::string_view ssa_name) {
+  const auto* var = std::get_if<ir::Var>(&v);
+  return var != nullptr && variable_of(var->name) == variable_of(ssa_name);
+}
+
 bool conditional_jump(const ir::Type_instruction& ins) {
   return asdl::isa<ir::JumpIfTrue, ir::JumpIfFalse, ir::JumpIfCmp, ir::JumpIfMasked>(ins);
 }
@@ -142,7 +160,7 @@ ir::Function move_steps_onto_edges(ir::Function fn, const NameSet& ssa_names) {
         found = copy_before_write(instrs, at->second + 1, x, t);
       }
     }
-    if (!found) {
+    if (!found || !same_variable(std::get<ir::Copy>(instrs[*found]).dst, x)) {
       ++i;
       continue;
     }

@@ -470,7 +470,11 @@ the function itself.
   written there alone and read by one `Copy(T, Z)` alone, in the block
   its block's jump goes to (with that jump its only way in) or falls
   through to, goes in place of the `Copy` as `Z = X op c`, when
-  nothing on the way writes `X`. `X` and `T` must be SSA names.
+  nothing on the way writes `X`. `X` and `T` must be SSA names, and
+  `Z` an SSA version of `X`'s variable (`variable_of` strips the
+  `.N`), so the step is in place. A copy into another variable stays,
+  since moving it saves nothing and made Zork's `instr_sread` 24
+  bytes longer.
   `do g(i); while (i-- != first);` steps with `DEC i` on the back
   edge. See docs/optimizations/step_on_edge.md.
 - `three_way_compare.h` — `split_three_way_compares`

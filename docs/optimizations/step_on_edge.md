@@ -2,9 +2,9 @@
 
 `MoveStepsOntoEdges` in
 [cpp/src/passes/optimization/step_on_edge.h](../../cpp/src/passes/optimization/step_on_edge.h)
-moves an add or subtract of a constant, whose result reaches its
-variable only through a copy on one edge out of the block, into the
-place of that copy. It runs once after SSA destruction, right after
+moves an add or subtract of a constant, whose result goes back into
+the variable it read only through a copy on one edge out of the
+block, into the place of that copy, where it becomes a step in place. It runs once after SSA destruction, right after
 the post-destruction copy folding. It doesn't run in the unoptimized
 pipeline.
 
@@ -59,7 +59,10 @@ now `LDA i; CMP first; BNE more; RTS; more: DEC i; JMP loop`, 12.
   `X` and a constant into `T`, where SSA construction renamed both
   `X` and `T`. No store through a pointer and no call can write such
   a name.
-- `T` is written by the step alone and read by one `Copy(T, Z)` alone.
+- `T` is written by the step alone and read by one `Copy(T, Z)` alone,
+  where `Z` is `X` or another SSA version of `X`'s variable (`@74.dest.4`
+  for `@74.dest.2`), so that the step at the copy updates the variable
+  in place.
 - No instruction from the step to the end of its block writes `X`,
   and the block ends at a jump.
 - The `Copy` is in the block the jump goes to, or in the block it
@@ -80,6 +83,12 @@ loses a computation whose result nothing read.
   change.
 - A copy in a block that other paths reach too, where the step would
   run on paths that never computed it.
+- A copy into a variable other than `X`'s. The step at the copy would
+  be `Z = X op c`, which takes the same instructions as the step and
+  the copy did, so nothing is saved, and moving it changes what the
+  register allocator sees. In Zork's `instr_sread`, moving
+  `@74.dest.7 = %681.1 + 1` onto its edge made the function 24 bytes
+  longer.
 
 ## Related
 

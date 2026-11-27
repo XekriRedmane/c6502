@@ -260,20 +260,20 @@ TEST_CASE("tac_move_steps_onto_edges finds a label after the steps it moved") {
   c6502::testing::check_stage_case(
       "tac_move_steps_onto_edges",
       "{\"args\": [], \"kwargs\": {\"symbols\": null, \"ssa_dsts\": {\"set\": [\"t1\", \"t2\", "
-      "\"t3\", \"x1\", \"x2\", \"x3\"]}}}",
+      "\"t3\", \"p.1\", \"p.2\", \"q.1\", \"q.2\", \"r.1\", \"r.2\"]}}}",
       "Function(\"f\" true [] [\n"
-      "  Binary(Add Var(\"x1\") Constant(ConstInt(1)) Var(\"t1\"))\n"
+      "  Binary(Add Var(\"p.1\") Constant(ConstInt(1)) Var(\"t1\"))\n"
       "  JumpIfTrue(Var(\"c\") \".lx\")\n"
-      "  Copy(Var(\"t1\") Var(\"z1\"))\n"
-      "  Binary(Add Var(\"x2\") Constant(ConstInt(1)) Var(\"t2\"))\n"
+      "  Copy(Var(\"t1\") Var(\"p.2\"))\n"
+      "  Binary(Add Var(\"q.1\") Constant(ConstInt(1)) Var(\"t2\"))\n"
       "  JumpIfTrue(Var(\"c\") \".ly\")\n"
-      "  Copy(Var(\"t2\") Var(\"z2\"))\n"
-      "  Binary(Add Var(\"x3\") Constant(ConstInt(1)) Var(\"t3\"))\n"
+      "  Copy(Var(\"t2\") Var(\"q.2\"))\n"
+      "  Binary(Add Var(\"r.1\") Constant(ConstInt(1)) Var(\"t3\"))\n"
       "  Jump(\".l\")\n"
       "  Label(\".l\")\n"
       "  Ret(None)\n"
       "  Label(\".n\")\n"
-      "  Copy(Var(\"t3\") Var(\"z3\"))\n"
+      "  Copy(Var(\"t3\") Var(\"r.2\"))\n"
       "  Ret(None)\n"
       "  Label(\".lx\")\n"
       "  Ret(None)\n"
@@ -282,15 +282,15 @@ TEST_CASE("tac_move_steps_onto_edges finds a label after the steps it moved") {
       "])\n",
       "Function(\"f\" true [] [\n"
       "  JumpIfTrue(Var(\"c\") \".lx\")\n"
-      "  Binary(Add Var(\"x1\") Constant(ConstInt(1)) Var(\"z1\"))\n"
+      "  Binary(Add Var(\"p.1\") Constant(ConstInt(1)) Var(\"p.2\"))\n"
       "  JumpIfTrue(Var(\"c\") \".ly\")\n"
-      "  Binary(Add Var(\"x2\") Constant(ConstInt(1)) Var(\"z2\"))\n"
-      "  Binary(Add Var(\"x3\") Constant(ConstInt(1)) Var(\"t3\"))\n"
+      "  Binary(Add Var(\"q.1\") Constant(ConstInt(1)) Var(\"q.2\"))\n"
+      "  Binary(Add Var(\"r.1\") Constant(ConstInt(1)) Var(\"t3\"))\n"
       "  Jump(\".l\")\n"
       "  Label(\".l\")\n"
       "  Ret(None)\n"
       "  Label(\".n\")\n"
-      "  Copy(Var(\"t3\") Var(\"z3\"))\n"
+      "  Copy(Var(\"t3\") Var(\"r.2\"))\n"
       "  Ret(None)\n"
       "  Label(\".lx\")\n"
       "  Ret(None)\n"
@@ -298,6 +298,26 @@ TEST_CASE("tac_move_steps_onto_edges finds a label after the steps it moved") {
       "  Ret(None)\n"
       "])\n",
       "");
+}
+
+// The step's result goes into another variable on the edge, so moving it
+// there makes no update in place, only a longer edge (Zork's
+// instr_sread, 24 bytes).
+TEST_CASE("tac_move_steps_onto_edges leaves a step whose copy writes another variable") {
+  const char* fn =
+      "Function(\"f\" true [] [\n"
+      "  Binary(Add Var(\"p.1\") Constant(ConstInt(1)) Var(\"t1\"))\n"
+      "  JumpIfTrue(Var(\"c\") \".lx\")\n"
+      "  Copy(Var(\"t1\") Var(\"z.1\"))\n"
+      "  Ret(None)\n"
+      "  Label(\".lx\")\n"
+      "  Ret(None)\n"
+      "])\n";
+  c6502::testing::check_stage_case(
+      "tac_move_steps_onto_edges",
+      "{\"args\": [], \"kwargs\": {\"symbols\": null, \"ssa_dsts\": {\"set\": [\"t1\", "
+      "\"p.1\", \"z.1\"]}}}",
+      fn, fn, "");
 }
 
 TEST_CASE("sink_and_past_branch renames the sunk value in a JumpIfCmp and a Ret") {

@@ -21,62 +21,15 @@ simulator in both pipelines against values computed in Python.
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_flag_compares.cpp.
 """
 from __future__ import annotations
 
 import unittest
 
-from tests.test_register_arguments import _body, _codegen
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestCompiled(unittest.TestCase):
-    def test_bit_7_compare(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "extern volatile uint8_t KBD [[c6502::address(0xC000)]];"
-               "uint8_t k(void) { uint8_t c; if ((c = KBD) < 0x80) return 0;"
-               " return c; }")
-        self.assertEqual(_body(_codegen(src), "k")[:2],
-                         ["LDA KBD", "BMI .if_end@0"])
-
-    def test_two_values_one_test(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "uint16_t find(void); void draw(void);"
-               "void f(void) { uint16_t e = find();"
-               " if (e == 0 || e == 1) return; draw(); }")
-        body = _body(_codegen(src), "f")
-        self.assertEqual(body[1], "AND #$FE")
-        self.assertNotIn("CMP #$01", body)
-
-    def test_not_of_bool(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "static bool flag;"
-               "extern uint8_t A [[c6502::address(0x5A00)]];"
-               "extern uint8_t B [[c6502::address(0x5A01)]];"
-               "void f(void) { A = !flag; B = (flag ? 3 : 2) + 1; }")
-        body = _body(_codegen(src), "f")
-        self.assertEqual(body[:3], ["LDA flag", "EOR #$01", "STA A"])
-        self.assertIn("LDA #$04", body)
-        self.assertNotIn("ADC #$01", body)
-
-    def test_byte_plus_one_unsigned(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "extern uint8_t W [[c6502::zeropage(0x23)]];"
-               "void copy(uint8_t row);"
-               "void f(uint8_t top) { for (uint8_t r = top; r + 1 < W; r++)"
-               " copy(r); }")
-        body = _body(_codegen(src), "f")
-        self.assertNotIn("EOR #$80", body)
-
-    def test_high_byte_test(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "uint16_t find(void);"
-               "uint8_t g(void) { uint16_t e = find();"
-               " if (e > 0xFF) return 1; return 2; }")
-        body = _body(_codegen(src), "g")
-        self.assertEqual(body[:3], ["JSR find", "TXA", "BEQ .if_end@0"])
 
 
 _PROGRAM = r"""

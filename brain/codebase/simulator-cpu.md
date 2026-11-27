@@ -7,4 +7,4 @@
 - One `cpu-run` request covers a whole run, each segment after a hook carrying the hook's writes as patches, since each request starts a c6502cpp process. On a difference, the mode replays py65 from the start to the instruction and runs that one segment in C++ again to show both states. A py65 with `LDA #` broken on purpose was caught at the first instruction, which showed the comparison isn't vacuous.
 - For G5: the games' Python machines decode each instruction's soft-switch access before running it, and `JMP ($C0xx)` isn't decoded there, while the read callback sees it. `run` stops at BRK before calling `before_instruction`, so a machine that marks every PC it reaches turns `stop_at_brk` off.
 
-Related: [[codebase/checks-after-python]], [[codebase/tac-def-index-and-globals]], [[principles/make-checks-show-their-coverage]], [[principles/prove-it-works]]
+Related: [[codebase/simulator-harness]], [[codebase/checks-after-python]], [[codebase/tac-def-index-and-globals]], [[principles/make-checks-show-their-coverage]], [[principles/prove-it-works]]

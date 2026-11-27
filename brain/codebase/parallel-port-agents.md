@@ -9,5 +9,6 @@
 - To freeze a CRC-32 of the programs a Python test generates, patch `build_sim` (or `_run_program`) in the test's module to record each source and stop, then call the test's own method. A CRC computed from a copy of the generator retyped into a script tests the copy and misses a difference between the copy and the test.
 - The rule that a module's simulator cases go in cpp/tests/test_<module>_sim.cpp collides where both test_x.py and test_x_sim.py exist, as test_bitint.py and test_bitint_sim.py do. Fork C named test_bitint.py's file test_bitint_program_sim.cpp so that test_bitint_sim.cpp stays free for test_bitint_sim.py.
 - Agents ran the reflect skill on their own, before their reports, and committed notes to brain/ in their branches, which merged cleanly.
+- A brief for a helper names every limit the lead works under, the cap on agents included. G4's test brief listed the build lock, line endings, and commits but not "spawn no agents or forks", and the batch-2 helper forked five times before a message reached it. In G4 two helpers of about 278 tests each took about 55 minutes, and the lead's harness and its own 118 tests were done before they started, so the batches only had to port tests.
 
-Related: [[codebase/worktree-guard]], [[codebase/msbuild-stale-builds]], [[codebase/rewriting-tests-with-scripts]], [[principles/cost-aware-delegation]]
+Related: [[codebase/simulator-harness]], [[codebase/worktree-guard]], [[codebase/msbuild-stale-builds]], [[codebase/rewriting-tests-with-scripts]], [[principles/cost-aware-delegation]]

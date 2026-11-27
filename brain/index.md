@@ -14,6 +14,7 @@
 - [[codebase/parallel-port-agents]]
 - [[codebase/rewriting-tests-with-scripts]]
 - [[codebase/simulator-cpu]]
+- [[codebase/simulator-harness]]
 - [[codebase/surveying-test-dependencies]]
 - [[codebase/t3-restarts]]
 - [[codebase/tac-def-index-and-globals]]

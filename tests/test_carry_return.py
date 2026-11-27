@@ -7,53 +7,19 @@ with `LDA #0; ROL A`. The peepholes are in `cpp/src/passes/carry_return.h`.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6).
+(docs/cpp_port.md, step 8, group G6), and those that compile a source
+and run no simulator are in cpp/tests/test_carry_return_source.cpp.
 """
 
 from __future__ import annotations
 
 import unittest
 
-from errors import TypeCheckError
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 
 _CARRY = "[[c6502::return_bool_in_carry]] "
 _BOOL = "#include <stdbool.h>\n"
-
-
-def _codegen(src, optimize=True):
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _function_text(asm, name):
-    return asm.split(f"\n{name}:")[1].split("SUBROUTINE")[1].split(
-        "\n\n", 2)[1]
-
-
-class TestFrontEnd(unittest.TestCase):
-
-    def _tac(self, src):
-        from compile import _run_stage
-        return _run_stage("tac", src)
-
-
-    def test_rejects_non_bool_return(self):
-        for ret in ("int", "unsigned char", "char"):
-            with self.subTest(ret):
-                with self.assertRaisesRegex(TypeCheckError, "return type"):
-                    self._tac(_CARRY + f"{ret} f(void) {{ return 1; }}")
-
-    def test_declarations_must_agree(self):
-        with self.assertRaisesRegex(TypeCheckError, "must agree"):
-            self._tac("bool f(void);\n"
-                      + _CARRY + "bool f(void) { return 1; }")
-
-    def test_rejects_address(self):
-        with self.assertRaisesRegex(TypeCheckError, "address"):
-            self._tac(_CARRY + "bool f(void) { return 1; }\n"
-                      "bool (*p)(void) = f;")
 
 
 @needs_c6502cpp
@@ -163,39 +129,6 @@ class TestSim(unittest.TestCase):
         self._check(src, 7)
 
 
-@needs_c6502cpp
-class TestCodeShape(unittest.TestCase):
-
-    def test_constant_returns_are_sec_clc(self):
-        asm = _codegen(_BOOL + _CARRY + (
-            "bool yes(void) { return 1; }\n"
-            + _CARRY + "bool no(void) { return 0; }\n"
-            "int main(void) { return yes() + no(); }\n"
-        ))
-        self.assertEqual(_function_text(asm, "yes").split(), ["SEC", "RTS"])
-        self.assertEqual(_function_text(asm, "no").split(), ["CLC", "RTS"])
-
-    def test_caller_branches_on_carry(self):
-        asm = _codegen(_BOOL + (
-            "unsigned char g;\n"
-            + _CARRY + "bool f(unsigned char x) { return x == 3; }\n"
-            "int main(void) { if (f(g)) g = 7; return g; }\n"
-        ))
-        main = asm.split("\nmain:")[1]
-        self.assertRegex(main, r"JSR   f\n   BC[CS]   ")
-        self.assertNotIn("ROL", main)
-
-    def test_soft_stack_epilogue_keeps_carry(self):
-        asm = _codegen(_BOOL + _CARRY + (
-            "bool f(unsigned char n) { if (n == 0) return 1; "
-            "return f(n - 1); }\n"
-            "int main(void) { return f(3); }\n"
-        ))
-        f = asm.split("\nf:")[1].split("\nmain:")[0]
-        self.assertIn("PHP", f)
-        self.assertIn("PLP", f)
-
-
 # A struct of a value and a `bool`, which a `return_bool_in_carry`
 # function returns with the value in A (and X) and the flag in C.
 _ZC = "struct zc { unsigned char v; bool end; };\n"
@@ -207,57 +140,6 @@ def _tac_main(src):
     TAC interpreter."""
     from tests.test_sim_chapters import _run_program
     return _run_program(src)
-
-
-class TestStructFrontEnd(unittest.TestCase):
-
-    def _tac(self, src):
-        from compile import _run_stage
-        return _run_stage("tac", src)
-
-    def test_accepts_value_and_flag(self):
-        for value in ("unsigned char", "signed char", "char", "int",
-                      "unsigned int"):
-            with self.subTest(value):
-                self._tac(
-                    f"struct s {{ {value} v; bool end; }};\n"
-                    + _CARRY + "struct s f(void) { struct s r; r.v = 1; "
-                    "r.end = 0; return r; }"
-                )
-
-    def test_rejects_other_shapes(self):
-        shapes = {
-            "three members": "unsigned char v; bool end; "
-                             "unsigned char x;",
-            "one member": "unsigned char v;",
-            "pointer value": "unsigned char *v; bool end;",
-            "long value": "long v; bool end;",
-            "int flag": "unsigned char v; int end;",
-            "unsigned char flag": "unsigned char v; unsigned char end;",
-            "char flag": "unsigned char v; char end;",
-            "flag first": "bool end; int v;",
-        }
-        for label, members in shapes.items():
-            with self.subTest(label):
-                with self.assertRaisesRegex(
-                        TypeCheckError, "exactly two members"):
-                    self._tac(
-                        f"struct s {{ {members} }};\n"
-                        + _CARRY + "struct s f(void);"
-                    )
-
-    def test_rejects_union(self):
-        with self.assertRaisesRegex(TypeCheckError, "exactly two members"):
-            self._tac("union u { unsigned char v; bool end; };\n"
-                      + _CARRY + "union u f(void);")
-
-    def test_no_hidden_pointer(self):
-        tac = self._tac(_ZC + _CARRY + (
-            "struct zc f(void) { struct zc r; r.v = 3; r.end = 1; "
-            "return r; }\n"
-            "int main(void) { struct zc c = f(); return c.v; }\n"
-        ))
-        self.assertNotIn(".sret", tac)
 
 
 @needs_c6502cpp
@@ -404,45 +286,6 @@ class TestStructSim(unittest.TestCase):
                 sim = build_sim(src, optimize=optimize)
                 sim.mpu.memory[0xD000:0xD004] = lda_sec_rts
                 self.assertEqual(sim.run().return_int(), 85)
-
-
-class TestStructCodeShape(unittest.TestCase):
-
-    def test_callee_sets_c_then_loads_value(self):
-        asm = _codegen(_WV + "struct wv g;\n" + _CARRY + (
-            "struct wv f(void) { return g; }\n"
-            "int main(void) { struct wv r = f(); return r.v; }\n"
-        ))
-        self.assertEqual(_function_text(asm, "f").split(), [
-            "LDA", "g+2", "CMP", "#$01", "LDX", "g+1", "LDA", "g", "RTS",
-        ])
-
-    def test_value_used_before_the_flag(self):
-        # `out = c.v;` before `if (c.end)` used to store the captured
-        # flag and load it back; now the caller branches on C.
-        asm = _codegen(_ZC + "unsigned char out;\n" + _CARRY + (
-            "struct zc f(void);\n"
-            "int main(void) {\n"
-            "    struct zc c = f();\n"
-            "    out = c.v;\n"
-            "    if (c.end) return 1;\n"
-            "    return 2;\n"
-            "}\n"
-        ))
-        main = _function_text(asm, "main")
-        self.assertNotIn("ROL", main)
-        self.assertRegex(main, r"JSR\s+f\s+STA\s+out\s+BC[CS]")
-
-    def test_zp_abi_eligible(self):
-        # No hidden pointer, so `f` gets zp_abi under -O and
-        # the call passes nothing on the soft stack.
-        asm = _codegen(_ZC + _CARRY + (
-            "struct zc f(unsigned char x) { struct zc r; r.v = x; "
-            "r.end = x == 3; return r; }\n"
-            "int main(void) { struct zc c = f(3); return c.v + c.end; }\n"
-        ))
-        self.assertIn("__zpabi_f__x", asm)
-        self.assertNotIn("SSP", _function_text(asm, "main"))
 
 
 if __name__ == "__main__":

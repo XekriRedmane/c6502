@@ -23,6 +23,8 @@ qualifier compatibility check (assigning `const int *` to `int *`
 without a cast). That mirrors gcc's `-Wno-discarded-qualifiers`
 behavior — the modification check at the actual write site is
 the load-bearing one.
+
+The `-S` text is checked in cpp/tests/test_const_qualifier.cpp.
 """
 from __future__ import annotations
 
@@ -170,124 +172,6 @@ class TestVolatileQualifierAndRestrictDrop(unittest.TestCase):
         )
         result = run_c_program(src)
         self.assertEqual(result.return_int_signed(), 10)
-
-
-class TestVolatilePointerDerefSurvives(unittest.TestCase):
-    """Phase 1 of volatile support: a read or write through a
-    pointer to a volatile pointee survives the optimizer end-to-end.
-
-    The motivating case is memory-mapped I/O like Apple II's
-    `$C030` speaker-toggle soft switch: a `volatile uint8_t *p`
-    dereference, even when discarded with `(void)*p;`, must emit
-    the actual `LDA (p),Y` so the hardware side effect happens."""
-
-    def _compile_optimized(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source(
-            "codegen", src,
-            optimize=True,
-        )
-
-    def test_void_deref_emits_load_through_pointer(self):
-        # `(void)*p` where `*p` is volatile — even with the result
-        # discarded, the read survives.
-        src = (
-            "#include <stdint.h>\n"
-            "extern const volatile uint8_t *p;\n"
-            "[[c6502::zp_abi]]\n"
-            "void poke(void) { (void)*p; }\n"
-        )
-        asm = self._compile_optimized(src)
-        # The `LDA (DPTR),Y` is the actual volatile memory access.
-        # `volatile_void_read_cmp` turns it into `CMP (DPTR),Y` when
-        # nothing reads A or the flags after it, which reads the
-        # same byte.
-        self.assertRegex(asm, r"(LDA|CMP)   \(DPTR\),Y")
-
-    def test_nonvolatile_void_deref_is_dropped(self):
-        # Sanity: same shape without `volatile` collapses entirely
-        # (the load's destination is unused, DSE drops it). The
-        # difference between this and the volatile version is
-        # exactly what volatile semantics buy us.
-        src = (
-            "#include <stdint.h>\n"
-            "extern const uint8_t *p;\n"
-            "[[c6502::zp_abi]]\n"
-            "void poke(void) { (void)*p; }\n"
-        )
-        asm = self._compile_optimized(src)
-        self.assertNotIn("LDA   (DPTR),Y", asm)
-
-    def test_volatile_store_through_pointer_emits_indirect_store(self):
-        # Writing through a `volatile T *` emits the store even when
-        # nothing further reads the cell.
-        src = (
-            "#include <stdint.h>\n"
-            "extern volatile uint8_t *p;\n"
-            "[[c6502::zp_abi]]\n"
-            "void poke(uint8_t v) { *p = v; }\n"
-        )
-        asm = self._compile_optimized(src)
-        self.assertIn("STA   (DPTR),Y", asm)
-
-
-class TestVolatileLocalSurvives(unittest.TestCase):
-    """Phase 2 of volatile support: a local variable declared
-    `volatile T y` keeps its accesses explicit at codegen time —
-    the asm-level DEC peephole, redundant-load elim, etc. all
-    refuse to coalesce volatile cells, so the read-modify-write
-    pattern visible in the source ends up byte-for-byte in the
-    output (modulo SBC-vs-DEC).
-
-    The motivating case is the speaker-click delay loop in
-    sfx_tone.c — `while (--y != 0) { }` keeps spinning as long as
-    `y` is volatile, but collapses to nothing when `y` is plain."""
-
-    def _compile_optimized(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source(
-            "codegen", src,
-            optimize=True,
-        )
-
-    def test_volatile_decrement_loop_keeps_explicit_rmw(self):
-        # `volatile uint8_t y = n; while (--y != 0) {}` lowers each
-        # decrement as `LDA y; SEC; SBC #1; STA y` rather than the
-        # `DEC y` peephole-collapsed form. The DEC would still
-        # produce the right `y` trajectory, but it's a single
-        # read-modify-write instruction — for volatile semantics
-        # we want one explicit load AND one explicit store per
-        # iteration.
-        src = (
-            "#include <stdint.h>\n"
-            "[[c6502::zp_abi]]\n"
-            "void delay(uint8_t n) {\n"
-            "    volatile uint8_t y = n;\n"
-            "    while (--y != 0) { }\n"
-            "}\n"
-        )
-        asm = self._compile_optimized(src)
-        # `y` itself gets no DEC. The decrement happens on a
-        # non-volatile copy, between one `LDA y` and one `STA y` in
-        # the loop (the other `STA y` is the initialization).
-        self.assertNotIn("DEC   __local_delay__y", asm)
-        self.assertEqual(asm.count("LDA   __local_delay__y"), 1)
-        self.assertEqual(asm.count("STA   __local_delay__y"), 2)
-
-    def test_nonvolatile_decrement_loop_collapses(self):
-        # Sanity: the same shape without `volatile` collapses to
-        # RTS (the dead-pure-loop pass + DSE eat the function).
-        src = (
-            "#include <stdint.h>\n"
-            "[[c6502::zp_abi]]\n"
-            "void delay(uint8_t n) {\n"
-            "    uint8_t y = n;\n"
-            "    while (--y != 0) { }\n"
-            "}\n"
-        )
-        asm = self._compile_optimized(src)
-        # No SBC, no DEC, just RTS for the function body.
-        self.assertNotIn("SBC", asm)
 
 
 class TestQualifiedAggregatesRun(unittest.TestCase):

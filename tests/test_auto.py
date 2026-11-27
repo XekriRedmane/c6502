@@ -1,14 +1,15 @@
 """Tests for C23's `auto` (§6.7.2, §6.7.10): with no type specifier it
 infers an object's type from its initializer, and with one it's C99's
 automatic storage class, which C23 allows only at block scope. Most
-cases are the standard's own examples."""
+cases are the standard's own examples.
+
+The TAC interpreter's results are checked in cpp/tests/test_auto.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -50,9 +51,6 @@ int main(void) {
 class TestPrograms(unittest.TestCase):
     """`u` is an `unsigned char`, so it wraps at 256, and `s` a `long`,
     so the sum of 0 to 299 fits."""
-
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_PROGRAM), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

@@ -8,14 +8,16 @@ The program in `_PROGRAM` returns 0 when every use of a named
 constant gives the right value, and otherwise the number of the first
 check that fails. It runs in the TAC simulator and in both 6502
 pipelines. `TestStaticConsts` covers three bugs in the reads of
-`static const` objects that the program found."""
+`static const` objects that the program found.
+
+The TAC interpreter's results are checked in
+cpp/tests/test_constexpr.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -100,8 +102,6 @@ int main(void) {
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_PROGRAM), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):
@@ -140,10 +140,6 @@ class TestCompoundLiteralStorage(unittest.TestCase):
     """A compound literal with `constexpr` is a compound literal
     constant (C23 §6.6p6), one with `static` has static storage
     inside a function, and one with `register` has no address."""
-
-
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_LITERALS), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

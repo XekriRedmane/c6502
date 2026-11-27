@@ -1,59 +1,37 @@
-"""End-to-end simulator test for `companion_update` under both
-the unoptimized and optimized pipelines.
+// `companion_update`, the two-slot companion walker's tick and draw,
+// run in both pipelines from a `main` that records the state after each
+// scenario, from tests/test_companion_update_sim.py.
+//
+// The program first showed an optimizer bug. The asm-SSA regalloc gave
+// the outer loop counter `slot` both X (for `companion_state,X` and the
+// loop's `DEX`) and the slot `__local_companion_update__slot`, which the
+// `STX M / ... / LDX M` wrap saved across a JSR. `DEX` updated X but not
+// M, so `LDA M; STA __zpabi_<callee>__slot` passed the stale value, and
+// slot 0's iteration called the leaf functions with slot 1. The fix is
+// src/passes/x_save_slot_load.h, which reads X in place of M when M is
+// an X-save slot.
+//
+// The scenarios are A, the gate disabled (bit 7 set), which returns at
+// once; B, both slots inactive, which activate themselves and draw; C,
+// slot 1 active in the + direction midstream, which steps by 3, while
+// slot 0 is clipped off screen; D, slot 1 at the + direction's turning
+// point (hi == 3 and lo >= $52), which turns and is put on the row
+// floor_thresh[player_floor] + $0B without a draw; E, the same for the
+// - direction (hi == 0 and lo < $3E); F, a drift, where slot 1 on an
+// anchor row is reactivated and slot 0 on another row moves down 4; G,
+// an entity in the centre band, which starts a drift and still draws;
+// and H, the player caught, which sets hit_flag.
+#include <cstdint>
+#include <vector>
 
-`companion_update` runs the two-slot "companion walker" subsystem's
-per-frame tick + draw. Each slot runs a three-state machine
-(idle / active / drift) plus a cross-cutting draw preamble with
-perspective transform, off-screen clip, entity-proximity check, and
-player-catch. We exercise representative paths and snapshot the
-post-call observable state for each scenario, then assert
-(a) unopt matches hand-computed expected, (b) opt matches expected,
-(c) opt matches unopt byte-for-byte.
+#include "doctest.h"
+#include "sim_case.h"
 
-# Regression: zp_abi loop-counter stale-spill (fixed)
+namespace c6502::suite {
 
-This test originally surfaced an optimizer bug where the asm-SSA
-regalloc colored the outer loop counter `slot` to BOTH `Reg(X)`
-(for `companion_state,X` and the loop-tail `DEX`) AND a memory
-slot `__local_companion_update__slot` (saved across JSR via the
-standard `STX M / ... / LDX M` wrap). `DEX` updates X but never
-refreshes M, so the call-site sequence `Mov(M, __zpabi_<callee>__slot)`
-(emitted as `LDA M; STA __zpabi_<callee>__slot`) passed the STALE
-slot value to the callee — slot 0's iteration called the leaf
-functions with slot=1. Fixed by `cpp/src/passes/x_save_slot_load.h`,
-which rewrites reads of M to reads of X when M is used as an
-X-save slot.
+namespace {
 
-Scenarios:
-  A. gate disabled (bit7 set) -> early return, state untouched.
-  B. both slots inactive (state==0) -> self-activate (state:=1),
-     fall through to draw.
-  C. slot 1 active +dir midstream + slot 0 off-screen -> active
-     step advances pos by +3, slot 0 clips on the hi!=0 check.
-  D. slot 1 active +dir rearm boundary (hi==3 && lo>=$52) -> flip
-     to -dir, reseat row to floor_thresh[player_floor]+$0B, skip
-     draw.
-  E. slot 1 active -dir rearm boundary (hi==0 && lo<$3E) -> flip
-     to +dir, reseat row, skip draw.
-  F. drift: slot 1 on anchor row -> reactivate (state:=1, pos+/-=3);
-     slot 0 on non-anchor -> row += 4.
-  G. entity proximity in centre band -> state := $FF, row += 4
-     (body draw still fires).
-  H. player-catch hit -> hit_flag := $FF.
-"""
-
-import unittest
-
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-# 256-entry zero perspective tables -- written out so we don't depend
-# on c6502 supporting `{ 0 }` shorthand for a 256-element array.
-_ZERO_256 = ",\n    ".join(", ".join(["0x00"] * 16) for _ in range(16))
-
-
-_PROGRAM = r"""
+const char* const kProgram = R"c(
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -73,10 +51,40 @@ const uint8_t floor_thresh[4] = { 0x58, 0x80, 0xA8, 0x00 };
 
 /* Perspective tables: all-zero so screen_x == companion_pos low. */
 const uint8_t perspective_xoff_lo[256] = {
-    """ + _ZERO_256 + r""",
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 const uint8_t perspective_xoff_hi[256] = {
-    """ + _ZERO_256 + r""",
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 /* ---- Stubs for prng / draw_sprite. ---- */
@@ -165,7 +173,7 @@ static const uint8_t companion_neg_pose3_lo[7] = { 0x71, 0x91, 0xB1, 0xD1, 0xF1,
 static const uint8_t companion_neg_pose3_hi[7] = { 0x9F, 0x9F, 0x9F, 0x9F, 0x9F, 0xA0, 0xA0 };
 
 static const uint8_t *const companion_pos_lo_tbl[3] = {
-    companion_pos_pose1_lo, companion_pos_pose2_lo, companion_pos_pose3_lo,
+)c" R"c(    companion_pos_pose1_lo, companion_pos_pose2_lo, companion_pos_pose3_lo,
 };
 static const uint8_t *const companion_pos_hi_tbl[3] = {
     companion_pos_pose1_hi, companion_pos_pose2_hi, companion_pos_pose3_hi,
@@ -402,7 +410,7 @@ void record(void) {
     result_log[(uint8_t)(b +  9)] = companion_row[1];
     result_log[(uint8_t)(b + 10)] = hit_flag;
     result_log[(uint8_t)(b + 11)] = draw_calls;
-    result_log[(uint8_t)(b + 12)] = prng_calls;
+)c" R"c(    result_log[(uint8_t)(b + 12)] = prng_calls;
     result_log[(uint8_t)(b + 13)] = 0;
     result_log[(uint8_t)(b + 14)] = 0;
     result_log[(uint8_t)(b + 15)] = 0;
@@ -560,164 +568,78 @@ int main(void) {
 
     return (int)log_idx;
 }
-"""
+)c";
 
+// Each row is state0, state1, dir0, dir1, pos_lo0, pos_lo1, pos_hi0,
+// pos_hi1, row0, row1, hit_flag, draw_calls, prng_calls, and three bytes
+// of padding.
+const std::vector<std::uint8_t> kExpected = {
+    // A. The gate is disabled, and nothing changes.
+    0xAA, 0xBB, 0x01, 0x01, 0x40, 0x50, 0x00, 0x00, 0x60, 0x70, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // B. Both slots activate themselves and draw. entity_proximity
+    // returns at the inactive entity, and the player-catch is skipped
+    // since screen_x >= $50 for both slots.
+    0x01, 0x01, 0x01, 0x01, 0x70, 0x60, 0x00, 0x00, 0x80, 0x80, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+    // C. Slot 1 steps from $00:$60 to $00:$63 and draws. Slot 0 steps
+    // from $02:$00 to $02:$03 and is clipped. prng is called once for
+    // each active step.
+    0x01, 0x01, 0x01, 0x01, 0x03, 0x63, 0x02, 0x00, 0x60, 0x70, 0x00, 0x01, 0x02, 0x00, 0x00, 0x00,
+    // D. Slot 1 steps from $03:$50 to $03:$53 and turns: dir := $FF and
+    // row := floor_thresh[1] + $0B = $8B, with no draw. Slot 0 is off
+    // screen, and prng is still called.
+    0x01, 0x01, 0x01, 0xFF, 0x13, 0x53, 0x05, 0x03, 0x60, 0x8B, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    // E. Slot 1 steps from $00:$3F to $00:$3C and turns: dir := $01 and
+    // row := floor_thresh[2] + $0B = $B3, with no draw.
+    0x01, 0x01, 0x01, 0x01, 0x13, 0x3C, 0x05, 0x00, 0x60, 0xB3, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    // F. Slot 1, drifting on the anchor row $63, is reactivated and
+    // steps from $00:$70 to $00:$73. Slot 0, on row $5F, moves to $63
+    // and keeps state $FF. Both draw, since a drift skips the clip, and
+    // a drift doesn't call prng.
+    0xFF, 0x01, 0x01, 0x01, 0x10, 0x73, 0x05, 0x00, 0x63, 0x63, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+    // G. Slot 1 steps to $00:$43, so screen_x = $43, in [$40, $47). The
+    // entity's row $70 - $08 = $68 is row[1], so state[1] := $FF and
+    // row[1] := $6C, and the body still draws. The player-catch's low
+    // edge $80 - 8 = $78 >= $6C, so there is no hit. Slot 0 is off
+    // screen.
+    0x01, 0xFF, 0x01, 0x01, 0x13, 0x43, 0x05, 0x00, 0x60, 0x6C, 0x00, 0x01, 0x02, 0x00, 0x00, 0x00,
+    // H. Slot 1 steps to $00:$43, the entity is inactive, and the body
+    // draws. The low edge $70 - 8 = $68 < row $70 and the high edge $68 +
+    // $1A = $82 >= $70, so hit_flag := $FF.
+    0x01, 0x01, 0x01, 0x01, 0x13, 0x43, 0x05, 0x00, 0x60, 0x70, 0xFF, 0x01, 0x02, 0x00, 0x00, 0x00,
+};
 
-# Hand-computed expected state per scenario, 16 bytes each:
-#   [state0, state1, dir0, dir1,
-#    pos_lo0, pos_lo1, pos_hi0, pos_hi1,
-#    row0, row1,
-#    hit_flag, draw_calls, prng_calls, pad, pad, pad].
-def _expected() -> bytes:
-    scenarios: list[list[int]] = [
-        # A. Gate disabled: nothing changes.
-        [
-            0xAA, 0xBB,         # state preset
-            0x01, 0x01,
-            0x40, 0x50,
-            0x00, 0x00,
-            0x60, 0x70,
-            0x00, 0x00, 0x00,   # hit_flag, draw_calls, prng_calls
-            0x00, 0x00, 0x00,
-        ],
-        # B. Both inactive -> self-activate to 1, both draw.
-        # entity_proximity bails on inactive entity, player-catch
-        # skipped (screen_x >= $50 for both slots).
-        [
-            0x01, 0x01,
-            0x01, 0x01,
-            0x70, 0x60,
-            0x00, 0x00,
-            0x80, 0x80,
-            0x00, 0x02, 0x00,
-            0x00, 0x00, 0x00,
-        ],
-        # C. Slot 1 active +dir midstream, slot 0 off-screen.
-        # Slot 1: pos $00:$60 + 3 -> $00:$63, no rearm, draws.
-        # Slot 0: pos $02:$00 + 3 -> $02:$03, off-screen clip, skips.
-        # prng called twice (one per active step).
-        [
-            0x01, 0x01,
-            0x01, 0x01,
-            0x03, 0x63,
-            0x02, 0x00,
-            0x60, 0x70,
-            0x00, 0x01, 0x02,
-            0x00, 0x00, 0x00,
-        ],
-        # D. Slot 1 +dir rearm: $03:$50 + 3 = $03:$53 -> rearm,
-        # dir := $FF, row := floor_thresh[1] + $0B = $80 + $0B = $8B,
-        # skip draw. Slot 0 off-screen, prng still called.
-        [
-            0x01, 0x01,
-            0x01, 0xFF,
-            0x13, 0x53,
-            0x05, 0x03,
-            0x60, 0x8B,
-            0x00, 0x00, 0x02,
-            0x00, 0x00, 0x00,
-        ],
-        # E. Slot 1 -dir rearm: $00:$3F - 3 = $00:$3C -> rearm,
-        # dir := $01, row := floor_thresh[2] + $0B = $A8 + $0B = $B3,
-        # skip draw. Slot 0 off-screen, prng still called.
-        [
-            0x01, 0x01,
-            0x01, 0x01,
-            0x13, 0x3C,
-            0x05, 0x00,
-            0x60, 0xB3,
-            0x00, 0x00, 0x02,
-            0x00, 0x00, 0x00,
-        ],
-        # F. Drift: slot 1 on anchor $63 -> reactivate state := 1,
-        # dir + so pos += 3: $00:$70 -> $00:$73, row unchanged.
-        # Slot 0 non-anchor $5F -> row := $63, state stays $FF,
-        # pos unchanged. Both draw (drift path skips off-screen clip).
-        # No prng calls (drift doesn't call prng).
-        [
-            0xFF, 0x01,
-            0x01, 0x01,
-            0x10, 0x73,
-            0x05, 0x00,
-            0x63, 0x63,
-            0x00, 0x02, 0x00,
-            0x00, 0x00, 0x00,
-        ],
-        # G. Entity proximity triggers drift transition.
-        # Slot 1: pos $00:$40 + 3 -> $00:$43, screen_x=$43 in [$40,$47).
-        # entity_row = $70 - $08 = $68, matches row[1] = $68 -> state[1]
-        # := $FF, row[1] := $68 + 4 = $6C. Body draw still fires.
-        # Player-catch: low_edge = $80-8 = $78 >= row=$6C -> no hit.
-        # Slot 0: off-screen, no draw.
-        [
-            0x01, 0xFF,
-            0x01, 0x01,
-            0x13, 0x43,
-            0x05, 0x00,
-            0x60, 0x6C,
-            0x00, 0x01, 0x02,
-            0x00, 0x00, 0x00,
-        ],
-        # H. Player-catch hit.
-        # Slot 1: pos $00:$40 + 3 -> $00:$43, screen_x=$43. entity
-        # inactive. Body draws. Player-catch: low_edge = $70-8 = $68 <
-        # row=$70 and high_edge = $68+$1A = $82 >= row -> hit_flag := $FF.
-        # Slot 0 off-screen.
-        [
-            0x01, 0x01,
-            0x01, 0x01,
-            0x13, 0x43,
-            0x05, 0x00,
-            0x60, 0x70,
-            0xFF, 0x01, 0x02,
-            0x00, 0x00, 0x00,
-        ],
-    ]
-    out = bytearray()
-    for row in scenarios:
-        assert len(row) == 16
-        out.extend(row)
-    return bytes(out)
+struct Run {
+  sim::SimResult result;
+  std::vector<std::uint8_t> log;
+};
 
+Run run(bool optimize) {
+  sim::Simulation s = build_sim(kProgram, optimize);
+  Run out{s.run(5'000'000), {}};
+  INFO("optimize=" << optimize);
+  CHECK_FALSE(out.result.timed_out);
+  const std::int64_t at = s.symbol("result_log");
+  out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + 16 * 8);
+  return out;
+}
 
-@needs_c6502cpp
-class TestCompanionUpdateSim(unittest.TestCase):
-    """Differential opt vs unopt check on `companion_update`.
+}  // namespace
 
-    Both pipelines must produce the same `result_log` bytes."""
+TEST_CASE("companion_update_sim: the unoptimized program records each scenario") {
+  const Run r = run(false);
+  // log_idx is 16 bytes for each of the 8 scenarios.
+  CHECK((r.result.return_int() & 0xFFFF) == 8 * 16);
+  CHECK(r.log == kExpected);
+}
 
-    def _run(self, optimize: bool):
-        sim = build_sim(_PROGRAM, optimize=optimize)
-        result = sim.run(max_cycles=5_000_000)
-        self.assertFalse(
-            result.timed_out,
-            f"companion_update sim timed out (optimize={optimize})",
-        )
-        log_addr = sim.symbols["result_log"]
-        log_bytes = bytes(result.memory[log_addr:log_addr + 16 * 8])
-        return result, log_bytes
+TEST_CASE("companion_update_sim: the optimized program records each scenario") {
+  const Run r = run(true);
+  CHECK((r.result.return_int() & 0xFFFF) == 8 * 16);
+  CHECK(r.log == kExpected);
+}
 
-    def test_unoptimized_matches_expected(self):
-        result, log = self._run(optimize=False)
-        self.assertEqual(
-            result.return_int() & 0xFFFF, 8 * 16,
-            "log_idx should reflect 8 recorded scenarios * 16 bytes",
-        )
-        self.assertEqual(log, _expected())
+TEST_CASE("companion_update_sim: both pipelines record the same state") {
+  CHECK(run(false).log == run(true).log);
+}
 
-    def test_optimized_matches_expected(self):
-        result, log = self._run(optimize=True)
-        self.assertEqual(result.return_int() & 0xFFFF, 8 * 16)
-        self.assertEqual(log, _expected())
-
-    def test_opt_and_unopt_agree(self):
-        _, unopt_log = self._run(optimize=False)
-        _, opt_log = self._run(optimize=True)
-        self.assertEqual(
-            unopt_log, opt_log,
-            "optimizer changed observable companion state",
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace c6502::suite

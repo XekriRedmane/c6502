@@ -708,6 +708,13 @@ Root-level files:
   holding a machine-wide lock (`/c/w/heavy.lock`), so that agents
   working in parallel take turns at builds and test runs. A build
   takes every core of Robert's machine, and eight at once stalled it.
+- `.claude/hooks/no-comments-gate.sh` — a PreToolUse hook that refuses
+  a commit on main whose staged diff touches code, and a merge into
+  main that brings code, until a `/pstack:no-comments` review of that
+  diff is recorded with `bash .claude/hooks/no-comments-gate.sh
+  --record staged` (or `--record <ref>` for a merge). Stage in a
+  command of its own before the commit, since the hook checks the
+  staged diff before the command runs.
 - `c99.asdl` / `tac.asdl` / `asm.asdl` / `asm2.asdl` — the four ASDL
   IR definitions.
 - `c99_ast.py` / `tac_ast.py` / `asm_ast.py` / `asm2_ast.py` —

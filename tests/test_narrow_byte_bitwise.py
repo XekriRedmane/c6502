@@ -1,4 +1,6 @@
-"""Tests for cpp/src/passes/optimization/narrow_byte_bitwise.h."""
+"""Tests for cpp/src/passes/optimization/narrow_byte_bitwise.h.
+
+The `-S` text is checked in cpp/tests/test_narrow_byte_bitwise.cpp."""
 
 from __future__ import annotations
 
@@ -39,14 +41,6 @@ class TestEndToEnd(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 out = build_sim(self._SRC, optimize=optimize).run()
                 self.assertEqual(out.return_int(), expected)
-
-    def test_byte_compares(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        body = asm[asm.index("\nbelow:"):asm.index("\nmain:")]
-        # A byte compare has no overflow test.
-        self.assertNotIn("BVC", body)
-        self.assertNotIn("EOR   #$80", body)
 
 
 if __name__ == "__main__":

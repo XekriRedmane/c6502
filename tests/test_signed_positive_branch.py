@@ -1,5 +1,7 @@
 """Tests for `tac_to_asm._jcmp_signed_positive`, the branch on a signed
-`x > 0` or `x <= 0` that tests the sign bit and ORs the bytes."""
+`x > 0` or `x <= 0` that tests the sign bit and ORs the bytes.
+
+The `-S` text is checked in cpp/tests/test_signed_positive_branch.cpp."""
 
 from __future__ import annotations
 
@@ -70,20 +72,6 @@ class TestSignedPositiveBranch(unittest.TestCase):
                                       optimize=optimize):
                         out = build_sim(src, optimize=optimize).run()
                         self.assertEqual(out.return_int() & 0xFFFF, want)
-
-    def test_int_le_zero_is_short(self):
-        from compile import _run_source
-        src = (
-            "#include <stdint.h>\n"
-            "extern uint16_t W [[c6502::address(0x5A02)]];\n"
-            "void f(void);\n"
-            "void d(void) { if ((int16_t)W <= 0) f(); }\n"
-        )
-        asm = _run_source("codegen", src, optimize=True)
-        body = asm[asm.index("\nd:"):]
-        self.assertIn("LDA   W+1", body)
-        self.assertIn("ORA   W", body)
-        self.assertNotIn("SBC", body)
 
 
 if __name__ == "__main__":

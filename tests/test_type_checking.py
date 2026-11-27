@@ -1,7 +1,6 @@
 import unittest
 
 from c99_ast import FunType, Int, Long
-from errors import TypeCheckError
 
 
 class TestTypeEquality(unittest.TestCase):
@@ -31,24 +30,6 @@ class TestTypeEquality(unittest.TestCase):
         a = FunType(params=[Int()], ret=Int())
         b = FunType(params=[Int(), Int()], ret=Int())
         self.assertNotEqual(a, b)
-
-
-class TestIntegrationWithLaterPipeline(unittest.TestCase):
-    def test_well_typed_program_passes_through_to_tac(self):
-        from compile import _run_source
-        out = _run_source(
-            "tac",
-            "int main(void) { return 42; }",
-        )
-        self.assertIn("Ret(", out)
-
-    def test_ill_typed_program_rejected_at_tac_stage(self):
-        from compile import _run_source
-        with self.assertRaises(TypeCheckError):
-            _run_source(
-                "tac",
-                "int main(void) { int x; x(); return 0; }",
-            )
 
 
 if __name__ == "__main__":

@@ -51,7 +51,7 @@ expects a compile error catches its class from errors.py.
 categories:
 
 - **Per-pass / per-module tests** (e.g. `test_inline_functions.py`,
-  `test_type_checking.py`, `test_redundant_load.py`) — end-to-end tests
+  `test_jump_table.py`, `test_redundant_load.py`) — end-to-end tests
   of what the pass of the same name does, through compile.py or the
   simulator. Step 8 of the C++ port moved the tests that called a
   Python pass, the front end, or the preprocessor directly to doctest

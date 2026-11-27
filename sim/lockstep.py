@@ -20,6 +20,7 @@ import array
 import os
 import struct
 import zlib
+from typing import NamedTuple
 
 from sim.harness import hook_and_rts
 
@@ -54,6 +55,13 @@ def _state(mpu) -> dict:
             "p": mpu.p, "cycles": mpu.processorCycles}
 
 
+class _Found(NamedTuple):
+    before: dict
+    after: dict
+    writes: list[tuple[int, int]]
+    start_image: bytes
+
+
 class _Trace:
     def __init__(self) -> None:
         self.segments: list[dict] = []
@@ -62,7 +70,7 @@ class _Trace:
         self.stops: list[str] = []
         self.ends: list[tuple] = []
         self.error: BaseException | None = None
-        self.found: tuple | None = None
+        self.found: _Found | None = None
 
 
 def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) -> _Trace:
@@ -103,7 +111,7 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
                 written.update(log)
             digests.append(zlib.crc32(record))
             if until == (k, len(digests) - 1):
-                trace.found = (before, _state(mpu), list(log), start_image)
+                trace.found = _Found(before, _state(mpu), list(log), start_image)
                 return trace
         trace.digests.append(digests)
         trace.written.append(written)
@@ -155,7 +163,7 @@ def run(sim, max_cycles: int) -> bool:
         max_cycles=max_cycles,
     )
 
-    def replay(k: int, i: int) -> tuple:
+    def replay(k: int, i: int) -> _Found:
         fresh = MPU()
         fresh.memory = _RecordingMemory(image)
         fresh.pc, fresh.a, fresh.x, fresh.y = start["pc"], start["a"], start["x"], start["y"]
@@ -174,16 +182,16 @@ def run(sim, max_cycles: int) -> bool:
                     f"segment {k}: py65 ended with {trace.stops[k]} after {len(want)} "
                     f"instructions at {_fmt(trace.ends[k])}, and the C++ CPU went on "
                     f"to {got['instructions']} and {got['stop']}")
-            before, after, writes, seg_image = replay(k, i)
+            found = replay(k, i)
             seg = dict(trace.segments[k])
             seg["patches"] = []
             cpp = cpp_backend.cpu_run(
-                seg_image, [seg], stops=hooks.keys(), stop_at_brk=True,
+                found.start_image, [seg], stops=hooks.keys(), stop_at_brk=True,
                 max_cycles=max_cycles, max_instructions=i + 1,
             )[0]
             raise LockstepError(
-                f"segment {k}, instruction {i}, from {_fmt(before)}: py65 gives "
-                f"{_fmt(after)} and writes {_fmt_writes(writes)}, and the C++ CPU "
+                f"segment {k}, instruction {i}, from {_fmt(found.before)}: py65 gives "
+                f"{_fmt(found.after)} and writes {_fmt_writes(found.writes)}, and the C++ CPU "
                 f"gives {_fmt(cpp['state'])} and writes "
                 f"{_fmt_writes(cpp['last_writes']) if cpp['instructions'] == i + 1 else cpp['stop']}")
         if got["stop"] != trace.stops[k] or got["instructions"] != len(want):

@@ -1,20 +1,13 @@
 """Tests for computing a member of a static object in its own bytes
-(`cpp/src/passes/in_place_member_update.h`, applied by `tac_to_asm`)."""
+(`cpp/src/passes/in_place_member_update.h`, applied by `tac_to_asm`).
+
+The `-S` text is checked in cpp/tests/test_in_place_member_update.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-
-
-def _asm(src: str, fn: str) -> str:
-    """The optimized asm of function `fn` in `src`, through its first
-    `RTS`."""
-    from compile import _run_source
-    asm = _run_source("codegen", src, optimize=True)
-    body = asm.split(f"\n{fn}:")[1].split("SUBROUTINE")[1]
-    return body.split("RTS")[0] + "RTS"
 
 
 def _run(src: str, optimize: bool) -> int:
@@ -30,42 +23,6 @@ uint16_t W;
 uint8_t flag;
 uint16_t t[4];
 """
-
-
-class TestCodegen(unittest.TestCase):
-
-    def test_increment_of_a_member_is_inc(self) -> None:
-        body = _asm(_PC + "void f(void) { P.lo++; }", "f")
-        self.assertEqual(
-            body.split(), ["INC", "P", "BNE", ".inc_done@0", "INC", "P+1",
-                           ".inc_done@0:", "RTS"],
-        )
-
-    def test_increment_after_an_indexed_read(self) -> None:
-        body = _asm(
-            _PC + "uint8_t *A;\n"
-            "uint8_t f(void) { uint8_t b = A[(uint8_t)P.lo]; P.lo++;"
-            " return b; }", "f",
-        )
-        self.assertIn("LDY   P\n", body)
-        self.assertIn("INC   P\n", body)
-        self.assertNotIn("STA   P", body)
-
-    def test_byte_member_and_array_element(self) -> None:
-        self.assertEqual(
-            _asm(_PC + "void f(void) { P.hi++; }", "f").split(),
-            ["INC", "P+2", "RTS"],
-        )
-        self.assertIn(
-            "INC   t+4\n", _asm(_PC + "void f(void) { t[2]++; }", "f"),
-        )
-
-    def test_value_computed_into_the_member(self) -> None:
-        body = _asm(_PC + "void f(void) { P.lo = W << 1; }", "f")
-        self.assertEqual(
-            body.split(), ["LDA", "W", "ASL", "STA", "P", "LDA", "W+1",
-                           "ROL", "STA", "P+1", "RTS"],
-        )
 
 
 class TestBehavior(unittest.TestCase):

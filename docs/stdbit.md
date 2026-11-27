@@ -93,9 +93,8 @@ So `stdc_first_leading_one(x)` is `stdc_leading_zeros(x) + 1` for any
 | `stdc_bit_ceil((uint16_t)200)` | 256 |
 
 `stdbit` in cpp/src/builtin_functions.h computes the same results,
-for constant folding. `tests/test_stdbit.py` checks its Python copy,
-`builtin_functions.stdbit`, against a second model written from
-§7.18's wording one bit index at a time.
+for constant folding. cpp/tests/test_stdbit.cpp checks it against a
+second model written from §7.18's wording one bit index at a time.
 
 ## Constants
 

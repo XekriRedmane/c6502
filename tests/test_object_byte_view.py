@@ -9,10 +9,12 @@ constant index. Reading a `uint32_t` a byte at a time this way is the
 access C99 §6.5.7 allows for any object. See `_object_view` and
 `try_indexed_load_subscript` in cpp/src/c99_to_tac_exp.cpp.
 
-The simulator runs check each pipeline. The ones that write a byte
-and then read the whole object in the same function check that the
-optimizer treats the indexed write as a write to the object, and
-doesn't carry the object's earlier value past it.
+The tests of the TAC and the asm are doctest cases in
+cpp/tests/test_object_byte_view.cpp. The simulator runs check each
+pipeline. The ones that write a byte and then read the whole object in
+the same function check that the optimizer treats the indexed write as
+a write to the object, and doesn't carry the object's earlier value
+past it.
 """
 from __future__ import annotations
 
@@ -29,132 +31,6 @@ _PRELUDE = (
     "#define ZB ((uint8_t *)&Z)\n"
     "#define SB ((uint8_t *)&S)\n"
 )
-
-
-def _tac(src: str, optimize: bool = False) -> str:
-    from compile import _run_source
-    return _run_source("tac", src, optimize=optimize)
-
-
-def _asm(src: str, optimize: bool) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _function(asm: str, name: str) -> str:
-    """The lines of function `name` in `asm`, up to the next label at
-    column 0."""
-    lines = asm.splitlines()
-    start = lines.index(f"{name}:")
-    out = []
-    for line in lines[start + 1:]:
-        if line and not line[0].isspace() and not line.startswith("."):
-            break
-        out.append(line.strip())
-    return "\n".join(out)
-
-
-@needs_c6502cpp
-class TestObjectByteViewShape(unittest.TestCase):
-    """The TAC and asm use indexed access on the object's symbol."""
-
-    def test_tac_reads_through_indexed_load(self) -> None:
-        tac = _tac(_PRELUDE + (
-            "uint8_t f(uint8_t i) { return ZB[3 - i]; }\n"
-        ))
-        self.assertIn("IndexedLoad(", tac)
-        self.assertIn("name='Z'", tac)
-        self.assertNotIn("GetAddress(", tac)
-
-    def test_tac_writes_through_indexed_symbol_store(self) -> None:
-        tac = _tac(_PRELUDE + (
-            "void f(uint8_t i, uint8_t v) { SB[i] = v; }\n"
-        ))
-        self.assertIn("IndexedSymbolStore(", tac)
-        self.assertNotIn("GetAddress(", tac)
-
-    def test_tac_constant_index_is_constant_byte(self) -> None:
-        tac = _tac(_PRELUDE + "uint8_t f(void) { return SB[2]; }\n")
-        self.assertIn("IndexedLoad(", tac)
-        self.assertIn("ConstUChar(\n              value=2", tac)
-
-    def test_variable_index_uses_absolute_x(self) -> None:
-        src = _PRELUDE + (
-            "uint8_t f(uint8_t i) { return ZB[3 - i]; }\n"
-            "void g(uint8_t i, uint8_t v) { ZB[i] = v; }\n"
-            "uint8_t h(uint8_t i) { return *(ZB + i); }\n"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _asm(src, optimize)
-                self.assertIn("LDA   Z,X", _function(asm, "f"))
-                self.assertIn("STA   Z,X", _function(asm, "g"))
-                self.assertIn("LDA   Z,X", _function(asm, "h"))
-                self.assertNotIn("DPTR", _function(asm, "f"))
-                self.assertNotIn("DPTR", _function(asm, "g"))
-
-    def test_optimized_read_matches_byte_array(self) -> None:
-        # The shape a byte array at the same address gets. `i` arrives
-        # in A, and `f` stores it to subtract it from 3.
-        asm = _asm(_PRELUDE + (
-            "uint8_t f(uint8_t i) { return ZB[3 - i]; }\n"
-        ), optimize=True)
-        self.assertEqual(
-            _function(asm, "f").split(),
-            "SUBROUTINE STA __local_f__i LDA #$03 SEC SBC __local_f__i"
-            " TAX LDA Z,X RTS".split(),
-        )
-
-    def test_constant_index_is_absolute(self) -> None:
-        src = _PRELUDE + (
-            "uint8_t f(void) { return ZB[2]; }\n"
-            "void g(uint8_t v) { *(ZB + 1) = v; }\n"
-            "uint8_t h(void) { return *ZB; }\n"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _asm(src, optimize)
-                self.assertIn("LDA   Z+2", _function(asm, "f"))
-                self.assertIn("STA   Z+1", _function(asm, "g"))
-                self.assertNotIn(",X", _function(asm, "f"))
-                self.assertNotIn("DPTR", _function(asm, "g"))
-
-    def test_constant_added_to_index_goes_in_offset(self) -> None:
-        asm = _asm(_PRELUDE + (
-            "uint8_t f(uint8_t i) { return SB[i + 1]; }\n"
-        ), optimize=True)
-        self.assertIn("LDA   S+1,X", _function(asm, "f"))
-
-    def test_compound_assignment_is_indexed(self) -> None:
-        asm = _asm(_PRELUDE + (
-            "uint8_t m;\n"
-            "void f(uint8_t i) { ZB[i] |= m; }\n"
-            "void g(uint8_t i) { ++*(ZB + i); }\n"
-        ), optimize=True)
-        body = _function(asm, "f")
-        self.assertIn("LDA   Z,X", body)
-        self.assertIn("STA   Z,X", body)
-        # The increment is in place (`inc_peephole`'s indexed form).
-        self.assertIn("INC   Z,X", _function(asm, "g"))
-
-    def test_two_byte_elements(self) -> None:
-        asm = _asm(_PRELUDE + (
-            "uint16_t f(uint8_t i) { return ((uint16_t *)&S)[i]; }\n"
-        ), optimize=True)
-        body = _function(asm, "f")
-        self.assertIn("S,X", body)
-        self.assertIn("S+1,X", body)
-
-    def test_automatic_object_keeps_pointer_access(self) -> None:
-        # An automatic object has no link-time address to index from.
-        tac = _tac(_PRELUDE + (
-            "uint8_t f(uint8_t i) {\n"
-            "    uint32_t a = S;\n"
-            "    return ((uint8_t *)&a)[i];\n"
-            "}\n"
-        ))
-        self.assertNotIn("IndexedLoad(", tac)
-        self.assertIn("GetAddress(", tac)
 
 
 @needs_c6502cpp

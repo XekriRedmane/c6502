@@ -1,9 +1,10 @@
-// The tests of tests/test_bcd_builtins.py that read the TAC and the `-S`
-// text or run the TAC interpreter: `__c6502_bcd_add` and
-// `__c6502_bcd_sub` of constants fold, and the code of the others is one
-// chain of ADC or SBC between SED and CLD.
+// The tests of tests/test_bcd_builtins.py: `__c6502_bcd_add` and
+// `__c6502_bcd_sub` of constants fold, the code of the others is one
+// chain of ADC or SBC between SED and CLD, and the programs return the
+// CPU model's results in the TAC interpreter and the simulator.
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -12,7 +13,9 @@
 #include "builtin_functions.h"
 #include "compile_case.h"
 #include "doctest.h"
+#include "py_random.h"
 #include "sim/cpu.h"
+#include "sim_case.h"
 
 namespace {
 
@@ -345,4 +348,82 @@ TEST_CASE("bcd_builtins: bcd_add and bcd_sub wrap and borrow") {
   CHECK(sub(0x00, 0x01, 1) == 0x99);
   CHECK(sub(0x0100, 0x0001, 2) == 0x0099);
   CHECK(add(0x00999999, 0x250, 4) == 0x01000249);
+}
+
+namespace {
+
+c6502::sim::SimResult run_bcd(const std::string& src, bool optimize) {
+  c6502::sim::Simulation s = suite::build_sim(src, optimize);
+  const c6502::sim::SimResult r = s.run(3'000'000);
+  CHECK_FALSE(r.timed_out);
+  // The program ends with the decimal flag clear.
+  CHECK((s.cpu.p & c6502::sim::Cpu::kDecimal) == 0);
+  return r;
+}
+
+std::string hex_literal(std::int64_t v) {
+  char buf[24];
+  std::snprintf(buf, sizeof buf, "0x%llx", static_cast<unsigned long long>(v));
+  return buf;
+}
+
+// A program that applies `op` to each of 24 pairs of `width`-byte
+// operands through arrays, and returns a 16-bit hash of the results.
+// The pairs come from `rng` as test_bcd_builtins.py drew them.
+std::string sweep_program(const std::string& op, int width, c6502::py_random::Random& rng) {
+  const char* ctype = width == 1 ? "uint8_t" : width == 2 ? "uint16_t" : "uint32_t";
+  std::string xs, ys;
+  for (int i = 0; i < 24; ++i) {
+    const auto a = static_cast<std::int64_t>(rng.randrange(c6502::asdl::Int(1) << (8 * width)));
+    const auto b = static_cast<std::int64_t>(rng.randrange(c6502::asdl::Int(1) << (8 * width)));
+    xs += (i ? ", " : "") + hex_literal(a);
+    ys += (i ? ", " : "") + hex_literal(b);
+  }
+  const std::string t(ctype);
+  return "#include <stdint.h>\n" + t + " xs[24] = {" + xs + "}; " + t + " ys[24] = {" + ys + "};" + t +
+         " out[24];int main(void) { uint16_t h = 0; for (uint8_t i = 0; i < 24; i++) { out[i] = __c6502_bcd_" +
+         op + "(xs[i], ys[i]); " + t +
+         " r = out[i]; h = (h << 3 | h >> 13) ^ (uint16_t)r ^ (uint16_t)(r >> 8); } return h; }";
+}
+
+}  // namespace
+
+TEST_CASE("bcd_builtins: the programs return their values in the simulator in both pipelines") {
+  for (const Program& p : programs()) {
+    for (const bool optimize : {false, true}) {
+      INFO(p.name << " optimize=" << optimize);
+      CHECK((run_bcd(p.src, optimize).return_int() & 0xFFFF) == p.expected);
+    }
+  }
+}
+
+TEST_CASE("bcd_builtins: random operands give the CPU model's results") {
+  // Most of these operands have a digit above 9, so this covers what
+  // the NMOS 6502 does with invalid BCD. Each sweep's hash and its
+  // source's length are what builtin_functions.py's `bcd_add` and
+  // `bcd_sub` gave on 27 Nov 2026.
+  struct Sweep {
+    const char* name;
+    std::int64_t hash;
+    std::size_t length;
+  };
+  const Sweep sweeps[] = {{"add1", 0x2fa, 559},   {"sub1", 0x898, 558},   {"add2", 0x3e5c, 653},
+                          {"sub2", 0x795c, 656}, {"add4", 0x4d25, 849}, {"sub4", 0xefc1, 851}};
+  c6502::py_random::Random rng(6502);
+  int k = 0;
+  for (const int width : {1, 2, 4}) {
+    for (const char* op : {"add", "sub"}) {
+      const Sweep& sweep = sweeps[k++];
+      INFO(sweep.name);
+      const std::string src = sweep_program(op, width, rng);
+      CHECK(src.size() == sweep.length);
+      const auto tac_value = suite::run_program(src);
+      REQUIRE(tac_value.has_value());
+      CHECK(static_cast<std::int64_t>(*tac_value & 0xFFFF) == sweep.hash);
+      for (const bool optimize : {false, true}) {
+        INFO("optimize=" << optimize);
+        CHECK((run_bcd(src, optimize).return_int() & 0xFFFF) == sweep.hash);
+      }
+    }
+  }
 }

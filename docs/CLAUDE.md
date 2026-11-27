@@ -67,11 +67,11 @@ parsed by any tool.
   stages and the two asm optimizer runs, one value followed from a C
   variable to a zero-page byte, and how the fixed points repeat), then
   indexes them alphabetically and in pipeline order, and
-  `tests/test_optimization_docs.py` fails when that order no longer
+  cpp/tests/test_optimization_docs.cpp fails when that order no longer
   matches the order `c6502cpp pass-order` gives for the optimizer's
   drivers, or when a document is missing from the index. A new pass
   needs a document, both index entries, and its module in the test's
-  `_MODULES`.
+  `kModules`.
 - `leaf_zp_abi.md` — design for `[[c6502::zp_abi]]` and the
   call-graph-disjoint ZP allocator: leaf functions with bare-RTS
   prologue / epilogue when arg bytes fit in a private ZP slice.

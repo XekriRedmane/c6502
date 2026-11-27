@@ -1,6 +1,6 @@
 // The order in which the optimizer's drivers run their passes, for
-// tests/test_optimization_docs.py, which checks the pipeline order of
-// docs/optimizations/README.md against it (`c6502cpp pass-order`).
+// cpp/tests/test_optimization_docs.cpp, which checks the pipeline order
+// of docs/optimizations/README.md against it, and `c6502cpp pass-order`.
 //
 // Each run of a driver opens a `Run` with the driver's name, and reports
 // each pass it runs with `ran`, in the order it runs them. The peephole

@@ -2105,8 +2105,8 @@ checks the list against `tools/capture_passes.SWEEP_PASSES`, which
 
 `c6502cpp pass-order` (src/pass_order.*) lists the passes of each of
 the optimizer's drivers in the order a compile runs them, one `<driver>
-<pass>` line each, for tests/test_optimization_docs.py, which checks
-the pipeline order of docs/optimizations/README.md against it. Each
+<pass>` line each, and tests/test_optimization_docs.cpp checks the
+pipeline order of docs/optimizations/README.md against `listing()`. Each
 run of a driver opens a `pass_order::Run` and reports each pass with
 `pass_order::ran`. The peephole fixed point (`peephole`) and the TAC
 optimizer's driver (`tac`) report their tables before each run of them,

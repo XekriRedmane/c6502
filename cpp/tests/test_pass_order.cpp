@@ -1,5 +1,5 @@
 // Tests of src/pass_order.h, the order of the optimizer's passes that
-// `c6502cpp pass-order` lists for tests/test_optimization_docs.py.
+// `c6502cpp pass-order` lists and test_optimization_docs.cpp reads.
 #include <algorithm>
 #include <sstream>
 #include <string>

@@ -245,7 +245,7 @@ def _assemble(
                             f"size mismatch for {instr!r}: "
                             f"pass1={expected}, pass2={len(bs)}"
                         )
-                    image[addr:addr + len(bs)] = bs
+                    _lay_down(image, addr, bs, code_end)
                     addr += len(bs)
             elif isinstance(tl, asm_ast.StaticVariable):
                 for item in tl.init:
@@ -254,7 +254,7 @@ def _assemble(
                         raise AssemblerError(
                             f"size mismatch for static_init {item!r}"
                         )
-                    image[addr:addr + len(bs)] = bs
+                    _lay_down(image, addr, bs, code_end)
                     addr += len(bs)
         assert addr == code_end
     finally:
@@ -263,6 +263,21 @@ def _assemble(
     return AssembledProgram(
         image=image, symbols=symbols, origin=origin, code_end=code_end,
     )
+
+
+def _lay_down(image: bytearray, addr: int, bs: bytes, code_end: int) -> None:
+    """Copies `bs` into the 64K image at `addr`. A slice assignment past
+    the end would grow the bytearray, and one at a negative address
+    would write from its end, so those are errors."""
+    if not bs:
+        return
+    if addr < 0:
+        raise AssemblerError(
+            f"the program's bytes start at -${-addr:04X}, below $0000")
+    if addr + len(bs) > len(image):
+        raise AssemblerError(
+            f"the program's bytes end at ${code_end:04X}, past $FFFF")
+    image[addr:addr + len(bs)] = bs
 
 
 # Set by `assemble()` for the duration of one pass-pair. A Data operand

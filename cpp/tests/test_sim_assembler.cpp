@@ -156,8 +156,8 @@ TEST_CASE("sim assembler: a duplicate label or symbol") {
 }
 
 TEST_CASE("sim assembler: a program past $FFFF") {
-  // sim/assembler.py grows its image for this program, which
-  // tests/chapter_15/valid/initialization/static_nested.c is like.
+  // tests/chapter_15/valid/initialization/static_nested.c is a program
+  // like this one.
   const ir::Type_top_level big = ir::StaticVariable{
       .name = "big", .is_global = false, .init = {ir::ZeroInit{.bytes = 0xF800}, ir::CharInit{.value = 1}}};
   CHECK(error_of({big}) == "the program's bytes end at $10001, past $FFFF");

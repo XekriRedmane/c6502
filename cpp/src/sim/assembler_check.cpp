@@ -94,8 +94,8 @@ std::string compare(const json::Value& result, const asm_ast::Program& program,
     return "";
   }
   const json::Value& image = member(result, "image");
-  // Python's image grows past 64K for a program whose bytes run past
-  // $FFFF, which `assemble` rejects.
+  // In a capture made before sim/assembler.py rejected a program whose
+  // bytes run past $FFFF, its image grew past 64K instead.
   if (error_class == "AssemblerError" && error_message.ends_with(", past $FFFF") &&
       to_i64(member(image, "length").integer) > 0x10000) {
     ++counts.past_64k;

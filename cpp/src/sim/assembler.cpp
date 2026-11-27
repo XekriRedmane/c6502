@@ -1447,9 +1447,8 @@ void Emitter::init(const ir::Type_static_init& item, Bytes& out) const {
   }
 }
 
-// Copies `bytes` into the image at `addr`. sim/assembler.py's slice
-// assignment grows its bytearray for bytes past $FFFF, and writes from
-// the end of it for a negative address, so here they are an error.
+// Copies `bytes` into the image at `addr`. Bytes past $FFFF or at a
+// negative address are an error, as in sim/assembler.py's `_lay_down`.
 void lay_down(std::vector<std::uint8_t>& image, std::int64_t addr, const Bytes& bytes,
               std::int64_t code_end) {
   if (bytes.empty()) {

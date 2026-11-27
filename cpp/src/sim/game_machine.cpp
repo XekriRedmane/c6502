@@ -120,7 +120,7 @@ void push_return(Cpu& cpu, std::uint16_t back) {
   cpu.sp = static_cast<std::uint8_t>(cpu.sp - 2);
 }
 
-bool is_space(char c) { return c == ' ' || (c >= '\t' && c <= '\r') || (c >= '\x1c' && c <= '\x1f'); }
+bool is_space(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 
 std::vector<std::string> split_words(std::string_view text) {
   std::vector<std::string> out;
@@ -146,18 +146,13 @@ std::string strip(std::string_view text) {
 std::vector<std::string> split_lines(std::string_view text) {
   std::vector<std::string> out;
   std::size_t start = 0;
-  std::size_t i = 0;
-  while (i < text.size()) {
-    const char c = text[i];
-    if (c == '\n' || c == '\r' || c == '\v' || c == '\f' || (c >= '\x1c' && c <= '\x1e')) {
-      out.emplace_back(text.substr(start, i - start));
-      i += c == '\r' && i + 1 < text.size() && text[i + 1] == '\n' ? 2 : 1;
-      start = i;
-    } else {
-      ++i;
-    }
+  while (start < text.size()) {
+    std::size_t end = std::min(text.find('\n', start), text.size());
+    const std::size_t next = end + 1;
+    if (end > start && text[end - 1] == '\r') --end;
+    out.emplace_back(text.substr(start, end - start));
+    start = next;
   }
-  if (start < text.size()) out.emplace_back(text.substr(start));
   return out;
 }
 

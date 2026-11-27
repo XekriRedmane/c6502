@@ -19,6 +19,8 @@ simulator in both pipelines.
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_register_arguments.cpp.
 """
 from __future__ import annotations
 
@@ -26,57 +28,6 @@ import unittest
 
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-def _codegen(src: str) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=True)
-
-
-def _body(asm: str, name: str) -> list[str]:
-    """The instruction and local label lines of function `name`."""
-    text = asm.split(f"\n{name}:\n")[1]
-    out = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith(";") or line == "SUBROUTINE":
-            continue
-        if line.endswith(":") and not line.startswith("."):
-            break
-        out.append(" ".join(line.split()))
-    return out
-
-
-@needs_c6502cpp
-class TestCompiled(unittest.TestCase):
-    """The code for each shape, from `-O`."""
-
-    def test_high_byte_stays_in_x(self) -> None:
-        src = ("unsigned char k;"
-               "unsigned int widen(unsigned int y) { return y - k; }")
-        self.assertEqual(_body(_codegen(src), "widen"), [
-            "SEC", "SBC k", "BCS .carry_inc@0", "DEX", ".carry_inc@0:",
-            "RTS",
-        ])
-
-    def test_arguments_swap(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "void g(uint8_t a, uint8_t b);"
-               "void f(uint8_t a, uint8_t b) { g(b, a); }")
-        self.assertEqual(_body(_codegen(src), "f"), [
-            "STA __local_f__a", "TXA", "LDX __local_f__a", "JMP g",
-        ])
-
-    def test_count_down_in_y(self) -> None:
-        src = ("#include <stdint.h>\n"
-               "void wait(uint8_t delay) {"
-               "    register volatile uint8_t y = delay;"
-               "    while (--y != 0) { }"
-               "}")
-        self.assertEqual(_body(_codegen(src), "wait"), [
-            "TAY", ".loop@0_continue:", "DEY", "BNE .loop@0_continue",
-            "RTS",
-        ])
 
 
 _PROGRAM = """

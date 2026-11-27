@@ -70,18 +70,15 @@ class _Trace:
         self.stops: list[str] = []
         self.ends: list[tuple] = []
         self.error: BaseException | None = None
-        self.found: _Found | None = None
 
 
-def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) -> _Trace:
+def _drive(mpu, hooks, max_cycles: int) -> _Trace:
     mem = mpu.memory
     log = mem.log
     trace = _Trace()
     patches: list[list[int]] = []
     while True:
-        k = len(trace.segments)
         trace.segments.append({**_state(mpu), "patches": patches})
-        start_image = bytes(mem) if until is not None and until[0] == k else None
         digests = array.array("I")
         written: dict[int, int] = {}
         stop = None
@@ -96,7 +93,6 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
             if mem[pc] == 0x00:
                 stop = "brk"
                 break
-            before = _state(mpu)
             log.clear()
             try:
                 mpu.step()
@@ -110,9 +106,6 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
                 record += b"".join(_WRITE(a, v) for a, v in log)
                 written.update(log)
             digests.append(zlib.crc32(record))
-            if until == (k, len(digests) - 1):
-                trace.found = _Found(before, _state(mpu), list(log), start_image)
-                return trace
         trace.digests.append(digests)
         trace.written.append(written)
         trace.stops.append(stop)
@@ -126,6 +119,21 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
             trace.error = e
             return trace
         patches = [[a, v] for a, v in log]
+
+
+def _replay(mpu, hooks, segment_lengths: list[int], k: int, i: int) -> _Found:
+    log = mpu.memory.log
+    for length in segment_lengths[:k]:
+        for _ in range(length):
+            mpu.step()
+        hook_and_rts(mpu, hooks)
+    start_image = bytes(mpu.memory)
+    for _ in range(i):
+        mpu.step()
+    before = _state(mpu)
+    log.clear()
+    mpu.step()
+    return _Found(before, _state(mpu), list(log), start_image)
 
 
 def _fmt(state: dict | tuple) -> str:
@@ -168,7 +176,7 @@ def run(sim, max_cycles: int) -> bool:
         fresh.memory = _RecordingMemory(image)
         fresh.pc, fresh.a, fresh.x, fresh.y = start["pc"], start["a"], start["x"], start["y"]
         fresh.sp, fresh.p, fresh.processorCycles = start["sp"], start["p"], start["cycles"]
-        return _drive(fresh, hooks, max_cycles, until=(k, i)).found
+        return _replay(fresh, hooks, [len(d) for d in trace.digests], k, i)
 
     for k, want in enumerate(trace.digests):
         if k >= len(results):

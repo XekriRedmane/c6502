@@ -10,6 +10,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,6 +53,7 @@
 #include "preprocessor_cases.h"
 #include "py_regex_cases.h"
 #include "rtlib/helpers.h"
+#include "sim/game_run.h"
 #include "stage_checks.h"
 #include "tac_ast.h"
 
@@ -81,6 +83,8 @@ const char kUsage[] =
     "       c6502cpp link [--repeat <n>]\n"
     "       c6502cpp sweep-passes\n"
     "       c6502cpp pass-order\n"
+    "       c6502cpp game-run <game> <script> [--exe <path>] [--events <n>] [--ld <path>]\n"
+    "                         [--steps-after <event> --steps <n>] [-o <file>]\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
     "tac_ast, or c99_ast) from <file> or stdin and writes its dump again,\n"
@@ -137,6 +141,10 @@ const char kUsage[] =
     "\n"
     "helper-dump writes the asm program of the runtime helpers in the dump\n"
     "format (ir_dump.py), which the simulator assembles at $E000.\n"
+    "\n"
+    "game-run plays a script of zork, lode_runner, or ali_baba on the\n"
+    "game's machine, the original or with --exe a linked C program, and\n"
+    "writes each event and the machine's state at the end (src/sim/game_run.h).\n"
     "\n"
     "compile takes compile.py's command line and does what compile.py does,\n"
     "with its options, messages, files, and exit status, in this process\n"
@@ -845,6 +853,14 @@ int main(int argc, char** argv) {
       write_stdout(binutils::link_response(read_stdin(), repeat, &best));
       if (repeat > 1) std::fprintf(stderr, "best of %d: %.2f ms\n", repeat, best);
       return 0;
+    }
+    if (command == "game-run") {
+      std::ostringstream out;
+      std::ostringstream err;
+      const int status = sim::game_run::main(args, out, err);
+      write_stdout(out.str());
+      std::fputs(err.str().c_str(), stderr);
+      return status;
     }
     if (command == "pass-order" && args.empty()) {
       write_stdout(pass_order::listing());

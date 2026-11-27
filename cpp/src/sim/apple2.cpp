@@ -22,21 +22,6 @@ constexpr std::uint8_t kSpace = 0xA0;
 // sector kSkew[s], the order a .dsk image keeps them in.
 constexpr int kSkew[16] = {0x0, 0xD, 0xB, 0x9, 0x7, 0x5, 0x3, 0x1, 0xE, 0xC, 0xA, 0x8, 0x6, 0x4, 0x2, 0xF};
 
-using Row = std::vector<std::uint8_t>;
-
-Row slice(const Row& row, std::size_t i, std::size_t j) {
-  i = std::min(i, row.size());
-  j = std::clamp(j, i, row.size());
-  return Row(row.begin() + static_cast<std::ptrdiff_t>(i), row.begin() + static_cast<std::ptrdiff_t>(j));
-}
-
-void assign(Row& row, std::size_t i, std::size_t j, const Row& bytes) {
-  i = std::min(i, row.size());
-  j = std::clamp(j, i, row.size());
-  row.erase(row.begin() + static_cast<std::ptrdiff_t>(i), row.begin() + static_cast<std::ptrdiff_t>(j));
-  row.insert(row.begin() + static_cast<std::ptrdiff_t>(i), bytes.begin(), bytes.end());
-}
-
 }  // namespace
 
 std::size_t dsk_sector(int track, int sector) {
@@ -94,6 +79,16 @@ std::string Apple2::text() const {
   return out;
 }
 
+Apple2::Window Apple2::window() {
+  const Window w{m(kWndlft), m(kWndwdth), m(kWndtop), m(kWndbtm)};
+  if (w.left + w.width > kColumns || w.top >= w.bottom || w.bottom > kRows) {
+    throw std::runtime_error("the text window (WNDLFT " + std::to_string(w.left) + ", WNDWDTH " +
+                             std::to_string(w.width) + ", WNDTOP " + std::to_string(w.top) + ", WNDBTM " +
+                             std::to_string(w.bottom) + ") is outside the 40-by-24 screen");
+  }
+  return w;
+}
+
 void Apple2::log(Routine routine) {
   std::optional<std::uint8_t> a;
   if (routine == Routine::kCout || routine == Routine::kCout1) a = cpu_.a;
@@ -102,8 +97,9 @@ void Apple2::log(Routine routine) {
 }
 
 void Apple2::put(std::uint8_t c) {
-  const int col = m(kWndlft) + m(kCh);
-  if (m(kCv) < 24 && col < 40) screen.at(m(kCv))[static_cast<std::size_t>(col)] = c;
+  const std::size_t row = m(kCv);
+  const std::size_t col = std::size_t{m(kWndlft)} + m(kCh);
+  if (row < kRows && col < kColumns) screen[row][col] = c;
   m(kCh) = static_cast<std::uint8_t>(m(kCh) + 1);
   if (m(kCh) >= m(kWndwdth)) cr();
 }
@@ -113,13 +109,11 @@ void Apple2::cr() {
   m(kCv) = static_cast<std::uint8_t>(m(kCv) + 1);
   if (m(kCv) >= m(kWndbtm)) {
     m(kCv) = static_cast<std::uint8_t>(m(kWndbtm) - 1);
-    const std::size_t left = m(kWndlft);
-    const std::size_t width = m(kWndwdth);
-    for (int row = m(kWndtop); row < m(kWndbtm) - 1; ++row) {
-      assign(screen.at(static_cast<std::size_t>(row)), left, left + width,
-             slice(screen.at(static_cast<std::size_t>(row) + 1), left, left + width));
+    const Window w = window();
+    for (std::size_t row = w.top; row + 1 < w.bottom; ++row) {
+      std::copy_n(screen[row + 1].data() + w.left, w.width, screen[row].data() + w.left);
     }
-    assign(screen.at(static_cast<std::size_t>(m(kWndbtm) - 1)), left, left + width, Row(width, kSpace));
+    std::fill_n(screen[w.bottom - 1].data() + w.left, w.width, kSpace);
   }
 }
 
@@ -150,10 +144,9 @@ void Apple2::cout() {
 
 void Apple2::home() {
   log(Routine::kHome);
-  const std::size_t left = m(kWndlft);
-  const std::size_t width = m(kWndwdth);
-  for (int row = m(kWndtop); row < m(kWndbtm); ++row) {
-    assign(screen.at(static_cast<std::size_t>(row)), left, left + width, Row(width, kSpace));
+  const Window w = window();
+  for (std::size_t row = w.top; row < w.bottom; ++row) {
+    std::fill_n(screen[row].data() + w.left, w.width, kSpace);
   }
   m(kCh) = 0;
   m(kCv) = m(kWndtop);
@@ -161,9 +154,10 @@ void Apple2::home() {
 
 void Apple2::clreol() {
   log(Routine::kClreol);
-  Row& row = screen.at(m(kCv));
-  for (int col = m(kWndlft) + m(kCh); col < m(kWndlft) + m(kWndwdth); ++col) {
-    if (col < 40) row[static_cast<std::size_t>(col)] = kSpace & m(kInvflg);
+  auto& row = screen.at(m(kCv));
+  const std::size_t end = std::min(std::size_t{m(kWndlft)} + m(kWndwdth), kColumns);
+  for (std::size_t col = std::size_t{m(kWndlft)} + m(kCh); col < end; ++col) {
+    row[col] = kSpace & m(kInvflg);
   }
 }
 

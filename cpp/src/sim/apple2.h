@@ -18,6 +18,8 @@
 // cycles.
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -45,6 +47,10 @@ inline constexpr std::uint16_t kRwts = 0x2900;
 // The printer's output hook. Zork puts it in CSW while it prints to the
 // printer, and a card in slot 1 has its entry point there.
 inline constexpr std::uint16_t kPrinter = 0xC100;
+
+inline constexpr std::size_t kColumns = 40;
+inline constexpr std::size_t kRows = 24;
+using Screen = std::array<std::array<std::uint8_t, kColumns>, kRows>;
 
 // Returns the offset in a DOS-order .dsk image of logical `sector` of
 // `track`.
@@ -100,8 +106,11 @@ class Apple2 {
   std::deque<std::uint8_t> keys;
   std::deque<std::string> lines;
   std::map<DiskKey, std::vector<std::uint8_t>> disks;
-  std::vector<std::vector<std::uint8_t>> screen =
-      std::vector<std::vector<std::uint8_t>>(24, std::vector<std::uint8_t>(40, 0xA0));
+  Screen screen = [] {
+    Screen blank;
+    for (auto& row : blank) row.fill(0xA0);
+    return blank;
+  }();
   std::vector<std::uint8_t> printer;
   std::vector<Call> calls;
   std::vector<SectorWrite> written;
@@ -131,8 +140,18 @@ class Apple2 {
 
  private:
   struct InputUsedUp {};
+  struct Window {
+    std::size_t left;
+    std::size_t width;
+    std::size_t top;
+    std::size_t bottom;
+  };
 
   std::uint8_t& m(std::uint16_t addr) { return cpu_.memory[addr]; }
+  // Returns the text window that WNDLFT, WNDWDTH, WNDTOP, and WNDBTM
+  // set. Throws `std::runtime_error` when it is empty or reaches past
+  // the screen.
+  Window window();
   void log(Routine routine);
   void put(std::uint8_t c);
   void cr();

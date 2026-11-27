@@ -137,6 +137,19 @@ class SimResult:
         return v - (1 << 64) if v & (1 << 63) else v
 
 
+def hook_and_rts(mpu: MPU, hooks) -> None:
+    """Run the hook at `mpu`'s PC against memory, then synthesize an
+    RTS to resume the caller. JSR pushes `return_address - 1` (high
+    byte then low byte) onto the hardware stack at $0100 + sp; RTS pops
+    two bytes (low first) and sets `pc = popped + 1`."""
+    hooks[mpu.pc](mpu.memory)
+    sp = mpu.sp
+    lo = mpu.memory[0x0100 + ((sp + 1) & 0xFF)]
+    hi = mpu.memory[0x0100 + ((sp + 2) & 0xFF)]
+    mpu.sp = (sp + 2) & 0xFF
+    mpu.pc = (((hi << 8) | lo) + 1) & 0xFFFF
+
+
 class Simulation:
     """A loaded-and-ready-to-run simulator instance.
 
@@ -172,28 +185,13 @@ class Simulation:
     # The harness's step loop. Each iteration either fires a helper
     # hook (if PC matches a trap address) or asks py65 to run one
     # 6502 instruction.
-    def _hook_and_rts(self) -> None:
-        """Run the current PC's helper hook against memory, then
-        synthesize an RTS to resume the caller. JSR pushes
-        `return_address - 1` (high byte then low byte) onto the
-        hardware stack at $0100 + sp; RTS pops two bytes (low first)
-        and sets `pc = popped + 1`."""
-        mpu = self.mpu
-        hook = self.runtime.hooks[mpu.pc]
-        hook(mpu.memory)
-        sp = mpu.sp
-        lo = mpu.memory[0x0100 + ((sp + 1) & 0xFF)]
-        hi = mpu.memory[0x0100 + ((sp + 2) & 0xFF)]
-        mpu.sp = (sp + 2) & 0xFF
-        mpu.pc = (((hi << 8) | lo) + 1) & 0xFFFF
-
     def step(self) -> bool:
         """One simulator step. Returns True if execution should
         continue, False if a BRK was just observed (i.e. the program
         has halted). Helper traps run inline and don't observe a BRK."""
         mpu = self.mpu
         if mpu.pc in self.runtime.hooks:
-            self._hook_and_rts()
+            hook_and_rts(mpu, self.runtime.hooks)
             return True
         if mpu.memory[mpu.pc] == 0x00:   # BRK
             return False
@@ -263,7 +261,7 @@ class Simulation:
         while mpu.processorCycles < max_cycles:
             pc = mpu.pc
             if pc in self.runtime.hooks:
-                self._hook_and_rts()
+                hook_and_rts(mpu, self.runtime.hooks)
                 cycles_by_fn["<other>"] += (
                     mpu.processorCycles - prev_c
                 )

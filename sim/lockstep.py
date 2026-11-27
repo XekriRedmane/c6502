@@ -21,6 +21,8 @@ import os
 import struct
 import zlib
 
+from sim.harness import hook_and_rts
+
 _RECORD = struct.Struct("<HBBBBBQ").pack
 _WRITE = struct.Struct("<HB").pack
 
@@ -50,15 +52,6 @@ class _RecordingMemory(bytearray):
 def _state(mpu) -> dict:
     return {"pc": mpu.pc, "a": mpu.a, "x": mpu.x, "y": mpu.y, "sp": mpu.sp,
             "p": mpu.p, "cycles": mpu.processorCycles}
-
-
-def _hook_and_rts(mpu, hooks) -> None:
-    hooks[mpu.pc](mpu.memory)
-    sp = mpu.sp
-    lo = mpu.memory[0x0100 + ((sp + 1) & 0xFF)]
-    hi = mpu.memory[0x0100 + ((sp + 2) & 0xFF)]
-    mpu.sp = (sp + 2) & 0xFF
-    mpu.pc = (((hi << 8) | lo) + 1) & 0xFFFF
 
 
 class _Trace:
@@ -120,7 +113,7 @@ def _drive(mpu, hooks, max_cycles: int, until: tuple[int, int] | None = None) ->
             return trace
         log.clear()
         try:
-            _hook_and_rts(mpu, hooks)
+            hook_and_rts(mpu, hooks)
         except Exception as e:
             trace.error = e
             return trace

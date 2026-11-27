@@ -10,11 +10,12 @@ box. Tests:
   * SHRT_* aliases match INT_* exactly.
   * The header is idempotent (multiple `#include`s don't error).
   * A user `-I` path can shadow the bundled header.
+
+That a `limits.h` in a directory given with `-I` comes first is checked
+in cpp/tests/test_limits_h.cpp.
 """
 from __future__ import annotations
 
-import os
-import tempfile
 import unittest
 
 from sim.harness import run_c_program
@@ -102,22 +103,6 @@ class TestLimitsH(unittest.TestCase):
             "int main(void) { return INT_MAX; }\n"
         )
         self.assertEqual(run_c_program(src).return_int_signed(), 32767)
-
-    def test_user_include_path_shadows_bundled(self) -> None:
-        # If the user supplies `-I <dir>` and `<dir>/limits.h` exists,
-        # it shadows the bundled header. Verifies precedence: user
-        # `-I` paths are added BEFORE the bundled directory in pcpp's
-        # search list.
-        from compile import _run_source
-        with tempfile.TemporaryDirectory() as tmp:
-            with open(os.path.join(tmp, "limits.h"), "w") as f:
-                f.write("#define INT_MAX 99\n")
-            src = "#include <limits.h>\nint x = INT_MAX;\n"
-            # The tokens `compile.py --lex` prints for the
-            # preprocessor's output.
-            out = _run_source("lex", src, pcpp_args=["-I", tmp])
-        values = [line.split("\t")[2] for line in out.splitlines()]
-        self.assertEqual(values, ["int", "x", "=", "99", ";"])
 
 
 if __name__ == "__main__":

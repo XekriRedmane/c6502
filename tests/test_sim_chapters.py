@@ -1,13 +1,14 @@
-"""Run chapter test programs through the TAC simulator and assert
-their expected `main` return values.
+"""What chapter test programs' `main` returns, traced by hand, and the
+TAC interpreter's run of a program for the tests that import it.
 
-The chapter_<N> harnesses verify that programs reach codegen, but
-they don't check that the produced TAC computes the right answer.
-This file fills that gap: a hand-curated table maps each chapter
-file we care about to its expected `main()` return, and the
-simulator runs the program end-to-end (parse → resolve → string
-lift → label resolve → loop label → type-check → c99_to_tac →
-simulator) to verify.
+`EXPECTED_RETURNS` maps each chapter file we care about to its
+expected `main()` return. The simulator's runs of the corpus
+(test_sim_asm.py, test_sim_asm_optimized.py, test_sim_differential.py)
+compare with it. The module's own test, which ran each program in the
+TAC interpreter, was dropped on 26 Nov 2026, since golden/tacsim.txt
+holds the interpreter's result for each of the 515 programs and every
+one equalled the table then (docs/cpp_port.md, "The tests golden/
+covers").
 
 Values are pinned to c6502's semantics — C99-conformant minimum
 widths (int = 2 bytes signed, long = 4 bytes signed, long long =
@@ -24,13 +25,6 @@ listed in SKIPPED with a one-line reason — keeps the rejection
 explicit so we don't silently lose coverage.
 """
 from __future__ import annotations
-
-import unittest
-from pathlib import Path
-from tests.cpp_build import needs_c6502cpp
-
-
-_TESTS_DIR = Path(__file__).parent
 
 
 # Hard-coded expected `main()` return values, hand-traced for each
@@ -752,23 +746,3 @@ def _run_program(source: str) -> int | None:
     compute (`cpp_backend.tac_main`)."""
     import cpp_backend
     return cpp_backend.tac_main(source)
-
-
-@needs_c6502cpp
-class TestSimChapters(unittest.TestCase):
-    """Per-file subTest so a regression in one program doesn't mask
-    others — the failure summary lists each file by relative path."""
-
-    def test_expected_returns(self):
-        for rel_path, expected in EXPECTED_RETURNS.items():
-            with self.subTest(file=rel_path):
-                src = (_TESTS_DIR / rel_path).read_text()
-                result = _run_program(src)
-                self.assertEqual(
-                    result, expected,
-                    msg=f"{rel_path}: expected {expected}, got {result}",
-                )
-
-
-if __name__ == "__main__":
-    unittest.main()

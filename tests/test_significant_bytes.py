@@ -2,11 +2,13 @@
 one significant byte (`tac_to_asm._inline_left_shift_byte`), the
 closed form of the loop in Zork's `please_insert_save_diskette`, and
 `==` / `!=` comparing only significant bytes
-(`tac_to_asm._equality_bytes`)."""
+(`tac_to_asm._equality_bytes`).
+
+The `-S` text, and the identity behind the closed form, are checked in
+cpp/tests/test_significant_bytes.cpp."""
 
 import unittest
 
-from compile import _run_source
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 
@@ -91,41 +93,12 @@ class TestWidenedByteShift(unittest.TestCase):
         """
         self._check(src)
 
-    def test_no_helper_call(self):
-        src = """
-        unsigned int g;
-        void f(unsigned char c) { g = (unsigned int)c << 5; }
-        void h(unsigned char c) { g = 64 * (c & 7); }
-        """
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _run_source("codegen", src, optimize=optimize)
-                self.assertNotIn("asl16", asm)
-
-    def test_sign_extended_byte_shifts_every_byte(self):
-        # A negative `signed char` widens to a nonzero high byte, so the
-        # shift is a loop over both bytes.
-        src = """
-        unsigned int g;
-        void f(signed char c) { g = (unsigned int)c << 5; }
-        """
-        asm = _run_source("codegen", src, optimize=True)
-        self.assertIn("ROL   g+1", asm)
-
 
 @needs_c6502cpp
 class TestScratchClosedForm(unittest.TestCase):
     """`please_insert_save_diskette` sets SCRATCH1 to one less than 64
     times the position. The loop it was written with and the closed
     form agree for every byte the answer could hold."""
-
-    def test_formula(self):
-        for answer in range(256):
-            loop = 0xFFFF
-            for _ in range(answer & 0x07):
-                loop = (loop + 64) & 0xFFFF
-            closed = ((64 * (answer & 0x07)) - 1) & 0xFFFF
-            self.assertEqual(loop, closed)
 
     def test_compiled(self):
         src = """
@@ -209,15 +182,6 @@ class TestTruncatedRightShift(unittest.TestCase):
             "unsigned long", [k for k in range(1, 24) if k % 8],
         ))
 
-    def test_no_helper_call(self):
-        src = """
-        unsigned int z;
-        unsigned char o;
-        void f(void) { o = (unsigned char)(z >> 5) & 0x1F; }
-        """
-        asm = _run_source("codegen", src, optimize=True)
-        self.assertNotIn("lsr16", asm)
-
 @needs_c6502cpp
 class TestEqualityBytes(unittest.TestCase):
     """`==` and `!=` compare only the low bytes either operand can
@@ -262,23 +226,6 @@ class TestEqualityBytes(unittest.TestCase):
                 self.assertFalse(result.timed_out)
                 self.assertEqual(result.return_int() & 0xFFFF,
                                  self._expected())
-
-    def test_one_byte(self):
-        # A widened byte masked to its top bit, compared with 0, tests
-        # one byte, and a known-0 high byte isn't compared with 0.
-        src = """
-        #include <stdbool.h>
-        unsigned char get(void);
-        bool f(void) { bool on = (get() & 0x80) != 0; return on; }
-        """
-        asm = _run_source("codegen", src, optimize=True)
-        lines = [ln.split() for ln in asm.splitlines() if ln.strip()]
-        self.assertNotIn(
-            (["LDA", "#$00"], ["CMP", "#$00"]),
-            list(zip(lines, lines[1:])),
-        )
-        self.assertIn((["AND", "#$80"], ["BEQ"]),
-                      [(a, b[:1]) for a, b in zip(lines, lines[1:])])
 
 
 if __name__ == "__main__":

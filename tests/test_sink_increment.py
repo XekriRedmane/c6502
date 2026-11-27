@@ -1,5 +1,7 @@
 """Tests for cpp/src/passes/optimization/sink_increment.h, which moves `Y = X
-+ c` past the last read of `X` in its block."""
++ c` past the last read of `X` in its block.
+
+The `-S` text is checked in cpp/tests/test_sink_increment_source.cpp."""
 
 from __future__ import annotations
 
@@ -63,21 +65,6 @@ class TestSinkIncrementSim(unittest.TestCase):
             "}\n"
         )
         self._both(src, (4 + 10) + 0 + 7 * 1000 + 600)
-
-    def test_post_decrement_becomes_dex(self) -> None:
-        from compile import _run_source
-        src = (
-            "#include <stdint.h>\n"
-            "uint8_t tab[8];\n"
-            "uint8_t find(uint8_t c) {\n"
-            "    uint8_t x = 7;\n"
-            "    do { if (tab[x] == c) return x + 8; } while (x-- != 0);\n"
-            "    return 0;\n"
-            "}\n"
-        )
-        asm = _run_source("codegen", src, optimize=True)
-        self.assertIn("CPX   #$FF", asm)
-        self.assertNotIn("SBC", asm)
 
 
 if __name__ == "__main__":

@@ -5234,7 +5234,7 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
     for it as `compile_to_asm` did. `run_bucketed`, which no test calls,
     wasn't ported, and the compile-example skill runs the Python one.
   - The assembler was compared with sim/assembler.py by `c6502cpp
-    check-sim-assembler` (temporary, for R) on the 633 chapter `valid/`
+    check-sim-assembler` on the 633 chapter `valid/`
     programs and the 19 examples in both pipelines: 1,197 records, 108
     compiles rejected before the assembler, 1,042 images and symbol
     tables equal, 151 errors equal (undefined symbols such as `malloc`,
@@ -5252,6 +5252,12 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
     symbols, registers, cycles, and memory, with 6,692 calls of 37 hooks
     among them, first with hooks copied from the Python ones and then
     with the hooks on fp_arith.
+  - `check-sim-assembler` (cpp/src/sim/assembler_check.cpp) and
+    test_sim_records.cpp were removed after both comparisons passed.
+    The captures they read came from C:/w/g4asm/capture_sim_asm.py and
+    the records from the uncommitted copy of sim/harness.py, and
+    neither is in the repository, so the comparisons can't be run
+    again.
   - The hooks follow fp_arith (decision 1), in a commit of their own.
     No run of the suite calls a hook with inputs in one of the four
     cases of "The Python hooks", so the comparison found no difference

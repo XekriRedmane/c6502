@@ -54,6 +54,4 @@ struct AssembledProgram {
 AssembledProgram assemble(const asm_ast::Program& program, std::int64_t origin = 0x0800,
                           const std::map<std::string, std::int64_t>& extra_symbols = {});
 
-int check_sim_assembler(const std::vector<std::string>& args);
-
 }  // namespace c6502::sim

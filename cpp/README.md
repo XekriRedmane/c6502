@@ -286,9 +286,6 @@ cpp/
                       image in two passes, and `instruction_size`, the
                       sizes its first pass lays the labels out by, which
                       the passes that measure branches read (step 9, G4)
-    sim/assembler_check.cpp  `c6502cpp check-sim-assembler`, the comparison
-                      of `assemble` with sim/assembler.py, which is
-                      temporary and goes with `cpu-run` in group R
     sim/cpu.*         the simulator's 6502, which executes as py65 1.2.0
                       does, with its trap table and callbacks (step 9, G3)
     sim/cpu_run.*     the backend mode `cpu-run`, which runs it for
@@ -308,9 +305,6 @@ cpp/
     sim_chapters.*    the tables of the simulator's runs of the corpus:
                       each chapter program's traced return, the skips,
                       and the known optimizer divergences
-    test_sim_records.cpp  the comparison of the C++ harness with the
-                      Python one's recorded runs, which is temporary and
-                      goes with the Python harness in group R
     frozen/sim/       the Python models' expected values for the tests
                       ported in step 9's G4 (bitint_sim.txt)
     frozen/py_random.txt   CPython 3.11's results of random.Random
@@ -3573,16 +3567,19 @@ and the fuzzers until G5 and G6.
   each as a `HookError` that carries the Python class's name.
 
 The harness was checked against the Python one in three ways while
-Python was installed. `c6502cpp check-sim-assembler` compared
+Python was installed. A command `c6502cpp check-sim-assembler` compared
 `assemble` with sim/assembler.py on every program of the chapter corpus
 and the examples in both pipelines, image and symbols. A copy of
 sim/harness.py that wasn't committed recorded each `Simulation.run`
-of the Python suite, and the case in tests/test_sim_records.cpp, with
-`C6502_SIM_RECORDS` naming the records, built each program again and
-ran it from the same state, comparing the image, the symbols, the
-registers, the cycles, and the memory, first with hooks copied from
-the Python ones and then with the hooks on fp_arith. And the ported
-tests check each assertion of the Python tests.
+of the Python suite, and a doctest case in tests/test_sim_records.cpp
+built each program again and ran it from the same state, comparing the
+image, the symbols, the registers, the cycles, and the memory, first
+with hooks copied from the Python ones and then with the hooks on
+fp_arith. And the ported tests check each assertion of the Python
+tests. The command and the case were removed once both comparisons
+passed, because the captures and the records they read were written
+by scripts that aren't in the repository, so neither can be run
+again.
 
 ## Status
 

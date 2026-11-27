@@ -52,7 +52,6 @@
 #include "preprocessor_cases.h"
 #include "py_regex_cases.h"
 #include "rtlib/helpers.h"
-#include "sim/assembler.h"
 #include "stage_checks.h"
 #include "tac_ast.h"
 
@@ -71,7 +70,6 @@ const char kUsage[] =
     "       c6502cpp check-golden [--root <dir>] [-j <n>] [--manifest <name>,...]\n"
     "                             [--label <label>] [--update] [--verbose]\n"
     "       c6502cpp check-frozen [--verbose] [<frozen dir>]\n"
-    "       c6502cpp check-sim-assembler <capture file>...\n"
     "       c6502cpp compile [<compile.py's argument>...]\n"
     "       c6502cpp opcodes\n"
     "       c6502cpp helper-footprints\n"
@@ -129,11 +127,6 @@ const char kUsage[] =
     "<frozen dir>/passes and <frozen dir>/binutils (cpp/tests/frozen by\n"
     "default), and checks them as check-captures and check-binutils do\n"
     "(src/frozen.h).\n"
-    "\n"
-    "check-sim-assembler assembles the asm program of each record of the\n"
-    "capture files in C++ and compares the image, the symbols, or the error\n"
-    "with sim/assembler.py's (src/sim/assembler_check.cpp). It is temporary,\n"
-    "and goes with sim/assembler.py in group R of step 9.\n"
     "\n"
     "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
     "per row, in the order of binutils/opcodes.py.\n"
@@ -775,9 +768,6 @@ int main(int argc, char** argv) {
     }
     if (command == "check-frozen") {
       return cmd_check_frozen(args);
-    }
-    if (command == "check-sim-assembler") {
-      return sim::check_sim_assembler(args);
     }
     if (command == "check-golden") {
       return golden::check_golden(args, argv[0]);

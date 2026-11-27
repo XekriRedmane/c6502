@@ -1124,7 +1124,7 @@ void Emitter::decimal_arith(const ir::DecimalArith& d, Bytes& out) const {
   out.push_back(implied("CLD"));
 }
 
-ir::Type_operand shift_offset(const ir::Type_operand& op, Int k) {
+ir::Type_operand offset_by(const ir::Type_operand& op, Int k) {
   if (const auto* f = as<ir::Frame>(op)) return ir::Frame{.offset = f->offset + k};
   if (const auto* s = as<ir::Stack>(op)) return ir::Stack{.offset = s->offset + k};
   if (const auto* d = as<ir::Data>(op)) return ir::Data{.name = d->name, .offset = d->offset + k};
@@ -1145,7 +1145,7 @@ void Emitter::load_address(const ir::Type_operand& src, const ir::Type_operand& 
     lda_imm(addr & 0xFF, out);
     store_a_to_mem(dst, out);
     lda_imm(addr >> 8, out);
-    store_a_to_mem(shift_offset(dst, 1), out);
+    store_a_to_mem(offset_by(dst, 1), out);
     return;
   }
   if (const auto* f = as<ir::Frame>(src)) {
@@ -1160,7 +1160,7 @@ void Emitter::load_address(const ir::Type_operand& src, const ir::Type_operand& 
     zp("LDA", rt_.fp + 1, out);
     out.push_back(op_code("ADC", Mode::kImm));
     out.push_back(0);
-    store_a_to_mem(shift_offset(dst, 1), out);
+    store_a_to_mem(offset_by(dst, 1), out);
     return;
   }
   fail("LoadAddress src must be Data or Frame; got " + repr(src));

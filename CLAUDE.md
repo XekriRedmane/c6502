@@ -362,7 +362,8 @@ uv run python -m unittest                       # run all tests
 C6502_CHECK_IR=1 uv run python -m unittest      # with IR checks after every pass
 C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
 uv run python -m unittest tests.test_runtime_library   # run one module
-uv run python -m unittest tests.test_chapter_1.TestChapter1Valid    # run one test
+uv run python -m unittest tests.test_sim_smoke.TestBasics    # run one class
+cpp/build/bin/c6502_tests -tc="parser:*"         # the doctest cases of one module
 
 uv run python compile.py <source.c> -S          # C → 6502 asm in <source>.s
 uv run python compile.py <source.c> -S -o out.asm   # to a file (.s or .asm)
@@ -1567,9 +1568,11 @@ diagram and an annotated prologue and epilogue.
 ## Status
 
 For what works and what's missing, see the README's `## Status`
-section and `tests/STATUS.md` (chapter-by-chapter pass/fail). The chapter test
-harnesses under `tests/test_chapter_<N>.py` are the authoritative
-list of what compiles and runs.
+section and `tests/STATUS.md` (the chapter programs c6502 doesn't
+handle as their bucket says). golden/unopt.txt and golden/O.txt hold
+the exit status and message of every chapter program, and
+golden/tacsim.txt what each one's `main` returns in the TAC
+interpreter.
 
 This section captures only the **gaps and known imprecisions** that
 an unwary contributor would otherwise discover by surprise.

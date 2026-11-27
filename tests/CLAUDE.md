@@ -57,9 +57,9 @@ categories:
   Python pass, the front end, or the preprocessor directly to doctest
   cases in cpp/tests (docs/cpp_port.md, "The tests"), and a test of a
   single C++ function is written there.
-- **Chapter end-to-end tests** (`test_chapter_<N>.py` with the
-  matching `chapter_<N>/` directory of C sources) — drive each
-  chapter end-to-end through `-S`.
+- **The chapter corpora** (`chapter_<N>/`), which the golden files
+  check and which the simulator's runs of the corpus run (see
+  "Chapter corpora" below).
 
 Under `-O` a small `static` function is inlined into its callers and
 dropped (cpp/src/passes/optimization/inline_functions.h). A test that
@@ -132,36 +132,32 @@ ALI_BABA_DIR=F:/Projects/ali_baba_reveng
   with no `--defsym`, and plays the game script on it. `uv run python -m tests.test_ali_baba coverage`
   lists the original's routines no script reaches.
 
-## Chapter harnesses
+## Chapter corpora
 
 `tests/chapter_<N>/` holds sample programs from
-nlsandler/writing-a-c-compiler-tests, checked in verbatim. Each
-chapter has the same harness shape: per-bucket test methods (`valid`
-must compile, and the `invalid_*` semantic buckets must be rejected
-somewhere in the pipeline). The `invalid_lex` and `invalid_parse`
-buckets' tests moved to doctest cases in step 8
-(cpp/tests/test_chapter_<N>_calls.cpp), which hold the tokens or the
-parse each file gives, with the error's class and message, and
-golden/lex.txt and golden/parse.txt hold each file's `--lex` and
-`--parse` run too.
+nlsandler/writing-a-c-compiler-tests, checked in verbatim or adapted
+to c6502's widths. A program in `valid/` must compile, and one in an
+`invalid_*` bucket must be rejected with a one-line error. The golden
+files hold each program in each mode (golden/unopt.txt and O.txt the
+exit status and message of `-S`, lex.txt, parse.txt, resolve.txt, and
+tac.txt the text stages, and tacsim.txt what `main` returns in the TAC
+interpreter), so `c6502cpp check-golden` reports any change. The
+Python harnesses `test_chapter_<N>.py` and test_invalid_programs.py,
+which checked the same and the class of each error, were dropped on 26
+Nov 2026 (docs/cpp_port.md, "The tests golden/ covers"). The
+`invalid_lex` and `invalid_parse` buckets' parses, with each error's
+class, are doctest cases (cpp/tests/test_chapter_<N>_calls.cpp).
+STATUS.md lists the programs c6502 doesn't handle as their bucket says.
 
-Two filter sets thread through:
-
-- `_INCOMPATIBLE_VALID` — files c6502 can't compile under its narrow
-  integer / soft-stack model (e.g. literals beyond 16-bit Long, frames
-  beyond 253 bytes).
-- `_EXPECTED_FAILURES_CODEGEN` / `_NOT_REJECTED_TODAY` — feature gaps
-  that pin current behavior so a regression OR a fix flips the test
-  in either direction.
-
-Multi-TU `libraries/` subdirs and platform-specific `.s` files aren't
-applicable to c6502 and are skipped at import time.
+test_sim_chapters.py's `EXPECTED_RETURNS` gives what `main` returns
+for 515 of the programs, traced by hand, which the simulator's runs of
+the corpus check in both pipelines (test_sim_asm.py,
+test_sim_asm_optimized.py, test_sim_differential.py).
 
 ## Status
 
 For what works and what's missing, see the README's `## Status`
-section and `STATUS.md` (chapter-by-chapter pass/fail). The chapter harnesses are
-the authoritative list of what compiles and runs.
+section and `STATUS.md`.
 
 Where to look for more:
 

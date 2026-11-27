@@ -3058,8 +3058,8 @@ The golden files hold what each command of the corpus gave, and the
 frozen captures hold a few recorded calls of each function that the C++
 checkers check. docs/cpp_port.md ("The checks after Python") gives the
 reasons for the choice. ctest runs both, as the entries `check_golden`
-and `check_frozen` beside `c6502_tests`, and a run of the C++ tests
-alone is `ctest -R c6502_tests`.
+and `check_frozen` beside `c6502_tests` and `check_asdl` ("The IR
+classes"), and a run of the C++ tests alone is `ctest -R c6502_tests`.
 
 ### The golden files
 

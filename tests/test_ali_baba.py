@@ -2,9 +2,9 @@
 main.asm of https://github.com/XekriRedmane/ali_baba_reveng, and the
 C program in examples/ali_baba that translates it.
 
-`TestGoldOutputs` compiles each unit and compares it with its
-checked-in `.asm` file, which runs everywhere, and `TestDisk` checks
-the Disk II emulation's conversion of a disk image. The other tests
+golden/O.txt compiles each unit with `-S -O`. `TestDisk` checks the
+Disk II emulation's conversion of a disk image, which runs everywhere.
+The other tests
 run only with the reverse-engineering project's files, which aren't
 part of this repository. Set ALI_BABA_DIR to the project's
 directory, which holds `output/main.bin` (the original's memory image,
@@ -418,22 +418,6 @@ def _compile(unit: str, out: Path, stage: str) -> Path:
         "-o", str(out),
     ]) == 0
     return out
-
-
-@needs_c6502cpp
-class TestGoldOutputs(unittest.TestCase):
-    """Each unit's output matches the checked-in file. To bless a new
-    one, run `uv run python compile.py examples/ali_baba/<unit>.c -S
-    -O -o examples/ali_baba/<unit>.asm`."""
-
-    def test_units(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            for unit in _UNITS:
-                with self.subTest(unit=unit):
-                    path = _compile(unit, Path(tmp) / f"{unit}.asm", "-S")
-                    self.assertEqual(
-                        path.read_text(), (_DIR / f"{unit}.asm").read_text(),
-                    )
 
 
 def _build(tmp: str, defsyms: bool = True) -> Path:

@@ -11,9 +11,13 @@ uv run python compile.py examples/<name>.c -S -O \
 
 The matched `.c` / `.asm` pairs serve two purposes:
 
-1. **Snapshot tests** — `tests/test_example_outputs.py` compiles each
-   `.c` and diffs the result against the checked-in `.asm`, so any
-   codegen drift is caught at test time.
+1. **Snapshots** — golden/O/examples/ holds the same `-S -O` text,
+   which `c6502cpp check-golden` compares with the compiler's output.
+   Until 26 Nov 2026 tests/test_example_outputs.py also compared each
+   `.asm` here with the compiler's output. Step 9 of the port dropped
+   it, since every `.asm` was byte for byte its golden copy, so
+   nothing checks the copies here now (docs/cpp_port.md, "Open
+   questions for Robert", question 5).
 2. **Hand-readable reference** — the `.asm` files are short enough
    (typically <500 lines) that a reader can read them end-to-end and
    see what `-O` produces on representative game code
@@ -31,12 +35,12 @@ https://github.com/XekriRedmane/zorki-r15-reveng, Zork I's (r15) whole
 interpreter, in eleven C files and a shared header, linked by a linker
 script into a program that runs from `$0800` around DOS's RWTS and
 loads the story after itself. Its README compares it with Zork's code,
-and `tests/test_zork_interpreter.py` checks its outputs (each unit's,
-and the listing of the linked executable, `objdump.py -D`, which
-`tests/test_example_outputs.py` doesn't cover) and, when `ZORK_DSK`
+and cpp/tests/test_zork_interpreter.cpp checks that the listing of the
+linked executable, `objdump.py -D`, is interpreter.asm. When `ZORK_DSK`
 names the game's disk image, `Zork I r15 (4am crack).dsk` from that
-repository, plays two sessions on it and on Zork's own interpreter
-(read from the same image) and compares every Monitor and RWTS call.
+repository, tests/test_zork_interpreter.py plays two sessions on it and
+on Zork's own interpreter (read from the same image) and compares every
+Monitor and RWTS call.
 Each `.c` file's header quotes the lines of `main.asm` it translates.
 The interpreter grew out of smaller examples of single routines
 (`zork_<routine>.c`) and of Zork's `save` instruction and z-string
@@ -154,6 +158,6 @@ compares the C with the original. Robert set two conventions for it:
 The `compile-example` skill (project-local) wraps the canonical
 compile command. Type `/compile-example <name>` to compile
 `examples/<name>.c` with `-O` and overwrite
-`examples/<name>.asm`. Run the test snapshot afterward
-(`uv run python -m unittest tests.test_example_outputs`) to confirm
-the new pair is wired up.
+`examples/<name>.asm`. The golden files hold a job for each example
+in each mode (cpp/src/golden.h), and an example that has none isn't
+checked by `check-golden`.

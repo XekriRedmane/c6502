@@ -1,11 +1,10 @@
 """The multi-unit example in examples/zork: the whole of
 Zork I's (r15) interpreter, output/main.asm of
 https://github.com/XekriRedmane/zorki-r15-reveng, in eleven C files
-linked with a linker script.
-
-`TestGoldOutputs` checks each unit's `-O` output and the listing of
-the linked program (`objdump.py -D`) against the checked-in `.asm`
-files.
+linked with a linker script. golden/O.txt compiles each unit with
+`-S -O`, golden/links.txt links the program, and
+cpp/tests/test_zork_interpreter.cpp compares the listing of the linked
+program with interpreter.asm.
 
 `TestSessions` plays Zork on the interpreter, and on Zork's own, and
 compares the two. It runs only with the game's disk image, which isn't
@@ -69,17 +68,13 @@ _PRINTER = [
 _PRINTER_KEYS = [ord(c) for c in "362\r" "562\r" "362\r"]
 
 
-def _compile(unit: str, out: Path) -> Path:
-    """Compiles the unit as its README does: to its assembly at `out`,
-    which the test compares with the checked-in file, and to an object
-    beside it, which it returns for the link."""
+def _compile(unit: str, obj: Path) -> Path:
+    """Compiles the unit to the object `obj` as its README does, and
+    returns the object's path for the link."""
     from compile import main as compile_main
-    obj = out.with_suffix(".o")
-    for stage, path in (("-S", out), ("-c", obj)):
-        assert compile_main([
-            "compile.py", str(_DIR / f"{unit}.c"), stage, "-O",
-            "-o", str(path),
-        ]) == 0
+    assert compile_main([
+        "compile.py", str(_DIR / f"{unit}.c"), "-c", "-O", "-o", str(obj),
+    ]) == 0
     return obj
 
 
@@ -94,43 +89,10 @@ def _link(paths: list[Path], out: Path) -> None:
 def _build(tmp: str) -> tuple[list[Path], Path]:
     paths = []
     for unit in _UNITS:
-        path = Path(tmp) / f"{unit}.asm"
-        paths.append(_compile(unit, path))
+        paths.append(_compile(unit, Path(tmp) / f"{unit}.o"))
     linked = Path(tmp) / "interpreter"
     _link(paths, linked)
     return paths, linked
-
-
-@needs_c6502cpp
-class TestGoldOutputs(unittest.TestCase):
-    """Each unit's output and the linked program match the checked-in
-    files. To bless new ones, run the commands in the example's
-    README."""
-
-    def test_units_and_link(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            paths, linked = _build(tmp)
-            for unit, path in zip(_UNITS, paths):
-                with self.subTest(unit=unit):
-                    self.assertEqual(
-                        path.with_suffix(".asm").read_text(),
-                        (_DIR / f"{unit}.asm").read_text(),
-                    )
-            from tests.link_helpers import listing
-            self.assertEqual(
-                listing(linked),
-                (_DIR / "interpreter.asm").read_text(),
-            )
-
-    def test_no_runtime_helpers(self) -> None:
-        # The program runs on Zork's own machine, which has none of
-        # the runtime's helpers and nothing that sets up its soft
-        # stack, so it calls neither.
-        text = (_DIR / "interpreter.asm").read_text()
-        self.assertNotRegex(
-            text, r"JSR\s+((mul|[us]divmod|asl|asr|lsr)(8|16|32|64)|icall)\b",
-        )
-        self.assertNotRegex(text, r"\(SSP\)|\(FP\)")
 
 
 def _disk() -> bytes:

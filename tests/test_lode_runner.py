@@ -1,10 +1,8 @@
 """The multi-unit example in examples/lode_runner: Broderbund's Lode
 Runner for the Apple II, main.asm of
 https://github.com/XekriRedmane/lode_runner_reveng, in twelve C files
-linked with a linker script.
-
-`TestGoldOutputs` checks each unit's `-O` output against the
-checked-in `.asm` file.
+linked with a linker script. golden/O.txt compiles each unit with
+`-S -O`, and golden/links.txt links the program by its script.
 
 `TestRuns` plays the game on the C program and on the original, and
 compares the two. It runs only with the reverse-engineering project's
@@ -67,22 +65,6 @@ def _build(tmp: str) -> Path:
         "-o", str(linked),
     ]) == 0
     return linked
-
-
-@needs_c6502cpp
-class TestGoldOutputs(unittest.TestCase):
-    """Each unit's output matches the checked-in file. To bless a new
-    one, run `uv run python compile.py examples/lode_runner/<unit>.c -S
-    -O -o examples/lode_runner/<unit>.asm`."""
-
-    def test_units(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            for unit in _UNITS:
-                with self.subTest(unit=unit):
-                    path = _compile(unit, Path(tmp) / f"{unit}.asm", "-S")
-                    self.assertEqual(
-                        path.read_text(), (_DIR / f"{unit}.asm").read_text(),
-                    )
 
 
 # ---- The scripts ------------------------------------------------------------

@@ -234,10 +234,10 @@ These parts are missing.
    there, or the executable that the environment variable `C6502_CPP`
    names. Without `--target c6502cpp`, the build makes the C++ unit
    tests too, which [cpp/README.md](cpp/README.md) describes.
-5. Check that it works with
-   `uv run python -m unittest tests.test_example_outputs`. It
-   compiles every example in `examples/` and compares the output
-   with the checked-in `.asm` files, and it should print `OK`.
+5. Check that it works with `cpp/build/bin/c6502cpp check-golden -j 12`.
+   It compiles every program of the corpus, the examples in
+   `examples/` among them, compares the output with the copies under
+   `golden/`, and should end with `0 differ`.
 6. Optionally, install dasm and put it on your `PATH`. Compiling,
    linking, and running programs in the simulator don't use it, but
    the tests that compare c6502's assembler with dasm run only where
@@ -487,10 +487,10 @@ it.
 
 ```sh
 uv run python -m unittest                          # every test
-uv run python -m unittest tests.test_example_outputs   # one module
+uv run python -m unittest tests.test_sim_smoke     # one module
 C6502_CHECK_IR=1 uv run python -m unittest         # check the IR after every pass
 C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
-ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ unit tests
+ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ tests and the next two
 cpp/build/bin/c6502cpp check-golden -j 12          # the corpus against golden/
 cpp/build/bin/c6502cpp check-frozen                # the frozen calls of each pass
 ```

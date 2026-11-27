@@ -804,17 +804,21 @@ class Machine:
     # ---- Running -------------------------------------------------------
 
     def run(self, max_cycles: int,
-            stop: Callable[["Machine"], bool] | None = None) -> str:
+            stop: Callable[["Machine"], bool] | None = None,
+            recorder: Callable | None = None) -> str:
         """Steps the MPU until `max_cycles` have run ("cycles"), or until
         `stop`, called after each event, returns true ("stop"), or the
         program reaches a `BRK` ("brk", which is also what a call of a
         ROM routine without a hook runs into). A hook ends the run when
-        it returns a string, which `run` returns. With
-        `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs the same instructions
-        (`sim.lockstep.MachineRecorder`)."""
-        from sim import lockstep
-        rec = (lockstep.MachineRecorder(self.mpu, "ali_baba")
-               if lockstep.enabled() else None)
+        it returns a string, which `run` returns. `recorder(mpu,
+        label)` returns the object whose `before` and `after` the loop
+        calls around each instruction, or None for none. The default,
+        `sim.lockstep.recorder`, runs the same instructions on the C++
+        CPU with `C6502_SIM_LOCKSTEP=1`."""
+        if recorder is None:
+            from sim import lockstep
+            recorder = lockstep.recorder
+        rec = recorder(self.mpu, "ali_baba")
         try:
             return self._run(max_cycles, stop, rec)
         finally:
@@ -937,9 +941,10 @@ class Machine:
             seen[pc + 2] = 1
         return True
 
-    def call(self, addr: int, max_cycles: int = 10_000_000) -> None:
+    def call(self, addr: int, max_cycles: int = 10_000_000,
+             recorder: Callable | None = None) -> None:
         """Runs the subroutine at `addr` as a `JSR` would, until it
-        returns."""
+        returns, recording with `recorder` as `run` does."""
         mpu = self.mpu
         back = _RETURN_TRAP - 1
         mem = mpu.memory
@@ -950,7 +955,8 @@ class Machine:
         mpu.pc = addr
         self.hooks[_RETURN_TRAP] = lambda: "returned"
         try:
-            why = self.run(mpu.processorCycles + max_cycles)
+            why = self.run(mpu.processorCycles + max_cycles,
+                           recorder=recorder)
         finally:
             del self.hooks[_RETURN_TRAP]
         if why != "returned":
@@ -1124,7 +1130,8 @@ def program_machine(main_bin: bytes, exe, disk: bytes,
                     clear: tuple[tuple[int, int], ...] = (),
                     ssp: int | None = None,
                     wide_track: bool = True,
-                    staged: bool = False) -> Machine:
+                    staged: bool = False,
+                    recorder: Callable | None = None) -> Machine:
     """The linked C program `exe` (an `ElfFile`) loaded over the
     original's image as EALDR leaves it, ready to run from `entry` (a
     symbol or an address). The spans in `clear`, which should be the
@@ -1147,8 +1154,9 @@ def program_machine(main_bin: bytes, exe, disk: bytes,
     `ssp`, if given, is stored in SSP, for a program whose functions
     use the soft stack.
 
-    `__zp_init`, if the program has one, has already run. The
-    registers are then put back as EALDR leaves them."""
+    `__zp_init`, if the program has one, has already run, recorded
+    with `recorder` as `Machine.run` records. The registers are then
+    put back as EALDR leaves them."""
     mem = entry_image(main_bin)
     put = _put if staged else _store
     for start, end in clear:
@@ -1163,7 +1171,7 @@ def program_machine(main_bin: bytes, exe, disk: bytes,
         at = symbols.get("SSP", CLASSIC.ssp)
         mem[at], mem[at + 1] = ssp & 0xFF, ssp >> 8
     if "__zp_init" in symbols:
-        machine.call(symbols["__zp_init"])
+        machine.call(symbols["__zp_init"], recorder=recorder)
         for reg, value in ENTRY_REGISTERS.items():
             setattr(machine.mpu, reg, value)
     machine.mpu.pc = entry if isinstance(entry, int) else symbols[entry]

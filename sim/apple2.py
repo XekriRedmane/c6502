@@ -25,6 +25,7 @@ the script used up.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from py65.devices.mpu6502 import MPU
 
@@ -260,14 +261,20 @@ class Apple2:
     # ---- Running -------------------------------------------------------
 
     def run(self, max_cycles: int = 2_000_000_000,
-            other_hooks: dict | None = None) -> str:
+            other_hooks: dict | None = None,
+            recorder: Callable | None = None) -> str:
         """Steps the MPU until the program ends, and returns why: "brk",
         "halt" (a jump to itself), "input used up", or raises if it runs
-        past `max_cycles`. With `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs
-        the same instructions (`sim.lockstep.MachineRecorder`)."""
-        from sim import lockstep
+        past `max_cycles`. `recorder(mpu, label)` returns the object
+        whose `before` and `after` the loop calls around each
+        instruction, or None for none. The default,
+        `sim.lockstep.recorder`, runs the same instructions on the C++
+        CPU with `C6502_SIM_LOCKSTEP=1`."""
+        if recorder is None:
+            from sim import lockstep
+            recorder = lockstep.recorder
         mpu = self.mpu
-        rec = lockstep.MachineRecorder(mpu, "apple2") if lockstep.enabled() else None
+        rec = recorder(mpu, "apple2")
         try:
             return self._run(max_cycles, other_hooks, rec)
         finally:

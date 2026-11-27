@@ -266,16 +266,20 @@ class Machine:
     # ---- Running -------------------------------------------------------
 
     def run(self, max_cycles: int,
-            stop: Callable[["Machine"], bool] | None = None) -> str:
+            stop: Callable[["Machine"], bool] | None = None,
+            recorder: Callable | None = None) -> str:
         """Steps the MPU until `max_cycles` have run ("cycles"), or until
         `stop`, called after each event, returns true ("stop"), or the
         program halts with a `BRK` ("brk"). A hook ends the run when it
-        returns a string, which `run` returns. With
-        `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs the same instructions
-        (`sim.lockstep.MachineRecorder`)."""
-        from sim import lockstep
-        rec = (lockstep.MachineRecorder(self.mpu, "lode_runner")
-               if lockstep.enabled() else None)
+        returns a string, which `run` returns. `recorder(mpu, label)`
+        returns the object whose `before` and `after` the loop calls
+        around each instruction, or None for none. The default,
+        `sim.lockstep.recorder`, runs the same instructions on the C++
+        CPU with `C6502_SIM_LOCKSTEP=1`."""
+        if recorder is None:
+            from sim import lockstep
+            recorder = lockstep.recorder
+        rec = recorder(self.mpu, "lode_runner")
         try:
             return self._run(max_cycles, stop, rec)
         finally:
@@ -343,9 +347,10 @@ class Machine:
                     return "stop"
         return "cycles"
 
-    def call(self, addr: int, max_cycles: int = 10_000_000) -> None:
+    def call(self, addr: int, max_cycles: int = 10_000_000,
+             recorder: Callable | None = None) -> None:
         """Runs the subroutine at `addr` as a `JSR` would, until it
-        returns."""
+        returns, recording with `recorder` as `run` does."""
         mpu = self.mpu
         back = _RETURN_TRAP - 1
         mem = mpu.memory
@@ -355,7 +360,8 @@ class Machine:
         mpu.pc = addr
         self.hooks[_RETURN_TRAP] = lambda: "returned"
         try:
-            why = self.run(mpu.processorCycles + max_cycles)
+            why = self.run(mpu.processorCycles + max_cycles,
+                           recorder=recorder)
         finally:
             del self.hooks[_RETURN_TRAP]
         if why != "returned":
@@ -431,13 +437,15 @@ def program_symbols(exe) -> dict[str, int]:
 
 
 def program_machine(image: bytes, exe, disk: bytes,
-                    keys: list[tuple[int, int]]) -> Machine:
+                    keys: list[tuple[int, int]],
+                    recorder: Callable | None = None) -> Machine:
     """The linked C program `exe` (an `ElfFile`) loaded over the
     original's image with the original's code cleared, ready to run
     from `main`. Each segment's bytes past its file size are zeroed,
     as a loader would. The stack pointer is $07, where MAIN puts it
     with `LDX #$07; TXS`, which C can't do. `__zp_init`, if the
-    program has one, has already run."""
+    program has one, has already run, recorded with `recorder` as
+    `Machine.run` records."""
     mpu = MPU()
     mem = bytearray(0x10000)
     mem[:len(image)] = image
@@ -450,7 +458,7 @@ def program_machine(image: bytes, exe, disk: bytes,
     symbols = program_symbols(exe)
     machine = Machine(mpu, bytearray(disk), list(keys))
     if "__zp_init" in symbols:
-        machine.call(symbols["__zp_init"])
+        machine.call(symbols["__zp_init"], recorder=recorder)
     mpu.pc = symbols["main"]
     return machine
 

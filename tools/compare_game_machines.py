@@ -42,7 +42,6 @@ sys.path.insert(0, str(ROOT))
 
 import cpp_backend  # noqa: E402
 from compile import main as compile_main  # noqa: E402
-from sim import lockstep  # noqa: E402
 
 _STATE = struct.Struct("<HBBBBBQ").pack
 
@@ -109,8 +108,6 @@ class _Tracer:
 
 
 TRACER = _Tracer()
-lockstep.enabled = lambda: True
-lockstep.MachineRecorder = TRACER.recorder
 
 
 def _crc(data) -> int:
@@ -211,7 +208,7 @@ def run_zork(script: str, exe: Path | None) -> tuple[list[str], int]:
     TRACER.events = lambda: len(a.calls)
     TRACER.instructions = 0
     TRACER.tracing = True
-    why = a.run(other_hooks=other)
+    why = a.run(other_hooks=other, recorder=TRACER.recorder)
     out = []
     for i, c in enumerate(a.calls):
         if c[0] == "RWTS":
@@ -297,13 +294,14 @@ def run_lode_runner(script: str, exe: Path | None,
         m = L.original_machine(image, disk, keys)
         stop = _ModeChange(before, after)
     else:
-        m = L.program_machine(image, E.read_file(exe), disk, keys)
+        m = L.program_machine(image, E.read_file(exe), disk, keys,
+                              recorder=TRACER.recorder)
         max_cycles = m.mpu.processorCycles + 2 * max_cycles
         n = events
         stop = lambda machine: len(machine.events) >= n  # noqa: E731
     TRACER.events = lambda: len(m.events)
     TRACER.tracing = True
-    why = m.run(max_cycles, stop)
+    why = m.run(max_cycles, stop, recorder=TRACER.recorder)
     out = []
     ev = m.events
     for i in range(len(ev)):
@@ -459,13 +457,14 @@ def run_ali_baba(script: str, exe: Path | None,
     else:
         ld = (ROOT / "examples" / "ali_baba" / "ali_baba.ld").read_text()
         m = A.program_machine(main_bin, E.read_file(exe), game_disk,
-                              s.keys, s.swaps, disks, clear=A.link_regions(ld))
+                              s.keys, s.swaps, disks, clear=A.link_regions(ld),
+                              recorder=TRACER.recorder)
         max_cycles = m.mpu.processorCycles + 2 * s.max_cycles
         n = events
         stop = lambda machine: len(machine.events) >= n  # noqa: E731
     TRACER.events = lambda: len(m.events)
     TRACER.tracing = True
-    why = m.run(max_cycles, stop)
+    why = m.run(max_cycles, stop, recorder=TRACER.recorder)
     out = []
     ev = m.events
     for i in range(len(ev)):

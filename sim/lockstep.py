@@ -384,3 +384,9 @@ class MachineRecorder:
                       "a", encoding="utf-8") as f:
                 f.write(f"{self.instructions} {self.segment_count} "
                         f"{self.label}\n")
+
+
+def recorder(mpu, label: str) -> MachineRecorder | None:
+    """Returns what a game machine's `run` records with by default: a
+    `MachineRecorder` with `C6502_SIM_LOCKSTEP=1`, and None without."""
+    return MachineRecorder(mpu, label) if enabled() else None

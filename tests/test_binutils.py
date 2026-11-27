@@ -1,6 +1,7 @@
 """Tests for ELF files (binutils/elf.py, which the simulator reads
-executables with) on the objects `compile.py -c` assembles, and a
-program compiled to objects, linked, and run in the simulator. The
+executables with) on the objects `compile.py -c` assembles. A program
+compiled to objects, linked, and run in the simulator is a doctest case
+in cpp/tests/test_binutils_source.cpp. The
 tests that called the assembler and the linker's relaxation directly
 are doctest cases of the C++ port, in
 cpp/tests/test_binutils_assembler.cpp (docs/cpp_port.md, step 8, group
@@ -12,13 +13,11 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from binutils import elf as E
-from tests.cpp_build import needs_c6502cpp
 
 _ROOT = Path(__file__).parent.parent
 
@@ -140,45 +139,6 @@ class TestElf(unittest.TestCase):
         # A field that ends at the section's end is read.
         sec.relocs[-1] = E.Reloc(2, E.R_MOS_ADDR16, ext)
         self.assertEqual(len(E.read(E.write(obj)).sections[0].relocs), 1)
-
-
-@needs_c6502cpp
-class TestTools(unittest.TestCase):
-    """Units compiled with `compile.py -c`, linked, and run."""
-
-    _A = ("#include <stdint.h>\n"
-          "uint8_t n;\n"
-          "void bump(uint8_t k) { for (uint8_t i = 0; i < k; i++) n++; }\n")
-    _B = ("#include <stdint.h>\n"
-          "extern uint8_t n;\n"
-          "void bump(uint8_t k);\n"
-          "static uint8_t twice(uint8_t x) { return x + x; }\n"
-          "int main(void) { bump(twice(3)); return n; }\n")
-
-    def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.dir = Path(self.tmp.name)
-        for name, src in (("a", self._A), ("b", self._B)):
-            (self.dir / f"{name}.c").write_text(src)
-        self.cwd = os.getcwd()
-        os.chdir(self.dir)
-
-    def tearDown(self) -> None:
-        os.chdir(self.cwd)
-        self.tmp.cleanup()
-
-    def _compile(self, *argv: str) -> int:
-        import compile
-        return compile.main(["compile.py", *argv])
-
-    def test_link_and_run(self) -> None:
-        from sim.linked import build_linked_sim
-        self.assertEqual(self._compile("-O", "-c", "a.c", "b.c"), 0)
-        self.assertEqual(self._compile("a.o", "b.o"), 0)
-        exe = E.read_file(self.dir / "a.out")
-        self.assertEqual(exe.type, E.ET_EXEC)
-        self.assertEqual(exe.entry, exe.symbol("main").value)
-        self.assertEqual(build_linked_sim(exe).run().return_int(), 6)
 
 
 if __name__ == "__main__":

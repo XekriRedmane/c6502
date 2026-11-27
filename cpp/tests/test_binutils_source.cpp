@@ -22,6 +22,7 @@
 #include "doctest.h"
 #include "errors.h"
 #include "py_regex.h"
+#include "sim_case.h"
 
 namespace {
 
@@ -276,6 +277,16 @@ std::pair<long long, std::string> run(const std::vector<std::string>& args,
 }
 
 }  // namespace
+
+TEST_CASE("binutils: units compiled with -c, linked, and run") {
+  const Tools t;
+  REQUIRE(run({"-O", "-c", "a.c", "b.c"}).first == 0);
+  REQUIRE(run({"a.o", "b.o"}).first == 0);
+  const elf::ElfFile exe = read_elf("a.out");
+  CHECK(exe.type == elf::ET_EXEC);
+  CHECK(exe.entry == exe.symbol("main")->value);
+  CHECK(suite::build_linked_sim("a.out").run().return_int() == 6);
+}
 
 TEST_CASE("binutils: compile.py -c names each object after its source") {
   const Tools t;

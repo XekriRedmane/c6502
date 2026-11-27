@@ -20,6 +20,8 @@ Coverage:
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_zp_local_allocation.cpp.
 """
 from __future__ import annotations
 
@@ -62,21 +64,6 @@ class TestUnitFallback(unittest.TestCase):
     around the runtime's block, before it spills out of zero page, as
     the linker does. The asm passes that follow values through zero page
     then see its slots."""
-
-    def test_slots_below_the_pool(self) -> None:
-        from compile import _run_source
-        asm = _run_source(
-            "codegen", _FULL_POOL_SLOTS, optimize=True,
-        )
-        equs = dict(
-            (line.split("\t")[0], int(line.split("$")[1], 16))
-            for line in asm.splitlines() if "\tEQU\t$" in line
-        )
-        runtime = set(range(equs["SSP"], equs["DPTR"] + 2))
-        for name in ("__zpabi_f__a", "__zpabi_f__b", "__zpabi_g__x"):
-            with self.subTest(name=name):
-                self.assertLess(equs[name], 0x80)
-                self.assertNotIn(equs[name], runtime)
 
     def test_runs(self) -> None:
         from sim.harness import build_sim
@@ -147,11 +134,6 @@ int main(void) {
 class TestPoolGrowth(unittest.TestCase):
     """A function whose final register allocation spills a value the
     preliminary one didn't gets a larger pool (`compile._pool_shortfalls`)."""
-
-    def test_no_frame(self) -> None:
-        from compile import _run_source
-        asm = _run_source("codegen", _TIGHT_POOL, optimize=True)
-        self.assertNotIn("prologue", asm)
 
     def test_runs(self) -> None:
         from sim.harness import build_sim

@@ -1,6 +1,8 @@
 """Tests for cpp/src/passes/optimization/three_way_compare.h: a 2-byte unsigned
 ordering compare and an equality compare of the same two values
-split into a compare of the high bytes and then the low ones."""
+split into a compare of the high bytes and then the low ones.
+
+The `-S` text is checked in cpp/tests/test_three_way_compare_source.cpp."""
 
 from __future__ import annotations
 
@@ -104,13 +106,6 @@ def _expected(name: str) -> int:
     return n
 
 
-def _function_asm(src: str, name: str) -> str:
-    from compile import _run_source
-    asm = _run_source("codegen", src, optimize=True)
-    start = asm.index(f"\n{name}:")
-    return asm[start:asm.index("\nmain:", start)]
-
-
 @needs_c6502cpp
 @no_inlining()
 class TestRuns(unittest.TestCase):
@@ -121,17 +116,6 @@ class TestRuns(unittest.TestCase):
                 with self.subTest(shape=name, optimize=optimize):
                     r = build_sim(_program(body), optimize=optimize).run()
                     self.assertEqual(r.return_int(), _expected(name))
-
-    def test_no_two_byte_subtract(self):
-        # A 2-byte ordering compare lowers to `SBC`, and a split one
-        # to a `CMP` of each byte.
-        for name, body in _SHAPES.items():
-            with self.subTest(shape=name):
-                self.assertNotIn("SBC", _function_asm(_program(body), "f"))
-
-    def test_signed_compare_left_alone(self):
-        body = _SHAPES["less_then_equal"].replace("a < b", "(int)a < (int)b")
-        self.assertIn("SBC", _function_asm(_program(body), "f"))
 
 
 if __name__ == "__main__":

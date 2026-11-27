@@ -32,6 +32,9 @@ Coverage:
   * Asm shape: the canonical `ptr[uchar_idx]` access emits
     `LDA (DPTR),Y` after a Y setup.
   * End-to-end correctness via the sim.
+
+The `-S` text is checked in
+cpp/tests/test_recognize_indirect_indexed_source.cpp.
 """
 from __future__ import annotations
 
@@ -164,13 +167,6 @@ class TestByteIndexSum(unittest.TestCase):
         "}\n"
     )
 
-    def test_even_index_reads_with_iny(self) -> None:
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        word = asm[asm.index("\nword:\n"):asm.index("\nodd:\n")]
-        self.assertIn("INY", word)
-        self.assertNotIn("ADC", word)
-
     def test_runs(self) -> None:
         # `odd(255)` reads `table + 256`, past the byte Y can hold, so
         # it keeps its 16-bit add.
@@ -219,15 +215,6 @@ class TestSharedByteIndex(unittest.TestCase):
         "}\n"
     )
 
-    def test_shapes(self) -> None:
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        close = asm[asm.index("\nclose:\n"):asm.index("\nopen:\n")]
-        self.assertNotIn("ADC", close)
-        opened = asm[asm.index("\nopen:\n"):asm.index("\nopen_global:\n")]
-        # One add, of 0x20 to the pointer's high byte.
-        self.assertEqual(opened.count("ADC"), 1, opened)
-
     def test_runs(self) -> None:
         # close: 0x05 & 0xF0 = 0x00 at 0x105. open: 0x15 | (0xFF &
         # 0x0F) = 0x1F at 0x15. open_global reads row[0x20] through
@@ -240,66 +227,6 @@ class TestSharedByteIndex(unittest.TestCase):
                 )
                 self.assertFalse(out.timed_out)
                 self.assertEqual(out.return_int(), 0x1F00 + 0xA1)
-
-
-@needs_c6502cpp
-class TestIndirectIndexedAsmShape(unittest.TestCase):
-    """Source-level checks on the emitted asm."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_indirect_indexed_load_emits_short_sequence(self) -> None:
-        # `ptr[idx]` where ptr is a zp_abi parameter and idx is a
-        # uchar local. The indirect-Y access should appear without
-        # a 16-bit Add chain, and DPTR staging is bypassed by using
-        # the pointer's ZP bytes as the indirect base directly. The
-        # pointer arrives in A and X, and `copy` stores it into a
-        # pair of its own zero-page bytes at entry.
-        src = (
-            "#include <stdint.h>\n"
-            "static volatile uint8_t result;\n"
-            "[[c6502::zp_abi]]\n"
-            "void copy(uint8_t *src, uint8_t idx) {\n"
-            "    result = src[idx];\n"
-            "}\n"
-            "int main(void) { return 0; }\n"
-        )
-        asm = self._compile(src)
-        # Expect an `LDA (symbol),Y` indirect-Y read (the ZP base
-        # is the local that holds the pointer, rendered by emit
-        # using the local's symbolic name).
-        self.assertIn("LDA   (__local_copy__src),Y", asm)
-        # The unrecognized form would emit `CLC` for the 16-bit
-        # Add inside `copy` — verify that's gone.
-        body_start = asm.index("copy:")
-        body_end = asm.index("\n\n", body_start)
-        copy_body = asm[body_start:body_end]
-        self.assertNotIn("CLC", copy_body)
-        # And the DPTR staging itself has been bypassed.
-        self.assertNotIn("STA   DPTR", copy_body)
-
-    def test_global_pointer_stored_constant_on_another_path(self) -> None:
-        # `P = 0` on one path made the recognizer take P for the
-        # constant 0 everywhere, since the def index gives a global's
-        # last store, and `P->look` was read through a computed copy
-        # of P. A store doesn't make a global constant.
-        src = (
-            "#include <stdint.h>\n"
-            "struct mob { uint8_t a, b, c, d, look; };\n"
-            "extern struct mob *P [[c6502::zeropage(0xF4)]];\n"
-            "void next(void);\n"
-            "void walk(uint8_t n) {\n"
-            "    if (n == 0) { P = 0; return; }\n"
-            "    while (P->look >= 0x15) next();\n"
-            "}\n"
-        )
-        asm = self._compile(src)
-        body = asm[asm.index("walk:"):]
-        self.assertIn("LDY   #$04", body)
-        self.assertIn("LDA   (P),Y", body)
-        self.assertNotIn("ADC", body)
 
 
 @needs_c6502cpp

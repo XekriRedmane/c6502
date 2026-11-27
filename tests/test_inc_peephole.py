@@ -27,6 +27,8 @@ optimized when the construct supports both.
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_inc_peephole_source.cpp.
 """
 from __future__ import annotations
 
@@ -34,53 +36,6 @@ import unittest
 
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestIncPeepholeAsmShape(unittest.TestCase):
-    """Source-level checks: the emitted asm uses INC + BNE."""
-
-    def _compile_optimized(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_loop_counter_16bit_inc_chain(self) -> None:
-        # `for (int i = 0; i < N; i++)` — under -O the
-        # loop counter `i` lives in two ZP bytes (regalloc colors
-        # both bytes of the renamed SSA pseudos to ZP). The `i++`
-        # increment is in-place on each byte and the peephole
-        # collapses the ADC chain to INC + BNE + INC.
-        src = (
-            "int sum10(void) {\n"
-            "    int s = 0;\n"
-            "    for (int i = 0; i < 10; i++) s += i;\n"
-            "    return s;\n"
-            "}\n"
-            "int main(void) { return sum10(); }\n"
-        )
-        asm = self._compile_optimized(src)
-        # The loop_continue block should have `INC ...; BNE ...; INC ...`
-        # for the 16-bit counter increment.
-        # Find the .loop@N_continue label and look at what follows.
-        self.assertIn(".loop@", asm)
-        # Look for the pattern: an INC, then a BNE, then an INC, on
-        # ZP slots.
-        # Easiest: just check no `ADC   #$01` survives (the ADC #$01
-        # only ever appears in this program for the i++ increment).
-        self.assertNotIn("ADC   #$01", asm)
-        # And the INC + BNE chain should appear. The INC target is
-        # a body-local slot symbol (`__local_<fn>__<source>[_<byte>]`),
-        # bound to a ZP address via the EQU directive emitted at the
-        # top. The branch-through-jump peephole rewrites the BNE to
-        # skip directly past the high-byte INC to the loop start,
-        # so the original `.inc_done@N` label gets folded away by
-        # the downstream dead-label drop; check for the simpler
-        # INC + BNE shape instead.
-        import re
-        self.assertRegex(asm, r"INC\s+__local_\w+__\w+")
-        self.assertRegex(
-            asm, r"INC\s+__local_\w+__\w+\s*\n\s*BNE\s+",
-        )
 
 
 @needs_c6502cpp

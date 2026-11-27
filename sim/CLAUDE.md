@@ -86,6 +86,14 @@ the boot stub's BRK fires. It stays in Python until step 9 of the port
   with 6502 code run as 6502 code, and the hooks cover the rest (the
   64-bit and floating-point helpers), so every chapter test runs
   end-to-end.
+- `lockstep.py` — the check of the C++ CPU (cpp/src/sim/cpu.h)
+  against py65, for step 9 of the port. With `C6502_SIM_LOCKSTEP=1`,
+  `Simulation.run` runs py65 as usual and records each segment between
+  hook calls, with a digest of the state after each instruction, and
+  one `cpu-run` request (`cpp_backend.cpu_run`) runs the same segments
+  on the C++ CPU. The first difference raises `LockstepError` with both
+  states at the instruction. `C6502_SIM_LOCKSTEP_LOG=<dir>` appends each
+  run's counts to `<dir>/lockstep-<pid>.txt`. It goes with py65.
 - The runtime helpers' 6502 code, which `build_runtime` assembles
   at $E000, is built in C++ (cpp/src/rtlib/CLAUDE.md), and
   `build_runtime` reads it through `cpp_backend.helper_program`, which

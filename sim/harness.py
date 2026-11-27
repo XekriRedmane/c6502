@@ -201,14 +201,20 @@ class Simulation:
         return True
 
     def run(self, max_cycles: int = DEFAULT_MAX_CYCLES) -> SimResult:
-        """Drive the simulator forward until BRK or the cycle cap."""
+        """Drive the simulator forward until BRK or the cycle cap. With
+        `C6502_SIM_LOCKSTEP=1`, the C++ CPU runs the same instructions,
+        and the first difference raises `sim.lockstep.LockstepError`."""
+        from sim import lockstep
         mpu = self.mpu
         timed_out = False
-        while mpu.processorCycles < max_cycles:
-            if not self.step():
-                break
+        if lockstep.enabled():
+            timed_out = lockstep.run(self, max_cycles)
         else:
-            timed_out = True
+            while mpu.processorCycles < max_cycles:
+                if not self.step():
+                    break
+            else:
+                timed_out = True
         return SimResult(
             a=mpu.a, x=mpu.x, y=mpu.y, pc=mpu.pc, sp=mpu.sp,
             cycles=mpu.processorCycles,

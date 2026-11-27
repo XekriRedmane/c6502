@@ -39,6 +39,9 @@ which are built in C++ (cpp/src/rtlib/helpers.h), as `c6502cpp
 helper-dump` and `c6502cpp helper-footprints` write them, for the
 simulator, which assembles them at $E000, and for the tests.
 
+`cpu_run` runs the C++ CPU in the backend's mode `cpu-run`, for the
+lockstep mode of the simulator harness (sim/lockstep.py).
+
 The response carries what the preprocessor wrote to stderr and the
 warnings it issued, which `compile_source` writes to `sys.stderr` and
 issues again through `diagnostics.warn`, and an error that a pass of
@@ -490,6 +493,73 @@ def helper_footprints() -> dict[str, int]:
     for line in done.stdout.decode("utf-8").splitlines():
         name, size = line.split()
         out[name] = int(size)
+    return out
+
+
+def cpu_run(image: bytes, segments: list[dict], *, stops, stop_at_brk: bool,
+            max_cycles: int, max_instructions: int | None = None) -> list[dict]:
+    """Runs the C++ CPU (cpp/src/sim/cpu_run.h) on the 64K `image` for
+    each of `segments`, a dict of `pc`, `a`, `x`, `y`, `sp`, `p`,
+    `cycles`, and `patches` (`[address, value]` pairs stored before the
+    segment), until PC reaches one of `stops`, a BRK with `stop_at_brk`,
+    `max_cycles`, or `max_instructions`. Returns a dict for each segment
+    run, with `stop` ("stop", "brk", "cycles", "count", or "error"),
+    `instructions`, `state` (the seven registers and the cycle count, as
+    a tuple in that order), `last_writes` (the last instruction's
+    `(address, value)` writes), `writes` (each address written and its
+    last value), `digests` (the digest of each instruction, an
+    array('I')), and for "error" `error`, its message."""
+    import array
+    args = json.dumps({
+        "stops": sorted(stops), "stop_at_brk": stop_at_brk,
+        "max_cycles": max_cycles, "max_instructions": max_instructions,
+        "segments": segments,
+    })
+    request = (
+        f"c6502-backend 3\nmode cpu-run\nargs {args}\n"
+        f"image {len(image)}\n"
+    ).encode("utf-8") + bytes(image)
+    data = _send(request)
+    out: list[dict] = []
+    pos = 0
+
+    def line() -> list[str]:
+        nonlocal pos
+        end = data.index(b"\n", pos)
+        words = data[pos:end].decode("utf-8").split(" ")
+        pos = end + 1
+        return words
+
+    def section(key: str) -> bytes:
+        nonlocal pos
+        words = line()
+        if words[0] != key:
+            raise RuntimeError(f"cpu-run's response has {words[0]} for {key}")
+        n = int(words[1])
+        body = data[pos:pos + n]
+        pos += n
+        return body
+
+    while pos < len(data):
+        _, _, stop, count = line()
+        seg: dict = {"stop": stop, "instructions": int(count)}
+        seg["state"] = tuple(int(v) for v in line()[1:])
+        seg["last_writes"] = [
+            (int(w[:4], 16), int(w[5:], 16)) for w in line()[1:]
+        ]
+        raw = section("writes")
+        seg["writes"] = {
+            raw[i] | raw[i + 1] << 8: raw[i + 2] for i in range(0, len(raw), 3)
+        }
+        digests = array.array("I")
+        digests.frombytes(section("digests"))
+        if sys.byteorder != "little":
+            digests.byteswap()
+        seg["digests"] = digests
+        if stop == "error":
+            words = line()
+            seg["error"] = json.loads(" ".join(words[1:]))
+        out.append(seg)
     return out
 
 

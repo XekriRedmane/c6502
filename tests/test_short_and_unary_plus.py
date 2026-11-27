@@ -1,13 +1,15 @@
 """`short`, `unsigned short`, and unary `+`: parsing, type checking,
 and programs run through the TAC simulator and the asm simulator
-with and without `-O`."""
+with and without `-O`.
+
+The TAC interpreter's results are checked in
+cpp/tests/test_short_and_unary_plus.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -63,12 +65,6 @@ _PROGRAMS: list[tuple[str, str, int]] = [
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-
-    def test_tac_sim(self) -> None:
-        for name, src, expected in _PROGRAMS:
-            with self.subTest(case=name):
-                v = _run_tac(src) & 0xFFFF
-                self.assertEqual(v - 0x10000 if v & 0x8000 else v, expected)
 
     def test_asm_sim(self) -> None:
         for name, src, expected in _PROGRAMS:

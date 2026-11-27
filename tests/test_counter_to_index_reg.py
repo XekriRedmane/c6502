@@ -2,7 +2,10 @@
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in
+cpp/tests/test_counter_to_index_reg_source.cpp."""
 
 from __future__ import annotations
 
@@ -29,13 +32,6 @@ class TestDelayLoopSim(unittest.TestCase):
         "    return passes;\n"
         "}\n"
     )
-
-    def test_dey(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        body = asm[asm.index("\ndelay:"):asm.index("\nmain:")]
-        self.assertIn("DEY", body)
-        self.assertIn("DEX", body)
 
     def test_runs(self):
         from sim.harness import build_sim

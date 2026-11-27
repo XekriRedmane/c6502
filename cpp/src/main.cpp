@@ -73,6 +73,7 @@ const char kUsage[] =
     "       c6502cpp compile [<compile.py's argument>...]\n"
     "       c6502cpp opcodes\n"
     "       c6502cpp helper-footprints\n"
+    "       c6502cpp helper-dump\n"
     "       c6502cpp nm [<option>...] <file>...\n"
     "       c6502cpp objdump [<option>...] <file>...\n"
     "       c6502cpp backend\n"
@@ -131,8 +132,11 @@ const char kUsage[] =
     "per row, in the order of binutils/opcodes.py.\n"
     "\n"
     "helper-footprints lists each runtime helper's HARGS footprint, one\n"
-    "`name bytes` line per helper, in the order of rtlib/helpers.py's\n"
-    "all_helper_functions (src/rtlib/helpers.h).\n"
+    "`name bytes` line per helper, in the order of all_helper_functions\n"
+    "(src/rtlib/helpers.h).\n"
+    "\n"
+    "helper-dump writes the asm program of the runtime helpers in the dump\n"
+    "format (ir_dump.py), which the simulator assembles at $E000.\n"
     "\n"
     "compile takes compile.py's command line and does what compile.py does,\n"
     "with its options, messages, files, and exit status, in this process\n"
@@ -818,6 +822,10 @@ int main(int argc, char** argv) {
         lines += fn.name + " " + asdl::int_to_string(footprints.at(fn.name)) + "\n";
       }
       write_stdout(lines);
+      return 0;
+    }
+    if (command == "helper-dump" && args.empty()) {
+      write_stdout(rtlib::helper_dump());
       return 0;
     }
     if (command == "backend" && args.empty()) {

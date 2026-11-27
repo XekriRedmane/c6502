@@ -294,6 +294,18 @@ TEST_CASE("cpu: run checks the cycles first, then the instructions, the trap, an
   CHECK((cpu.p & (Cpu::kBreak | Cpu::kInterrupt)) == (Cpu::kBreak | Cpu::kInterrupt));
 }
 
+TEST_CASE("cpu: a CpuError from run gives the instructions the run executed before it") {
+  Cpu cpu = cpu_with(0xFFFC, {0xEA, 0xEA, 0xAD});
+  std::uint64_t instructions = 99;
+  try {
+    cpu.run({});
+  } catch (const CpuError& e) {
+    instructions = e.instructions;
+  }
+  CHECK(instructions == 2);
+  CHECK(cpu.cycles == 4);
+}
+
 TEST_CASE("cpu: before_instruction can skip an instruction or stop the run") {
   Cpu cpu = cpu_with(0x0800, {0xA9, 0x01, 0xA9, 0x02, 0xA9, 0x03, 0x00});
   std::vector<std::uint16_t> seen;

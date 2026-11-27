@@ -23,6 +23,10 @@ namespace c6502::sim {
 class CpuError : public std::runtime_error {
  public:
   using std::runtime_error::runtime_error;
+
+  // When `run` throws it, the instructions the run executed before the
+  // one that failed.
+  std::uint64_t instructions = 0;
 };
 
 // The base cycles of each opcode, and the flag that adds one cycle for

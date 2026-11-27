@@ -153,7 +153,7 @@ std::string respond(const json::Value& kwargs, std::string_view image) {
       instructions = result.instructions;
     } catch (const CpuError& e) {
       stop = "error";
-      instructions = digests.size() / 4;
+      instructions = e.instructions;
       error = e.what();
     }
     out += "segment " + std::to_string(k) + " " + stop + " " + std::to_string(instructions) + "\n";

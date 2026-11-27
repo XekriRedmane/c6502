@@ -98,7 +98,12 @@ Cpu::RunResult Cpu::run(const Limits& limits) {
       if (action == Action::kStop) return {Stop::kCallback, n};
       if (action == Action::kContinue) continue;
     }
-    step();
+    try {
+      step();
+    } catch (CpuError& e) {
+      e.instructions = n;
+      throw;
+    }
     ++n;
     if (after_instruction) after_instruction(*this);
   }

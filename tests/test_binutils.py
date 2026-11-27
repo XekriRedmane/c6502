@@ -1,7 +1,5 @@
 """Tests for ELF files (binutils/elf.py, which the simulator reads
-executables with) on the objects `compile.py -c` assembles. A program
-compiled to objects, linked, and run in the simulator is a doctest case
-in cpp/tests/test_binutils_source.cpp. The
+executables with) on the objects `compile.py -c` assembles. The
 tests that called the assembler and the linker's relaxation directly
 are doctest cases of the C++ port, in
 cpp/tests/test_binutils_assembler.cpp (docs/cpp_port.md, step 8, group

@@ -4,12 +4,8 @@ namespace c6502::suite {
 
 // Values are pinned to c6502's semantics: int is 2 bytes signed, long
 // 4 bytes signed, and long long 8 bytes signed, C99's minimum widths.
-// To add a file, trace its `main()` return value under c6502's type
-// model, add the entry, and run the tests. If the simulator disagrees,
-// either the trace is off or the pipeline has a bug.
 const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns() {
   static const std::vector<std::pair<std::string_view, std::int64_t>> table = {
-    // --- chapter 1: minimal `int main(void) { return N; }`
     {"chapter_1/valid/multi_digit.c", 100},
     {"chapter_1/valid/newlines.c", 0},
     {"chapter_1/valid/no_newlines.c", 0},
@@ -18,7 +14,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_1/valid/spaces.c", 0},
     {"chapter_1/valid/tabs.c", 0},
 
-    // --- chapter 2: unary operators (-, ~)
     {"chapter_2/valid/bitwise.c", -13},
     {"chapter_2/valid/bitwise_int_min.c", 126},
     {"chapter_2/valid/bitwise_zero.c", -1},
@@ -32,7 +27,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_2/valid/parens_3.c", 4},
     {"chapter_2/valid/redundant_parens.c", -10},
 
-    // --- chapter 3: binary arithmetic (+ - * / %) and bitwise (& | ^ << >>)
     {"chapter_3/valid/add.c", 3},
     {"chapter_3/valid/associativity.c", -4},
     {"chapter_3/valid/associativity_2.c", 1},
@@ -51,22 +45,15 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_3/valid/extra_credit/bitwise_and.c", 1},
     {"chapter_3/valid/extra_credit/bitwise_or.c", 3},
     {"chapter_3/valid/extra_credit/bitwise_precedence.c", 21},
-    // bitwise_shift_associativity.c: 33<<4 wraps to 16 in 1-byte int,
-    // then 16>>2 = 4 (vs upstream's 132 in 4-byte int)
     {"chapter_3/valid/extra_credit/bitwise_shift_associativity.c", 132},
     {"chapter_3/valid/extra_credit/bitwise_shift_associativity_2.c", 16},
-    // bitwise_shift_precedence.c: 40<<16 saturates to 0 in 1-byte int
     {"chapter_3/valid/extra_credit/bitwise_shift_precedence.c", 0},
-    // bitwise_shiftl.c: 35<<2 = 140 wraps to -116
     {"chapter_3/valid/extra_credit/bitwise_shiftl.c", 140},
-    // bitwise_shiftr.c: 1000 is Long, 1000>>4 = 62 fits in int
     {"chapter_3/valid/extra_credit/bitwise_shiftr.c", 62},
-    // bitwise_shiftr_negative.c: -5 >> 30 → -1 (arithmetic shift)
     {"chapter_3/valid/extra_credit/bitwise_shiftr_negative.c", -1},
     {"chapter_3/valid/extra_credit/bitwise_variable_shift_count.c", 76},
     {"chapter_3/valid/extra_credit/bitwise_xor.c", 6},
 
-    // --- chapter 4: logical (&& || !) and comparison (== != < > <= >=)
     {"chapter_4/valid/and_false.c", 0},
     {"chapter_4/valid/and_short_circuit.c", 0},
     {"chapter_4/valid/and_true.c", 1},
@@ -105,7 +92,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_4/valid/extra_credit/bitwise_shift_precedence.c", 1},
     {"chapter_4/valid/extra_credit/bitwise_xor_precedence.c", 5},
 
-    // --- chapter 5: local variables, assignment, compound assignment, ++/--
     {"chapter_5/valid/add_variables.c", 3},
     {"chapter_5/valid/allocate_temps_and_vars.c", 1},
     {"chapter_5/valid/assign.c", 2},
@@ -113,7 +99,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_5/valid/assignment_in_initializer.c", 0},
     {"chapter_5/valid/assignment_lowest_precedence.c", 1},
     {"chapter_5/valid/empty_function_body.c", 0},
-    // exp_then_declaration.c: -2593 truncates to -33 in 1-byte int
     {"chapter_5/valid/exp_then_declaration.c", 1},
     {"chapter_5/valid/kw_var_names.c", 5},
     {"chapter_5/valid/local_var_missing_return.c", 0},
@@ -130,11 +115,7 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_5/valid/extra_credit/bitwise_in_initializer.c", 11},
     {"chapter_5/valid/extra_credit/bitwise_ops_vars.c", 9},
     {"chapter_5/valid/extra_credit/bitwise_shiftl_variable.c", 24},
-    // bitwise_shiftr_assign.c: 1234 wraps to -46, -46>>4 = -3
     {"chapter_5/valid/extra_credit/bitwise_shiftr_assign.c", 77},
-    // compound_assignment_chained.c / compound_bitwise_chained.c:
-    // initializers > 127 wrap, the && check on huge expected values
-    // then fails — both return 0 instead of upstream's 1
     {"chapter_5/valid/extra_credit/compound_assignment_chained.c", 1},
     {"chapter_5/valid/extra_credit/compound_assignment_lowest_precedence.c", 1},
     {"chapter_5/valid/extra_credit/compound_assignment_use_result.c", 1},
@@ -157,7 +138,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_5/valid/extra_credit/postfix_precedence.c", 1},
     {"chapter_5/valid/extra_credit/prefix_incr_and_decr.c", 1},
 
-    // --- chapter 6: if / else, ternary, goto / labels
     {"chapter_6/valid/assign_ternary.c", 2},
     {"chapter_6/valid/binary_condition.c", 5},
     {"chapter_6/valid/binary_false_condition.c", 0},
@@ -202,7 +182,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_6/valid/extra_credit/unused_label.c", 0},
     {"chapter_6/valid/extra_credit/whitespace_after_label.c", 1},
 
-    // --- chapter 7: nested blocks, scoping, shadowing
     {"chapter_7/valid/assign_to_self.c", 4},
     {"chapter_7/valid/assign_to_self_2.c", 3},
     {"chapter_7/valid/declaration_only.c", 1},
@@ -220,7 +199,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_7/valid/extra_credit/goto_outer_scope.c", 1},
     {"chapter_7/valid/extra_credit/goto_sibling_scope.c", 11},
 
-    // --- chapter 8: loops (for / while / do-while), break, continue, switch
     {"chapter_8/valid/break.c", 1},
     {"chapter_8/valid/break_immediate.c", 1},
     {"chapter_8/valid/continue.c", 1},
@@ -229,10 +207,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_8/valid/do_while_break_immediate.c", 10},
     {"chapter_8/valid/empty_expression.c", 0},
     {"chapter_8/valid/empty_loop_body.c", 45},
-    // for.c, for_absent_condition.c rely on int truncation since
-    // the source uses values > 127 — the result under c6502 is
-    // what falls out of 1-byte signed arithmetic, not the wider
-    // int answer the upstream tests assume.
     {"chapter_8/valid/for.c", 16},
     {"chapter_8/valid/for_absent_condition.c", 0},
     {"chapter_8/valid/for_absent_post.c", 0},
@@ -242,18 +216,13 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_8/valid/for_shadow.c", 1},
     {"chapter_8/valid/multi_break.c", 1},
     {"chapter_8/valid/multi_continue_same_loop.c", 1},
-    // nested_break.c: ans accumulates 250, wraps to -6 in 1-byte int
     {"chapter_8/valid/nested_break.c", 250},
     {"chapter_8/valid/nested_continue.c", 24},
     {"chapter_8/valid/nested_loop.c", 1},
     {"chapter_8/valid/null_for_header.c", 4},
     {"chapter_8/valid/while.c", 6},
 
-    // --- chapter 8 extra_credit
     {"chapter_8/valid/extra_credit/case_block.c", 1},
-    // compound_assignment_controlling_expression.c: sum reaches 200
-    // which wraps to -56 in 1-byte int, so sum==200 is false and the
-    // final && check returns 0
     {"chapter_8/valid/extra_credit/compound_assignment_controlling_expression.c", 1},
     {"chapter_8/valid/extra_credit/compound_assignment_for_loop.c", 1},
     {"chapter_8/valid/extra_credit/duffs_device.c", 1},
@@ -286,7 +255,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_8/valid/extra_credit/switch_with_continue.c", 5},
     {"chapter_8/valid/extra_credit/switch_with_continue_2.c", 5},
 
-    // --- chapter 9: function definitions, calls, parameters
     {"chapter_9/valid/no_arguments/forward_decl.c", 0},
     {"chapter_9/valid/no_arguments/function_shadows_variable.c", 0},
     {"chapter_9/valid/no_arguments/multiple_declarations.c", 0},
@@ -306,14 +274,12 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_9/valid/stack_arguments/lots_of_arguments.c", 0},
     {"chapter_9/valid/stack_arguments/test_for_memory_leaks.c", 0},
 
-    // --- chapter 9 extra_credit
     {"chapter_9/valid/extra_credit/compound_assign_function_result.c", 0},
     {"chapter_9/valid/extra_credit/dont_clobber_ecx.c", 0},
     {"chapter_9/valid/extra_credit/goto_label_multiple_functions.c", 0},
     {"chapter_9/valid/extra_credit/goto_shared_name.c", 0},
     {"chapter_9/valid/extra_credit/label_naming_scheme.c", 0},
 
-    // --- chapter 10: storage classes, file-scope variables, linkage
     {"chapter_10/valid/distinct_local_and_extern.c", 7},
     {"chapter_10/valid/extern_block_scope_variable.c", 3},
     {"chapter_10/valid/multiple_static_file_scope_vars.c", 4},
@@ -325,7 +291,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_10/valid/tentative_definition.c", 5},
     {"chapter_10/valid/type_before_storage_class.c", 7},
 
-    // --- chapter 10 extra_credit
     {"chapter_10/valid/extra_credit/bitwise_ops_file_scope_vars.c", 0},
     {"chapter_10/valid/extra_credit/compound_assignment_static_var.c", 0},
     {"chapter_10/valid/extra_credit/goto_skip_static_initializer.c", 10},
@@ -336,7 +301,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_10/valid/extra_credit/switch_skip_extern_decl.c", 0},
     {"chapter_10/valid/extra_credit/switch_skip_static_initializer.c", 10},
 
-    // --- chapter 11: long long type, sign-extension, truncation
     {"chapter_11/valid/explicit_casts/sign_extend.c", 0},
     {"chapter_11/valid/explicit_casts/truncate.c", 3},
     {"chapter_11/valid/implicit_casts/common_type.c", 0},
@@ -370,7 +334,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_11/valid/extra_credit/switch_int.c", 2},
     {"chapter_11/valid/extra_credit/switch_long.c", 0},
 
-    // --- chapter 12: unsigned types, sign/zero extension, conversions
     {"chapter_12/valid/explicit_casts/chained_casts.c", 2},
     {"chapter_12/valid/explicit_casts/extension.c", 2},
     {"chapter_12/valid/explicit_casts/round_trip_casts.c", 1},
@@ -401,7 +364,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_12/valid/extra_credit/switch_uint.c", 3},
     {"chapter_12/valid/extra_credit/unsigned_incr_decr.c", 2},
 
-    // --- chapter 13: floating-point (Float / Double)
     {"chapter_13/valid/constants/constant_doubles.c", 0},
     {"chapter_13/valid/constants/round_constants.c", 0},
     {"chapter_13/valid/explicit_casts/cvttsd2si_rewrite.c", 0},
@@ -432,7 +394,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_13/valid/extra_credit/compound_assign_implicit_cast.c", 0},
     {"chapter_13/valid/extra_credit/incr_and_decr.c", 0},
 
-    // --- chapter 14: pointers and dereference
     {"chapter_14/valid/casts/cast_between_pointer_types.c", 0},
     {"chapter_14/valid/casts/null_pointer_conversion.c", 0},
     {"chapter_14/valid/casts/pointer_int_casts.c", 0},
@@ -460,7 +421,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_14/valid/function_calls/return_pointer.c", 0},
     {"chapter_14/valid/function_calls/update_value_through_pointer_parameter.c", 0},
 
-    // --- chapter 15: arrays, subscripting, pointer arithmetic
     {"chapter_15/valid/casts/cast_array_of_pointers.c", 1},
     {"chapter_15/valid/casts/implicit_and_explicit_conversions.c", 3},
     {"chapter_15/valid/casts/multi_dim_casts.c", 0},
@@ -499,19 +459,14 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_15/valid/subscripting/subscript_pointer.c", 0},
     {"chapter_15/valid/subscripting/subscript_precedence.c", 1},
 
-    // --- chapter 16: char types, character constants, string literals
     {"chapter_16/valid/char_constants/char_constant_operations.c", 0},
     {"chapter_16/valid/char_constants/control_characters.c", 0},
     {"chapter_16/valid/char_constants/escape_sequences.c", 0},
-    // 'c' = 99
     {"chapter_16/valid/char_constants/return_char_constant.c", 99},
     {"chapter_16/valid/chars/access_through_char_pointer.c", 0},
     {"chapter_16/valid/chars/chained_casts.c", 0},
     {"chapter_16/valid/chars/char_arguments.c", 0},
     {"chapter_16/valid/chars/char_expressions.c", 0},
-    // common_type / convert_by_assignment / explicit_casts / integer_promotion
-    // contain assertions whose expected values differ from c6502's actual
-    // narrow-int arithmetic; the actual returns are pinned here.
     {"chapter_16/valid/chars/common_type.c", 0},
     {"chapter_16/valid/chars/convert_by_assignment.c", 0},
     {"chapter_16/valid/chars/explicit_casts.c", 0},
@@ -534,15 +489,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_16/valid/extra_credit/incr_decr_chars.c", 5},
     {"chapter_16/valid/extra_credit/incr_decr_unsigned_chars.c", 0},
     {"chapter_16/valid/extra_credit/promote_switch_cond.c", 0},
-    // promote_switch_cond_2.c: tests that `case 33554632:` for a
-    // char-typed switch DOESN'T reduce to char (since the case
-    // value should be in `int`, not char). Upstream's int is 4
-    // bytes so 33554632 stays out of char range; c6502's int is
-    // the SAME width as char (1 byte), so 33554632 width-mod-coerces
-    // to -56 just like a char would, the case spuriously matches
-    // `c = -56`, and the test returns 1 instead of 0. This is a
-    // fundamental int-width incompatibility, not a type-checker
-    // bug.
     {"chapter_16/valid/extra_credit/promote_switch_cond_2.c", 1},
     {"chapter_16/valid/extra_credit/switch_on_char_const.c", 0},
     {"chapter_16/valid/strings_as_initializers/array_init_special_chars.c", 0},
@@ -554,7 +500,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_16/valid/strings_as_lvalues/pointer_operations.c", 0},
     {"chapter_16/valid/strings_as_lvalues/simple.c", 108},
 
-    // --- chapter 17: sizeof, void / void pointers
     {"chapter_17/valid/extra_credit/sizeof_bitwise.c", 1},
     {"chapter_17/valid/extra_credit/sizeof_compound.c", 1},
     {"chapter_17/valid/extra_credit/sizeof_compound_bitwise.c", 2},
@@ -569,7 +514,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
     {"chapter_17/valid/void/ternary.c", 0},
     {"chapter_17/valid/void/void_function.c", 0},
 
-    // --- chapter 18: structs and unions
     {"chapter_18/valid/extra_credit/member_access/static_union_access.c", 2},
     {"chapter_18/valid/extra_credit/member_access/union_init_and_member_access.c", 3},
     {"chapter_18/valid/extra_credit/member_access/union_temp_lifetime.c", 1},
@@ -611,8 +555,6 @@ const std::vector<std::pair<std::string_view, std::int64_t>>& expected_returns()
   return table;
 }
 
-// Each of these needs something c6502 doesn't model. They're listed so
-// that an addition to chapter_<N>/valid/ is a decision.
 const std::map<std::string_view, std::string_view>& skipped() {
   static const std::map<std::string_view, std::string_view> table = {
     {"chapter_9/valid/arguments_in_registers/hello_world.c", "depends on putchar (no libc)"},
@@ -684,18 +626,12 @@ const std::map<std::string_view, std::string_view>& skipped() {
 //                       value, which is a bug to investigate.
 const std::map<std::string_view, std::string_view>& sim_skips() {
   static const std::map<std::string_view, std::string_view> table = {
-    // --- extern_unresolved (5): calls a name we don't link.
     {"chapter_17/valid/sizeof/sizeof_not_evaluated.c", "extern_unresolved"},
     {"chapter_18/valid/no_structure_parameters/scalar_member_access/arrow.c", "extern_unresolved"},
     {"chapter_18/valid/parameters/pass_args_on_page_boundary.c", "extern_unresolved"},
     {"chapter_18/valid/params_and_returns/return_big_struct_on_page_boundary.c", "extern_unresolved"},
     {"chapter_18/valid/params_and_returns/return_struct_on_page_boundary.c", "extern_unresolved"},
 
-    // --- frame_too_large: function's local_bytes > 253, can't fit
-    // `LDY #(M+2)` in the prologue / epilogue's saved-FP slot
-    // addressing. The list grew after the C99 width refresh — Int
-    // doubled from 1B to 2B and Long doubled from 2B to 4B, pushing
-    // several previously-fitting frames over the limit.
     {"chapter_15/valid/extra_credit/compound_bitwise_subscript.c", "frame_too_large"},
     {"chapter_16/valid/char_constants/char_constant_operations.c", "frame_too_large"},
     {"chapter_16/valid/chars/convert_by_assignment.c", "frame_too_large"},
@@ -703,61 +639,12 @@ const std::map<std::string_view, std::string_view>& sim_skips() {
     {"chapter_16/valid/extra_credit/compound_assign_chars.c", "frame_too_large"},
     {"chapter_18/valid/extra_credit/other_features/compound_assign_struct_members.c", "frame_too_large"},
     {"chapter_18/valid/no_structure_parameters/scalar_member_access/nested_struct.c", "frame_too_large"},
-
-    // --- wrong_value: asm sim disagrees with TAC sim. Each is a
-    // codegen bug worth tracking down separately.
   };
   return table;
 }
 
-// The programs whose optimized run gives another value than the
-// unoptimized one, each a known optimizer bug.
 const std::map<std::string_view, std::string_view>& opt_diverges() {
   static const std::map<std::string_view, std::string_view> table = {
-    // Empty as of 2026-05-14: every chapter program in
-    // `EXPECTED_RETURNS` that compiles+runs under unopt also
-    // matches under opt.
-    //
-    // Historical fixes during the initial differential sweep:
-    //
-    //   * `byte_dce` excludes address-taken Pseudos (so a
-    //     LoadAddress(P, _) keeps every byte of P alive — flipped
-    //     ~7 chapter_14 / chapter_18 pointer / struct / union tests).
-    //
-    //   * `tac_to_asm` masks 1-byte signed Ret constants to 0..255
-    //     (LDA #-10 used to trip the immediate-range check on
-    //     `signed char` returns).
-    //
-    //   * `backward_copy_propagation`: `Indirect(_)` aliases
-    //     `Data("DPTR", _)` and `IndirectZp(addr, _)` aliases
-    //     `ZP(addr, _)`. Combined with the next fix, prevents
-    //     backward-CP from relocating a write into the ZP byte
-    //     a subsequent `(zp),Y` consumer uses as its base.
-    //
-    //   * `indirect_base_prop` uses linker-supplied
-    //     `zp_symbol_addrs` (rather than the hardcoded
-    //     `_RUNTIME_ZP_ADDRS`) to recognize `__local_<fn>_b<k>`
-    //     local-pool slot symbols as ZP — needed for the
-    //     invalidation logic to see writes to those slots.
-    //
-    //   * `reassoc_const`: skip self-update `x = x + c` fusion
-    //     (where outer and inner are the same node).
-    //
-    //   * `reassoc_const`: when chaining fusions, look up the
-    //     REWRITTEN form of the inner def (3+ Add chains
-    //     otherwise drop a needed intermediate, leaving the
-    //     final dst referencing a now-dropped name).
-    //
-    //   * `redundant_load`: writing X or Y also invalidates A's
-    //     trackings that depend on the changed register
-    //     (`LDX #N` after `LDA arr,X` makes the prior tracking
-    //     stale).
-    //
-    //   * `tac_to_asm`: JumpIfCmp on FP operands routes through
-    //     `flt`/`fle`/`dlt`/`dle` helpers (signed-int bit
-    //     compare doesn't honour IEEE 754 across the sign bit,
-    //     so the V-correction lowering miscompares -inf vs.
-    //     -very_large and similar shapes).
   };
   return table;
 }

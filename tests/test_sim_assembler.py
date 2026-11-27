@@ -1,6 +1,3 @@
-"""Tests of sim/assembler.py that the C++ port's doctest cases
-(cpp/tests/test_sim_assembler.cpp) also check. It goes with
-sim/assembler.py."""
 from __future__ import annotations
 
 import unittest
@@ -12,7 +9,6 @@ from sim.assembler import AssemblerError, assemble
 class TestImage(unittest.TestCase):
 
     def test_program_past_ffff(self) -> None:
-        # The image stays 64K, where a slice assignment would grow it.
         prog = asm_ast.Program(top_level=[asm_ast.StaticVariable(
             name="big", is_global=False,
             init=[asm_ast.ZeroInit(bytes=0xF800), asm_ast.CharInit(value=1)],

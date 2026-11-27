@@ -33,7 +33,6 @@ struct SimResult {
   std::uint64_t cycles = 0;
   std::vector<std::uint8_t> memory;
   bool timed_out = false;
-  // The program's HARGS, where a return of 4 or 8 bytes is.
   std::uint16_t hargs = 0x04;
 
   // A return of one byte is in A, and one of two bytes or a pointer in
@@ -61,7 +60,6 @@ class Simulation {
   Runtime runtime;
   std::int64_t origin = kDefaultOrigin;
   std::int64_t code_end = kDefaultOrigin;
-  // The names of the program's functions.
   std::set<std::string> function_names;
 
   // Takes one step: runs the hook at PC and returns as RTS does, or

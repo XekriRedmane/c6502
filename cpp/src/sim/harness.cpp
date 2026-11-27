@@ -10,8 +10,6 @@ namespace c6502::sim {
 
 namespace {
 
-// The layout that the symbols SSP, FP, HARGS, and DPTR give, with the
-// classic address of any that `addr_of` doesn't find.
 std::optional<std::int64_t> lookup(const std::map<std::string, std::int64_t>& symbols, std::string_view name) {
   const auto it = symbols.find(std::string(name));
   if (it == symbols.end()) return std::nullopt;

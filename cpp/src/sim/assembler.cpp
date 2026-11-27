@@ -1,10 +1,3 @@
-// The simulator's in-process assembler, ported from sim/assembler.py.
-// Each size must equal the length of the bytes emitted for the
-// instruction, since pass 1 lays the labels out by the sizes, and
-// `long_branches`, `short_jumps`, `tail_merge`, `shared_tails`,
-// `outline_runs`, and `rotate_loop_test` read the same sizes for the
-// text `asm_emit` writes. The prologue and epilogue follow the naive
-// expansions of `asm_to_asm2`, in which each `Mov` loads its own Y.
 #include "sim/assembler.h"
 
 #include <algorithm>
@@ -56,8 +49,8 @@ std::uint8_t byte(Int v) {
   return static_cast<std::uint8_t>(static_cast<int>(v));
 }
 
-// The opcode of `mnemonic` in `mode`. sim/assembler.py looks each up in
-// a table of the forms it emits, and a missing one is its KeyError.
+// sim/assembler.py looks each opcode up in a table of the forms it
+// emits, and a missing one is its KeyError.
 std::uint8_t op_code(std::string_view mnemonic, Mode mode) {
   const std::optional<std::uint8_t> op = binutils::opcodes::opcode(mnemonic, mode);
   if (!op) {
@@ -81,9 +74,6 @@ bool is_reg_y(const ir::Type_operand& op) {
   return r != nullptr && isa<ir::Y>(r->reg);
 }
 bool is_reg_xy(const ir::Type_operand& op) { return is_reg_x(op) || is_reg_y(op); }
-// The operands written with 6502 `(zp),Y` addressing and an `LDY #` in
-// front: Stack (through SSP), Frame (through FP), and Indirect (through
-// DPTR).
 bool is_indirect_y(const ir::Type_operand& op) {
   return isa<ir::Stack, ir::Frame, ir::Indirect>(op);
 }
@@ -110,8 +100,6 @@ void reject_pseudo(const ir::Type_operand& op) {
   }
 }
 
-// A volatile move of a memory byte to itself is a load and a store,
-// which `asm_emit` keeps.
 bool is_volatile_self_mov(const ir::Mov& m) {
   return m.is_volatile && m.src == m.dst && !isa<ir::Reg>(m.src);
 }
@@ -456,7 +444,6 @@ int ret_size(const ir::Ret& r) {
   return size + 1;  // RTS
 }
 
-// `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS`, before the table.
 constexpr int kJumpTableCode = 11;
 
 int Sizer::instr_size(const ir::Type_instruction& instr) const {
@@ -510,7 +497,6 @@ int Sizer::instr_size(const ir::Type_instruction& instr) const {
     case ir::Kind_instruction::Jump:
       return 3;  // JSR abs, JMP abs
     case ir::Kind_instruction::JumpTable:
-      // The dispatch and a word per target.
       return kJumpTableCode + 2 * static_cast<int>(std::get<ir::JumpTable>(instr).targets.size());
     case ir::Kind_instruction::Branch:
       return 2;  // Bxx rel
@@ -559,16 +545,12 @@ std::int64_t init_size(const ir::Type_static_init& item) {
   return to_i64(n);
 }
 
-// The zero-page addresses of the runtime's pointers in the program's
-// layout.
 struct Runtime {
   std::int64_t ssp;
   std::int64_t fp;
   std::int64_t dptr;
 };
 
-// The bytes of each instruction and static item, with every symbol
-// resolved.
 class Emitter {
  public:
   Emitter(const Runtime& runtime, const Symbols& symbols)
@@ -585,7 +567,6 @@ class Emitter {
     }
     return it->second;
   }
-  // The address of a symbol plus an offset, wrapped to 16 bits.
   std::int64_t address(const std::string& name, Int offset) const {
     return to_i64((Int(lookup(name)) + offset) & Int(0xFFFF));
   }
@@ -606,8 +587,6 @@ class Emitter {
   }
 
   std::int64_t resolve_indexed(const ir::IndexedData& op) const {
-    // An empty name is a 16-bit address in `offset`, from the
-    // IndexedStore lowering's abs,X form of a folded numeric address.
     if (op.name.empty()) {
       return to_i64(op.offset & Int(0xFFFF));
     }
@@ -625,9 +604,7 @@ class Emitter {
     out.push_back(op_code("LDA", Mode::kImm));
     out.push_back(imm_byte(v));
   }
-  // `LDY #off; <op> (zp),Y` for a Stack, Frame, or Indirect operand.
   void indy(std::string_view mn, const ir::Type_operand& op, Bytes& out) const;
-  // `<op> (DPTR),Y`, with Y loaded already, for an IndirectY operand.
   void indy_no_y_setup(std::string_view mn, Bytes& out) const {
     out.push_back(op_code(mn, Mode::kIndy));
     out.push_back(byte(rt_.dptr));
@@ -658,8 +635,7 @@ class Emitter {
     out.push_back(op_code(mn, Mode::kZp));
     out.push_back(imm_byte(zp, "zp address"));
   }
-  // Zero-page addressing for an address below $100, as dasm picks it,
-  // and absolute addressing otherwise.
+  // dasm picks zero-page addressing for an address below $100.
   static void zp_or_abs(std::string_view mn, Int addr, Bytes& out) {
     if (0 <= addr && addr <= 0xFF && binutils::opcodes::opcode(mn, Mode::kZp)) {
       zp(mn, addr, out);
@@ -802,8 +778,7 @@ void Emitter::mov(const ir::Type_operand& src, const ir::Type_operand& dst, Byte
     abs_indexed("STA", resolve_indexed(*d), d->index, out);
     return;
   }
-  // `LDX abs,Y` and `LDY abs,X`. `LDX abs,X` and `LDY abs,Y` don't
-  // exist.
+  // The 6502 has no `LDX abs,X` or `LDY abs,Y`.
   if (src_indexed != nullptr && dst_reg != nullptr) {
     if (isa<ir::X>(dst_reg->reg) && isa<ir::Y>(src_indexed->index)) {
       abs_indexed("LDX", resolve_indexed(*src_indexed), src_indexed->index, out);
@@ -894,9 +869,7 @@ void Emitter::accum_arith(std::string_view mn, const ir::Type_operand& src, Byte
   }
 }
 
-// sim/assembler.py's `_emit_compare`. Pass 1's sizes reject every right
-// operand that CPX and CPY can't take, with their own messages, before
-// this runs.
+// sim/assembler.py's `_emit_compare`.
 void Emitter::compare(const ir::Type_operand& left, const ir::Type_operand& right,
                       Bytes& out) const {
   reject_pseudo(left);
@@ -998,9 +971,6 @@ void Emitter::shift(std::string_view mn, const ir::Type_operand& dst, Bytes& out
   }
 }
 
-// The dispatch that `jump_table` in asm_emit.cpp writes, and the table
-// right after it. Pass 1 doesn't see the table's label, which is inside
-// the instruction, so its address comes from `addr`.
 void Emitter::jump_table(std::int64_t addr, const ir::JumpTable& jt, Bytes& out) const {
   const std::int64_t start = addr + kJumpTableCode;
   if (const auto it = syms_.find(jt.table); it != syms_.end() && it->second != start) {
@@ -1035,7 +1005,6 @@ void Emitter::branch(const ir::Type_condition& cond, const std::string& target,
   out.push_back(static_cast<std::uint8_t>(disp & 0xFF));
 }
 
-// `SSP -= amt`.
 void Emitter::ssp_sub(Int amt, Bytes& out) const {
   if (amt < 0 || amt > 0xFFFF) {
     fail("AllocateStack amt " + str(amt) + " out of range");
@@ -1055,8 +1024,6 @@ void Emitter::ssp_sub(Int amt, Bytes& out) const {
   zp("STA", rt_.ssp + 1, out);
 }
 
-// The naive form of `asm_to_asm2`'s prologue (`save_fp_into_slot`), in
-// which each store of the caller's FP loads its own Y.
 void Emitter::prologue(const ir::FunctionPrologue& p, Bytes& out) const {
   if (p.arg_bytes + p.local_bytes == 0) {
     return;
@@ -1067,17 +1034,14 @@ void Emitter::prologue(const ir::FunctionPrologue& p, Bytes& out) const {
   const std::uint8_t ldy = op_code("LDY", Mode::kImm);
   const std::uint8_t sta_indy = op_code("STA", Mode::kIndy);
   ssp_sub(p.local_bytes + 2, out);
-  // The caller's FP goes in the slot at SSP+M+1 / SSP+M+2.
   zp("LDA", rt_.fp, out);
   out.insert(out.end(), {ldy, byte(p.local_bytes + 1), sta_indy, byte(rt_.ssp)});
   zp("LDA", rt_.fp + 1, out);
   out.insert(out.end(), {ldy, byte(p.local_bytes + 2), sta_indy, byte(rt_.ssp)});
-  // FP = SSP.
   zp("LDA", rt_.ssp, out);
   zp("STA", rt_.fp, out);
   zp("LDA", rt_.ssp + 1, out);
   zp("STA", rt_.fp + 1, out);
-  // The callee-saved zero-page bytes go in the frame at FP+1..FP+S.
   for (std::size_t i = 0; i < p.callee_saved_addrs.size(); ++i) {
     const Int addr = p.callee_saved_addrs[i];
     if (addr < 0 || addr > 0xFF) {
@@ -1089,7 +1053,6 @@ void Emitter::prologue(const ir::FunctionPrologue& p, Bytes& out) const {
   }
 }
 
-// The naive form of `asm_to_asm2`'s `ret` and `restore_fp_from_slot`.
 void Emitter::ret(const ir::Ret& r, Bytes& out) const {
   if (r.arg_bytes + r.local_bytes == 0) {
     out.push_back(implied("RTS"));
@@ -1101,21 +1064,14 @@ void Emitter::ret(const ir::Ret& r, Bytes& out) const {
   const std::uint8_t ldy = op_code("LDY", Mode::kImm);
   const std::uint8_t lda_indy = op_code("LDA", Mode::kIndy);
   const Int rewind = r.arg_bytes + r.local_bytes + 2;
-  // The return bytes wait on the hardware stack through the whole
-  // epilogue, since the callee-saved restore and the teardown use A and
-  // X: the low byte (A) and then the high byte (X, through A), or A
-  // alone.
   if (r.save_x) {
     out.insert(out.end(), {implied("PHA"), implied("TXA"), implied("PHA")});
   } else if (r.save_a) {
     out.push_back(implied("PHA"));
   }
-  // A carry-flag return waits there too, across the teardown's `CLC;
-  // ADC`.
   if (r.save_c) {
     out.push_back(implied("PHP"));
   }
-  // The callee-saved bytes come back while FP still points at them.
   for (std::size_t i = 0; i < r.callee_saved_addrs.size(); ++i) {
     const Int addr = r.callee_saved_addrs[i];
     if (addr < 0 || addr > 0xFF) {
@@ -1124,7 +1080,6 @@ void Emitter::ret(const ir::Ret& r, Bytes& out) const {
     out.insert(out.end(), {ldy, byte(static_cast<long long>(i) + 1), lda_indy, byte(rt_.fp)});
     zp("STA", addr, out);
   }
-  // SSP = FP + rewind.
   if (rewind == 0) {
     zp("LDA", rt_.fp, out);
     zp("STA", rt_.ssp, out);
@@ -1142,8 +1097,6 @@ void Emitter::ret(const ir::Ret& r, Bytes& out) const {
     out.push_back(static_cast<std::uint8_t>(w >> 8));
     zp("STA", rt_.ssp + 1, out);
   }
-  // The caller's FP comes back from its slot, the low byte through X so
-  // that it outlasts the high byte's read and store.
   out.insert(out.end(), {ldy, byte(r.local_bytes + 1), lda_indy, byte(rt_.fp), implied("TAX")});
   out.insert(out.end(), {ldy, byte(r.local_bytes + 2), lda_indy, byte(rt_.fp)});
   zp("STA", rt_.fp + 1, out);
@@ -1174,8 +1127,6 @@ void Emitter::decimal_arith(const ir::DecimalArith& d, Bytes& out) const {
   out.push_back(implied("CLD"));
 }
 
-// `op` with `k` added to its offset, for the high byte of a 2-byte
-// operand.
 ir::Type_operand shift_offset(const ir::Type_operand& op, Int k) {
   if (const auto* f = as<ir::Frame>(op)) return ir::Frame{.offset = f->offset + k};
   if (const auto* s = as<ir::Stack>(op)) return ir::Stack{.offset = s->offset + k};
@@ -1376,7 +1327,6 @@ void Emitter::instr(const ir::Type_instruction& instr, std::int64_t addr, Bytes&
   throw InternalError("TypeError: unexpected instruction");
 }
 
-// The bytes of a static item, low byte first.
 void Emitter::init(const ir::Type_static_init& item, Bytes& out) const {
   const auto little_endian = [&out](Int v, int n) {
     for (int i = 0; i < n; ++i) {
@@ -1447,8 +1397,7 @@ void Emitter::init(const ir::Type_static_init& item, Bytes& out) const {
   }
 }
 
-// Copies `bytes` into the image at `addr`. Bytes past $FFFF or at a
-// negative address are an error, as in sim/assembler.py's `_lay_down`.
+// sim/assembler.py's `_lay_down`.
 void lay_down(std::vector<std::uint8_t>& image, std::int64_t addr, const Bytes& bytes,
               std::int64_t code_end) {
   if (bytes.empty()) {
@@ -1482,9 +1431,6 @@ AssembledProgram assemble(const ir::Program& program, std::int64_t origin,
     symbols[name] = addr;
   }
   const Runtime runtime{symbols.at("SSP"), symbols.at("FP"), symbols.at("DPTR")};
-  // The names in zero page before pass 1, so that both passes size a
-  // `Data` operand alike. Every label pass 1 adds is at `origin` or
-  // above.
   passes::NameSet zp_names;
   for (const auto& [name, addr] : symbols) {
     if (0 <= addr && addr <= 0xFF) {

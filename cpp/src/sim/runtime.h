@@ -52,14 +52,12 @@ using Hook = std::function<void(std::vector<std::uint8_t>& memory)>;
 struct Runtime {
   // The address of every helper, `icall` included.
   std::map<std::string, std::int64_t> symbols;
-  // The hook at each trap address.
   std::map<std::uint16_t, Hook> hooks;
   // The bytes of the helpers and `icall`, laid down at `helper_origin`.
   std::vector<std::uint8_t> helper_image;
   std::uint16_t helper_origin = kHelperOrigin;
   std::uint16_t boot_addr = kBootAddr;
   std::uint16_t ssp_init = kSspInit;
-  // The program's SSP and HARGS.
   std::uint16_t ssp = 0x00;
   std::uint16_t hargs = 0x04;
 };

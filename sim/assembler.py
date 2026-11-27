@@ -266,9 +266,9 @@ def _assemble(
 
 
 def _lay_down(image: bytearray, addr: int, bs: bytes, code_end: int) -> None:
-    """Copies `bs` into the 64K image at `addr`. A slice assignment past
-    the end would grow the bytearray, and one at a negative address
-    would write from its end, so those are errors."""
+    """A slice assignment past the end of the image would grow the
+    bytearray, and one at a negative address would write from its end,
+    so those are errors."""
     if not bs:
         return
     if addr < 0:

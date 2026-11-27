@@ -1,5 +1,3 @@
-// The tables of the simulator's runs of the chapter corpus, from
-// test_sim_chapters.py, test_sim_asm.py, and test_sim_differential.py.
 #pragma once
 
 #include <cstdint>

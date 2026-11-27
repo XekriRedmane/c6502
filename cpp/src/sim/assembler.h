@@ -24,11 +24,10 @@ namespace c6502::sim {
 int instruction_size(const asm_ast::Type_instruction& instr,
                      const passes::NameSet* zp_names = nullptr);
 
-// sim/assembler.py's AssemblerError: an undefined symbol, a branch out
-// of range, a duplicate symbol, an operand that doesn't fit its field,
-// or an instruction with no encoding, with Python's message. A program
-// whose bytes lie outside $0000-$FFFF is one too, where Python's image
-// grows past 64K.
+// Raised for an undefined symbol, a branch out of range, a duplicate
+// symbol, an operand that doesn't fit its field, an instruction with no
+// encoding, or a program whose bytes lie outside $0000-$FFFF, with
+// sim/assembler.py's message.
 class AssemblerError : public std::runtime_error {
  public:
   using std::runtime_error::runtime_error;
@@ -50,13 +49,11 @@ struct AssembledProgram {
 // symbols (SSP $00, FP $02, HARGS $04, DPTR $24). The soft-stack,
 // frame, and DPTR operands, the prologues, and the epilogues use the
 // SSP, FP, and DPTR that result. Throws `AssemblerError` for a program
-// it can't assemble, and `InternalError` where Python raises TypeError
-// or ValueError, for an instruction no pass writes.
+// it can't assemble, and `InternalError` for an instruction no pass
+// writes.
 AssembledProgram assemble(const asm_ast::Program& program, std::int64_t origin = 0x0800,
                           const std::map<std::string, std::int64_t>& extra_symbols = {});
 
-// `c6502cpp check-sim-assembler <capture file>...` (assembler_check.cpp).
-// It is temporary, and goes with `cpu-run` in group R of step 9.
 int check_sim_assembler(const std::vector<std::string>& args);
 
 }  // namespace c6502::sim

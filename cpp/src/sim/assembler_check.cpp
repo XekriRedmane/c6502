@@ -1,10 +1,3 @@
-// `c6502cpp check-sim-assembler`, the comparison of `assemble` with
-// sim/assembler.py on the records of C:/w/g4asm/capture_sim_asm.py,
-// which assembles the chapter corpus and the examples in both
-// pipelines as sim/harness.py's `build_sim` does, and the runtime
-// helpers for each layout as `sim.runtime.build_runtime` does. It is
-// temporary, and group R of step 9 removes it with `cpu-run`, when
-// sim/assembler.py goes.
 #include <cstdio>
 #include <fstream>
 #include <map>
@@ -37,7 +30,6 @@ int hex_digit(char c) {
   return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10;
 }
 
-// Python's image, from the record's nonzero runs.
 std::vector<std::uint8_t> recorded_image(const json::Value& image) {
   std::vector<std::uint8_t> out(static_cast<std::size_t>(to_i64(member(image, "length").integer)),
                                 0);
@@ -61,8 +53,6 @@ struct Counts {
   std::size_t differences = 0;
 };
 
-// Returns the first difference between the C++ result and the record's
-// `result`, or an empty string.
 std::string compare(const json::Value& result, const asm_ast::Program& program,
                     std::int64_t origin, const std::map<std::string, std::int64_t>& extra,
                     Counts& counts) {
@@ -75,7 +65,6 @@ std::string compare(const json::Value& result, const asm_ast::Program& program,
     error_class = "AssemblerError";
     error_message = e.what();
   } catch (const InternalError& e) {
-    // "TypeError: ..." and the like, where Python raises that class.
     const std::string what = e.what();
     const std::size_t colon = what.find(": ");
     error_class = colon == std::string::npos ? "InternalError" : what.substr(0, colon);
@@ -94,8 +83,6 @@ std::string compare(const json::Value& result, const asm_ast::Program& program,
     return "";
   }
   const json::Value& image = member(result, "image");
-  // In a capture made before sim/assembler.py rejected a program whose
-  // bytes run past $FFFF, its image grew past 64K instead.
   if (error_class == "AssemblerError" && error_message.ends_with(", past $FFFF") &&
       to_i64(member(image, "length").integer) > 0x10000) {
     ++counts.past_64k;

@@ -32,8 +32,6 @@ std::int64_t sign_extend(std::uint64_t v, int nbytes) {
   return static_cast<std::int64_t>((v ^ sign) - sign);
 }
 
-// --- The integer hooks ---
-
 Hook mul_hook(std::uint16_t hargs, int n) {
   return [hargs, n](Memory& mem) {
     const std::uint64_t a = read_int(mem, hargs, n);
@@ -73,9 +71,6 @@ Hook sdivmod_hook(std::uint16_t hargs, int n) {
 
 enum class Shift { kLeft, kLogical, kArithmetic };
 
-// The count is one byte after the value, and the result follows it. A
-// count of the width or more gives 0, or the sign in every bit for an
-// arithmetic shift.
 Hook shift_hook(std::uint16_t hargs, int n, Shift kind) {
   return [hargs, n, kind](Memory& mem) {
     const std::uint64_t v = read_int(mem, hargs, n);
@@ -94,20 +89,12 @@ Hook shift_hook(std::uint16_t hargs, int n, Shift kind) {
   };
 }
 
-// --- The floating hooks ---
-//
-// They compute with fp_arith (src/fp_arith.h), as the TAC interpreter
-// and constant folding do, so the three give the same results (decision
-// 1 of step 9 of the port). A float or a double is its bit pattern,
-// low byte first.
-
 Int bits_at(const Memory& mem, unsigned addr, int size) { return Int(read_int(mem, addr, size)); }
 
 void write_bits(Memory& mem, unsigned addr, Int bits, int size) {
   write_int(mem, addr, static_cast<std::uint64_t>(bits), size);
 }
 
-// The result goes to HARGS+8 for floats and HARGS+16 for doubles.
 Hook arith_hook(std::uint16_t hargs, int size, char op) {
   return [hargs, size, op](Memory& mem) {
     const Int a = bits_at(mem, hargs, size);
@@ -134,7 +121,6 @@ Hook compare_hook(std::uint16_t hargs, int size, bool lt) {
   };
 }
 
-// The integer at HARGS+0 as a float or double right after it.
 Hook int_to_fp_hook(std::uint16_t hargs, int int_size, bool is_signed, int fp_size) {
   return [hargs, int_size, is_signed, fp_size](Memory& mem) {
     const std::uint64_t raw = read_int(mem, hargs, int_size);
@@ -144,9 +130,6 @@ Hook int_to_fp_hook(std::uint16_t hargs, int int_size, bool is_signed, int fp_si
   };
 }
 
-// The float or double at HARGS+0 truncated toward zero and reduced
-// modulo 2^N right after it. A NaN or an infinity has no integer value,
-// and the hook fails with the error the TAC interpreter raises for it.
 Hook fp_to_int_hook(std::uint16_t hargs, int fp_size, int int_size) {
   return [hargs, fp_size, int_size](Memory& mem) {
     const Int bits = bits_at(mem, hargs, fp_size);
@@ -245,8 +228,6 @@ Runtime build_runtime(const passes::RuntimeLayout& layout) {
   for (const asm_ast::Function& fn : rtlib::all_helper_functions()) rt.symbols[fn.name] = assembled.symbols.at(fn.name);
   rt.helper_image.assign(assembled.image.begin() + kHelperOrigin, assembled.image.begin() + assembled.code_end);
   std::int64_t cursor = assembled.code_end;
-  // `icall`: the caller puts the target in DPTR and JSRs here, and the
-  // target's RTS returns to the caller.
   rt.symbols["icall"] = cursor;
   rt.helper_image.insert(rt.helper_image.end(), {0x6C, static_cast<std::uint8_t>(layout.dptr), 0x00});
   cursor = (cursor + 3 + 0xF) & ~std::int64_t{0xF};

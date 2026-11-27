@@ -83,7 +83,7 @@ class SimResult:
     cycles: int             # py65 cycle count at exit
     memory: bytearray       # full 64KiB snapshot
     timed_out: bool = False
-    hargs: int = rt_mod.HARGS   # the program's HARGS
+    hargs: int = rt_mod.HARGS
 
     def return_char(self) -> int:
         """Return value as an unsigned 1-byte integer (Char / SChar /

@@ -12,47 +12,12 @@ Coverage:
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S -O` text is checked in cpp/tests/test_asm_regalloc.cpp.
 """
 from __future__ import annotations
 
-import io
 import unittest
-from unittest.mock import patch
-
-from compile import main
-
-
-class TestAsmRegallocEndToEnd(unittest.TestCase):
-    """Compile real programs through `-S -O` and
-    verify the byte-granular regalloc is at least exercised end-
-    to-end."""
-
-    def _run(self, argv: list[str], stdin: str = "") -> tuple[int, str, str]:
-        with patch("sys.stdin", io.StringIO(stdin)), \
-             patch("sys.stdout", new_callable=io.StringIO) as out, \
-             patch("sys.stderr", new_callable=io.StringIO) as err:
-            rc = main(argv)
-        return rc, out.getvalue(), err.getvalue()
-
-    def test_two_locals_land_in_zp(self) -> None:
-        # A program that benefits from ZP coloring: enough live
-        # locals to motivate caller-saved ZP allocation. Verify
-        # the optimized output has at least one ZP-mode load at a
-        # caller-saved-pool address.
-        src = (
-            "int f(int p, int q) { int a = p + 1; int b = a + q;"
-            " return b; }\n"
-            "int main(void) { return f(3, 4); }\n"
-        )
-        rc, out, _ = self._run(
-            ["compile.py", "-", "-S", "-O"], stdin=src,
-        )
-        self.assertEqual(rc, 0)
-        # At least one body-local symbolic load with an EQU
-        # binding in the caller-saved ZP range.
-        import re
-        self.assertRegex(out, r"LDA\s+__local_\w+__\w+")
-        self.assertRegex(out, r"__local_\w+__\w+\s+EQU\s+\$[89AB][0-9A-F]")
 
 
 class TestFrameAccessWritesY(unittest.TestCase):

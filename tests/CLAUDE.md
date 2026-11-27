@@ -35,9 +35,8 @@ each).
 A harness class that compiles a program is decorated with
 `tests.cpp_build.needs_c6502cpp`, which skips it when `c6502cpp` isn't
 built, since compile.py, nm.py, and objdump.py are shims over it. A
-test that skips itself or combines the condition with another, as
-`TestAgainstDasm` does with dasm, reads `cpp_build.BUILT` and
-`cpp_build.REASON`.
+test that skips itself, or combines the condition with another, reads
+`cpp_build.BUILT` and `cpp_build.REASON`.
 
 A test that compiles a source text calls `compile._run_source(stage,
 source, ...)`, which sends c6502cpp the text and has it preprocessed in
@@ -77,9 +76,11 @@ executable's bytes in `.exe` for `sim.linked.build_linked_sim`), and
 in). `test_runtime_library.py` links without the helpers' addresses,
 so that each program holds the helpers it calls from the runtime
 library, and runs each helper from C against Python with the
-simulator's own helpers removed. `test_binutils.py` covers the ELF files, the assembler,
-relaxation, `nm.py`, and `objdump.py`; its `TestAgainstDasm` compares
-the assembler with dasm and runs only where dasm is installed.
+simulator's own helpers removed. `test_binutils.py` covers the ELF
+files that binutils/elf.py reads. The tests of the assembler,
+relaxation, nm, and objdump, and the comparison of the assembler with
+dasm, which runs only where dasm is on the PATH, are doctest cases in
+cpp/tests/test_binutils_source.cpp and test_binutils_assembler.cpp.
 
 ## The multi-unit examples
 

@@ -1,37 +1,28 @@
-"""Optimized-vs-unoptimized differential test for
-`beam_target_tick`, focused on the three dispatch states the new
-`transfer_pm1_store` peephole could plausibly perturb:
+// The simulator tests of tests/test_beam_target_tick_diff.py:
+// `beam_target_tick` run over a table of scenarios for the attack, chase,
+// and idle states of `beam_state` logs the same bytes in both pipelines.
+// The unoptimized pipeline's log is the reference, and
+// test_beam_target_tick_sim.cpp checks values computed by hand.
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <vector>
 
-  - `beam_state == 0x80` — attack phase, floor 0 (target =
-    floor_y_table[0] = $00). The SBC chain that decrements
-    `beam_snd_ctr` runs unconditionally before the dispatch, so
-    every state value exercises the new peephole.
-  - `beam_state == 0x00` — idle. Several sub-cases: jingle armed
-    at various counter values, tick gating the seed.
-  - `beam_state == 0x01` — chase, floor 1 (target =
-    floor_ceil[1]+1). Exercises the loop tail in the chase branch.
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
 
-Unlike `test_beam_target_tick_sim`, this file does NOT compute
-expected state by hand for each scenario — the unoptimized
-pipeline is the ground truth, and we only check that the optimized
-pipeline produces byte-identical observable state. The dedicated
-hand-checked tests live in `test_beam_target_tick_sim`; this file
-adds depth of coverage at the cost of trusting unopt.
-"""
+namespace c6502::suite {
+namespace {
 
-import unittest
-
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-# Inlined source: the function under test, externs / stubs, plus a
-# table-driven `main()` that exercises a battery of state-x-y-x-
-# snd_ctr-x-tick-x-seed combinations and records observable state
-# per scenario. The scenarios array is laid out as a flat byte
-# table of (state, y, snd_ctr, tick, seed) 5-tuples terminated by
-# an end-of-table sentinel `state == 0xAA`.
-_PROGRAM = r"""
+// Inlined source: the function under test, externs / stubs, plus a
+// table-driven `main()` that exercises a battery of state-x-y-x-
+// snd_ctr-x-tick-x-seed combinations and records observable state
+// per scenario. The scenarios array is laid out as a flat byte
+// table of (state, y, snd_ctr, tick, seed) 5-tuples terminated by
+// an end-of-table sentinel `state == 0xAA`.
+const std::string kProgram = R"c(
 #include <stdint.h>
 
 uint8_t beam_state;
@@ -201,74 +192,57 @@ int main(void) {
     }
     return (int)log_idx;
 }
-"""
+)c";
+const auto kScenarios = 24;
+const auto kRecordSize = 8;
+// Run the same C source through both pipelines and compare the
+// full `result_log` buffer byte-for-byte. Any optimizer-introduced
+// divergence (incl. the new `transfer_pm1_store` peephole) shows
+// up as a buffer mismatch.
+auto run(const auto& optimize) {
+  auto s = build_sim(kProgram, optimize);
+  auto result = s.run(5'000'000);
+  CHECK_FALSE_MESSAGE(result.timed_out, cat("beam_target_tick diff sim timed out (optimize=", optimize, ")"));
+  CHECK_MESSAGE((result.return_int() & 0xFFFF) == kScenarios * kRecordSize,
+                cat("log_idx mismatch (optimize=", optimize, ")"));
+  auto log_addr = s.symbol("result_log");
+  return slice(result.memory, log_addr, log_addr + kScenarios * kRecordSize);
+}
 
+TEST_CASE("beam_target_tick_diff: opt matches unopt full buffer") {
+  auto unopt = run(/*optimize=*/false);
+  auto opt = run(/*optimize=*/true);
+  CHECK_MESSAGE(unopt == opt, "optimizer changed observable state");
+}
 
-_SCENARIOS = 24
-_RECORD_SIZE = 8
+TEST_CASE("beam_target_tick_diff: opt matches unopt attack state 80") {
+  // First 6 scenarios cover beam_state == 0x80 variations.
+  auto unopt = run(/*optimize=*/false);
+  auto opt = run(/*optimize=*/true);
+  auto size = 6 * kRecordSize;
+  CHECK_MESSAGE(slice(unopt, 0, size) == slice(opt, 0, size),
+                "optimizer perturbed the beam_state == 0x80 (attack) cases");
+}
 
+TEST_CASE("beam_target_tick_diff: opt matches unopt chase state 01") {
+  // Scenarios 6..11 cover beam_state == 0x01 variations.
+  auto unopt = run(/*optimize=*/false);
+  auto opt = run(/*optimize=*/true);
+  auto start = 6 * kRecordSize;
+  auto end = 12 * kRecordSize;
+  CHECK_MESSAGE(slice(unopt, start, end) == slice(opt, start, end),
+                "optimizer perturbed the beam_state == 0x01 (chase) cases");
+}
 
-@needs_c6502cpp
-class TestBeamTargetTickOptDiff(unittest.TestCase):
-    """Run the same C source through both pipelines and compare the
-    full `result_log` buffer byte-for-byte. Any optimizer-introduced
-    divergence (incl. the new `transfer_pm1_store` peephole) shows
-    up as a buffer mismatch."""
+TEST_CASE("beam_target_tick_diff: opt matches unopt idle state 00") {
+  // Scenarios 12..19 cover beam_state == 0x00 variations.
+  auto unopt = run(/*optimize=*/false);
+  auto opt = run(/*optimize=*/true);
+  auto start = 12 * kRecordSize;
+  auto end = 20 * kRecordSize;
+  CHECK_MESSAGE(slice(unopt, start, end) == slice(opt, start, end),
+                "optimizer perturbed the beam_state == 0x00 (idle) cases");
+}
 
-    def _run(self, optimize: bool) -> bytes:
-        sim = build_sim(_PROGRAM, optimize=optimize)
-        result = sim.run(max_cycles=5_000_000)
-        self.assertFalse(
-            result.timed_out,
-            f"beam_target_tick diff sim timed out (optimize={optimize})",
-        )
-        self.assertEqual(
-            result.return_int() & 0xFFFF,
-            _SCENARIOS * _RECORD_SIZE,
-            f"log_idx mismatch (optimize={optimize})",
-        )
-        log_addr = sim.symbols["result_log"]
-        return bytes(
-            result.memory[log_addr:log_addr + _SCENARIOS * _RECORD_SIZE]
-        )
-
-    def test_opt_matches_unopt_full_buffer(self):
-        unopt = self._run(optimize=False)
-        opt = self._run(optimize=True)
-        self.assertEqual(unopt, opt, "optimizer changed observable state")
-
-    def test_opt_matches_unopt_attack_state_80(self):
-        """First 6 scenarios cover beam_state == 0x80 variations."""
-        unopt = self._run(optimize=False)
-        opt = self._run(optimize=True)
-        size = 6 * _RECORD_SIZE
-        self.assertEqual(
-            unopt[:size], opt[:size],
-            "optimizer perturbed the beam_state == 0x80 (attack) cases",
-        )
-
-    def test_opt_matches_unopt_chase_state_01(self):
-        """Scenarios 6..11 cover beam_state == 0x01 variations."""
-        unopt = self._run(optimize=False)
-        opt = self._run(optimize=True)
-        start = 6 * _RECORD_SIZE
-        end = 12 * _RECORD_SIZE
-        self.assertEqual(
-            unopt[start:end], opt[start:end],
-            "optimizer perturbed the beam_state == 0x01 (chase) cases",
-        )
-
-    def test_opt_matches_unopt_idle_state_00(self):
-        """Scenarios 12..19 cover beam_state == 0x00 variations."""
-        unopt = self._run(optimize=False)
-        opt = self._run(optimize=True)
-        start = 12 * _RECORD_SIZE
-        end = 20 * _RECORD_SIZE
-        self.assertEqual(
-            unopt[start:end], opt[start:end],
-            "optimizer perturbed the beam_state == 0x00 (idle) cases",
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace
+}  // namespace c6502::suite

@@ -432,9 +432,8 @@ Machine::Hook Machine::disk_entry(std::uint16_t entry) {
     const std::uint16_t from = caller();
     if (kept(from)) return std::nullopt;
     const std::vector<std::uint8_t>& mem = cpu.memory;
-    const unsigned ret = (mem[0x100 + ((cpu.sp + 1) & 0xFF)] | mem[0x100 + ((cpu.sp + 2) & 0xFF)] << 8) + 1;
-    if (ret > 0xFFFF) return std::nullopt;
-    const auto at = static_cast<std::uint16_t>(ret);
+    const unsigned pushed = mem[0x100 + ((cpu.sp + 1) & 0xFF)] | mem[0x100 + ((cpu.sp + 2) & 0xFF)] << 8;
+    const auto at = static_cast<std::uint16_t>((pushed + 1) & 0xFFFF);
     std::optional<unsigned> iob;
     if (entry == kRwtsEntry) iob = cpu.a << 8 | cpu.y;
     const auto back = static_cast<std::uint8_t>(cpu.sp + 2);

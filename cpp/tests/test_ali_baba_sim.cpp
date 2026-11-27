@@ -9,6 +9,8 @@
 #include "doctest.h"
 #include "game_case.h"
 #include "rtlib/helpers.h"
+#include "sim/ali_baba.h"
+#include "sim/disk2.h"
 
 namespace {
 
@@ -111,6 +113,24 @@ void compare(const elf::ElfFile& program, const games::AliBabaScript& script) {
 }
 
 }  // namespace
+
+TEST_CASE("ali_baba: a disk call from $FFFD records its event when it returns to $0000") {
+  c6502::sim::Cpu cpu;
+  const std::uint8_t jsr[] = {0x20, 0x00, 0xB3};
+  std::copy(std::begin(jsr), std::end(jsr), cpu.memory.begin() + 0xFFFD);
+  cpu.memory[ali_baba::kDiskReadField] = 0x60;
+  cpu.memory[0x0000] = 0x00;
+  cpu.pc = 0xFFFD;
+  std::vector<std::pair<std::string, c6502::sim::disk2::Drive>> media;
+  media.emplace_back("game", c6502::sim::disk2::Drive::blank());
+  ali_baba::Machine machine(std::move(cpu), std::move(media), {}, {});
+  CHECK(machine.run(1'000) == ali_baba::End::kBrk);
+  CHECK(machine.cpu.pc == 0x0000);
+  REQUIRE(machine.events.size() == 1);
+  CHECK(machine.events.events[0].code == (ali_baba::kDiskEvent + ali_baba::kDiskReadField) << 1);
+  CHECK(machine.events.events[0].pc == 0xFFFD);
+  CHECK(machine.events.disk.at(0).entry == ali_baba::kDiskReadField);
+}
 
 TEST_CASE("ali_baba: original: the attract mode plays the tune" * doctest::skip(kNoFiles)) {
   const auto machine = run_original(games::ali_baba_script("attract"));

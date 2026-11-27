@@ -758,8 +758,8 @@ class Machine:
                 return
             mem = mpu.memory
             sp = mpu.sp
-            ret = (mem[0x100 + ((sp + 1) & 0xFF)]
-                   | mem[0x100 + ((sp + 2) & 0xFF)] << 8) + 1
+            ret = ((mem[0x100 + ((sp + 1) & 0xFF)]
+                    | mem[0x100 + ((sp + 2) & 0xFF)] << 8) + 1) & 0xFFFF
             iob = (mpu.a << 8) | mpu.y if entry == RWTS_ENTRY else None
             back = (sp + 2) & 0xFF
             previous = self.hooks.get(ret)

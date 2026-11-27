@@ -1,9 +1,8 @@
 #include "sim/runtime.h"
 
-#include <cmath>
-#include <cstring>
-#include <limits>
+#include <optional>
 
+#include "asdl/runtime.h"
 #include "fp_arith.h"
 #include "rtlib/helpers.h"
 #include "sim/assembler.h"
@@ -13,6 +12,7 @@ namespace c6502::sim {
 namespace {
 
 using Memory = std::vector<std::uint8_t>;
+using asdl::Int;
 
 std::uint64_t read_int(const Memory& mem, unsigned addr, int nbytes) {
   std::uint64_t v = 0;
@@ -94,77 +94,43 @@ Hook shift_hook(std::uint16_t hargs, int n, Shift kind) {
   };
 }
 
-// --- The floating hooks, as sim/runtime.py computes them on the host ---
+// --- The floating hooks ---
+//
+// They compute with fp_arith (src/fp_arith.h), as the TAC interpreter
+// and constant folding do, so the three give the same results (decision
+// 1 of step 9 of the port). A float or a double is its bit pattern,
+// low byte first.
 
-float float_at(const Memory& mem, unsigned addr) {
-  const auto bits = static_cast<std::uint32_t>(read_int(mem, addr, 4));
-  float f;
-  std::memcpy(&f, &bits, 4);
-  return f;
-}
+Int bits_at(const Memory& mem, unsigned addr, int size) { return Int(read_int(mem, addr, size)); }
 
-double double_at(const Memory& mem, unsigned addr) {
-  const std::uint64_t bits = read_int(mem, addr, 8);
-  double d;
-  std::memcpy(&d, &bits, 8);
-  return d;
-}
-
-// Python reads a float operand as a double, which makes a signaling NaN
-// quiet.
-double operand(const Memory& mem, unsigned addr, int size) {
-  return size == 4 ? static_cast<double>(float_at(mem, addr)) : double_at(mem, addr);
-}
-
-// `struct.pack("<f", v)`: a double that rounds to an infinity from a
-// finite value raises `OverflowError`.
-void pack_float(Memory& mem, unsigned addr, double v) {
-  const float y = static_cast<float>(v);
-  if (std::isinf(y) && !std::isinf(v)) throw HookError("OverflowError", "float too large to pack with f format");
-  std::uint32_t bits;
-  std::memcpy(&bits, &y, 4);
-  write_int(mem, addr, bits, 4);
-}
-
-void pack(Memory& mem, unsigned addr, double v, int size) {
-  if (size == 4) {
-    pack_float(mem, addr, v);
-    return;
-  }
-  std::uint64_t bits;
-  std::memcpy(&bits, &v, 8);
-  write_int(mem, addr, bits, 8);
+void write_bits(Memory& mem, unsigned addr, Int bits, int size) {
+  write_int(mem, addr, static_cast<std::uint64_t>(bits), size);
 }
 
 // The result goes to HARGS+8 for floats and HARGS+16 for doubles.
 Hook arith_hook(std::uint16_t hargs, int size, char op) {
   return [hargs, size, op](Memory& mem) {
-    const double a = operand(mem, hargs, size);
-    const double b = operand(mem, hargs + size, size);
-    double r = 0;
+    const Int a = bits_at(mem, hargs, size);
+    const Int b = bits_at(mem, hargs + size, size);
+    Int r = 0;
     switch (op) {
-      case '+': r = a + b; break;
-      case '-': r = a - b; break;
-      case '*': r = a * b; break;
-      default:
-        if (b == 0.0) {
-          r = a == 0.0  ? std::numeric_limits<double>::quiet_NaN()
-              : a < 0.0 ? -std::numeric_limits<double>::infinity()
-                        : std::numeric_limits<double>::infinity();
-        } else {
-          r = a / b;
-        }
-        break;
+      case '+': r = size == 4 ? fp_arith::single_add(a, b) : fp_arith::double_add(a, b); break;
+      case '-': r = size == 4 ? fp_arith::single_sub(a, b) : fp_arith::double_sub(a, b); break;
+      case '*': r = size == 4 ? fp_arith::single_mul(a, b) : fp_arith::double_mul(a, b); break;
+      default: r = size == 4 ? fp_arith::single_div(a, b) : fp_arith::double_div(a, b); break;
     }
-    pack(mem, hargs + 2 * size, r, size);
+    write_bits(mem, hargs + 2 * size, r, size);
   };
 }
 
+// A NaN is unordered, so both comparisons give 0 for it.
 Hook compare_hook(std::uint16_t hargs, int size, bool lt) {
   return [hargs, size, lt](Memory& mem) {
-    const double a = operand(mem, hargs, size);
-    const double b = operand(mem, hargs + size, size);
-    mem[(hargs + 2 * size) & 0xFFFF] = (lt ? a < b : a <= b) ? 1 : 0;
+    const Int a = bits_at(mem, hargs, size);
+    const Int b = bits_at(mem, hargs + size, size);
+    const fp_arith::Order o = size == 4 ? fp_arith::single_compare(a, b) : fp_arith::double_compare(a, b);
+    const bool r = o == fp_arith::Order::kLt || (!lt && o == fp_arith::Order::kEq);
+    mem[(hargs + 2 * size) & 0xFFFF] = r ? 1 : 0;
   };
 }
 
@@ -172,33 +138,39 @@ Hook compare_hook(std::uint16_t hargs, int size, bool lt) {
 Hook int_to_fp_hook(std::uint16_t hargs, int int_size, bool is_signed, int fp_size) {
   return [hargs, int_size, is_signed, fp_size](Memory& mem) {
     const std::uint64_t raw = read_int(mem, hargs, int_size);
-    const asdl::Int v = is_signed ? asdl::Int(sign_extend(raw, int_size)) : asdl::Int(raw);
-    if (fp_size == 4) {
-      write_int(mem, hargs + int_size, static_cast<std::uint64_t>(fp_arith::int_to_single_bits(v)), 4);
-    } else {
-      write_int(mem, hargs + int_size, static_cast<std::uint64_t>(fp_arith::int_to_double_bits(v)), 8);
-    }
+    const Int v = is_signed ? Int(sign_extend(raw, int_size)) : Int(raw);
+    write_bits(mem, hargs + int_size, fp_size == 4 ? fp_arith::int_to_single_bits(v) : fp_arith::int_to_double_bits(v),
+               fp_size);
   };
 }
 
 // The float or double at HARGS+0 truncated toward zero and reduced
-// modulo 2^N right after it, and 0 for a NaN or an infinity.
+// modulo 2^N right after it. A NaN or an infinity has no integer value,
+// and the hook fails with the error the TAC interpreter raises for it.
 Hook fp_to_int_hook(std::uint16_t hargs, int fp_size, int int_size) {
   return [hargs, fp_size, int_size](Memory& mem) {
-    const std::uint64_t bits = read_int(mem, hargs, fp_size);
+    const Int bits = bits_at(mem, hargs, fp_size);
     const std::optional<fp_arith::TruncatedInt> n =
-        fp_size == 4 ? fp_arith::single_bits_to_int(asdl::Int(bits)) : fp_arith::double_bits_to_int(asdl::Int(bits));
-    const std::uint64_t v = n ? static_cast<std::uint64_t>(n->wrapped(8 * int_size)) : 0;
-    write_int(mem, hargs + fp_size, v, int_size);
+        fp_size == 4 ? fp_arith::single_bits_to_int(bits) : fp_arith::double_bits_to_int(bits);
+    if (!n) {
+      const bool nan = fp_size == 4 ? (bits & 0x7FFFFF) != 0 : (bits & 0xFFFFFFFFFFFFFull) != 0;
+      if (nan) throw HookError("ValueError", "cannot convert float NaN to integer");
+      throw HookError("OverflowError", "cannot convert float infinity to integer");
+    }
+    write_int(mem, hargs + fp_size, static_cast<std::uint64_t>(n->wrapped(8 * int_size)), int_size);
   };
 }
 
 Hook f2d_hook(std::uint16_t hargs) {
-  return [hargs](Memory& mem) { pack(mem, hargs + 4, operand(mem, hargs, 4), 8); };
+  return [hargs](Memory& mem) {
+    write_bits(mem, hargs + 4, fp_arith::single_bits_to_double_bits(bits_at(mem, hargs, 4)), 8);
+  };
 }
 
 Hook d2f_hook(std::uint16_t hargs) {
-  return [hargs](Memory& mem) { pack(mem, hargs + 8, double_at(mem, hargs), 4); };
+  return [hargs](Memory& mem) {
+    write_bits(mem, hargs + 8, fp_arith::double_bits_to_single_bits(bits_at(mem, hargs, 8)), 4);
+  };
 }
 
 struct Conversion {

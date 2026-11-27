@@ -54,7 +54,7 @@ struct DiskCall {
   bool operator==(const DiskCall&) const = default;
 };
 
-std::vector<DiskCall> disk_reads(const ali_baba::Machine& machine) {
+std::vector<DiskCall> rwts_calls(const ali_baba::Machine& machine) {
   std::vector<DiskCall> out;
   for (const auto& [_, r] : machine.events.disk) {
     if (!r.iob.empty()) out.push_back(DiskCall{r.iob.at(12), r.iob.at(4), r.iob.at(5)});
@@ -145,7 +145,7 @@ TEST_CASE("ali_baba: original: the attract mode plays the tune" * doctest::skip(
 TEST_CASE("ali_baba: original: a game reads the reincarnation scene" * doctest::skip(kNoFiles)) {
   const auto machine = run_original(games::ali_baba_script("game"));
   // The reincarnation scene comes from the disk.
-  CHECK(contains(disk_reads(*machine), {1, 0x13, 0xC}));
+  CHECK(contains(rwts_calls(*machine), {1, 0x13, 0xC}));
   check_reached(*machine,
                 {"GAME_TURN_LOOP", "SCENE_LOOP", "TEXT_RENDERER", "DISPLAY_CHAR_STATS", "HANDLE_ENCOUNTER", "NPC_MOVE_AI"});
 }
@@ -157,7 +157,7 @@ TEST_CASE("ali_baba: original: a save formats a scenario disk and writes the gam
   CHECK(games::Bytes(scenario.begin(), scenario.begin() + 3) == games::Bytes{0xC1, 0xCC, 0xC9});
   CHECK(games::Bytes(scenario.begin() + 16 * 256, scenario.begin() + 17 * 256) ==
         games::Bytes(machine->cpu.memory.begin() + 0x4000, machine->cpu.memory.begin() + 0x4100));
-  const std::vector<DiskCall> calls = disk_reads(*machine);
+  const std::vector<DiskCall> calls = rwts_calls(*machine);
   CHECK(std::count_if(calls.begin(), calls.end(), [](const DiskCall& c) { return c.command == 2; }) == 27);
   // The game disk is only read.
   CHECK(machine->medium("game").to_dsk(&files().disk) == files().disk);
@@ -167,7 +167,7 @@ TEST_CASE("ali_baba: original: a save formats a scenario disk and writes the gam
 TEST_CASE("ali_baba: original: a load reads the saved game" * doctest::skip(kNoFiles)) {
   const auto machine = run_original(games::ali_baba_script("load"));
   std::vector<DiskCall> reads;
-  for (const DiskCall& c : disk_reads(*machine)) {
+  for (const DiskCall& c : rwts_calls(*machine)) {
     if (c.command == 1) reads.push_back(c);
   }
   CHECK(contains(reads, {1, 1, 0}));
@@ -185,7 +185,7 @@ TEST_CASE("ali_baba: original: the forest's chests and shops" * doctest::skip(kN
 TEST_CASE("ali_baba: original: a second character joins and Ali Baba retires" * doctest::skip(kNoFiles)) {
   const auto machine = run_original(games::ali_baba_script("party"));
   // The save is cancelled, so nothing is written.
-  const std::vector<DiskCall> calls = disk_reads(*machine);
+  const std::vector<DiskCall> calls = rwts_calls(*machine);
   CHECK(std::none_of(calls.begin(), calls.end(), [](const DiskCall& c) { return c.command == 2; }));
   check_reached(*machine, {"SLOT_INC_ENTER", "SLOT_DEC_ENTER", "PLAYER_ATTACK", "CHAR_SELECT_INIT", "CHAR_SELECT_NEXT",
                            "CHAR_SELECT_PREV", "CHAR_SELECT_HERE", "CHAR_SELECT_HOME", "INIT_CHAR_SELECT",

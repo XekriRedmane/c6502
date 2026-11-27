@@ -6,13 +6,13 @@ Each helper is reached from C the way the compiler reaches it (`*`,
 `--defsym`, and run on the simulator with its own helpers removed, so
 that only the copies the link put in the program can run. The results
 are checked against Python on edge cases and random values. The other
-tests check that a program gets only the helpers it calls, that
-`--defsym` takes precedence over the library, that a linker script
-places the helpers, that the helpers use a HARGS block the program
-moved, and that a helper with no 6502 code still names itself in the
-link error. The tests of `closure` and of the helpers' sizes are
-doctest cases of the C++ port, in cpp/tests/test_runtime_layout.cpp
-(docs/cpp_port.md, step 8, group G6).
+tests run programs that get only the helpers they call, or the
+simulator's copies that `--defsym` gives, or the helpers a linker
+script places, or a HARGS block the program moved. The tests of
+`closure` and of the helpers' sizes are doctest cases of the C++ port,
+in cpp/tests/test_runtime_layout.cpp (docs/cpp_port.md, step 8, group
+G6), and the tests of the selection that read only the executable,
+and of the link errors, are in cpp/tests/test_runtime_library_source.cpp.
 """
 from __future__ import annotations
 
@@ -27,9 +27,6 @@ from unittest.mock import patch
 from binutils import elf as E
 from rtlib.helpers import all_helper_functions
 from tests.cpp_build import needs_c6502cpp
-
-# The name the runtime library's object goes by in a link.
-LIBRARY_NAME = "runtime.o"
 
 
 def helper_names() -> frozenset[str]:
@@ -372,13 +369,6 @@ int main(void) { return a / b; }
 class TestSelection(unittest.TestCase):
     """Which helpers a link takes from the library."""
 
-    def test_no_helper_called_none_linked(self) -> None:
-        exe = _build("int a = 3; int main(void) { return a + 1; }")
-        self.assertEqual(_own_helpers(exe), {})
-        self.assertNotIn(LIBRARY_NAME, [
-            s.name for s in exe.symbols if s.type == E.STT_FILE
-        ])
-
     def test_only_called_helpers_and_their_callees(self) -> None:
         exe = _build(_DIVIDE)
         self.assertEqual(set(_own_helpers(exe)), {"sdivmod16", "udivmod16"})
@@ -399,41 +389,6 @@ class TestSelection(unittest.TestCase):
         self.assertEqual(set(_own_helpers(exe)), {"sdivmod16"})
         self.assertEqual(exe.symbol("udivmod16").value, addr)
         self.assertEqual(build_linked_sim(exe).run().return_int_signed(), -176)
-
-    def test_a_definition_takes_precedence(self) -> None:
-        # A unit that defines a helper's name gives the program that
-        # function, as a C toolchain prefers an object's definition to
-        # libgcc's, and the library adds nothing.
-        with tempfile.TemporaryDirectory() as tmp:
-            a, b = Path(tmp) / "a.o", Path(tmp) / "b.o"
-            _compile(_DIVIDE.replace("int main", "int quotient"), a)
-            _compile(
-                "void sdivmod16(void) {}\n"
-                "void udivmod16(void) {}\n"
-                "int quotient(void);\n"
-                "int main(void) { sdivmod16(); udivmod16();"
-                " return quotient(); }\n",
-                b,
-            )
-            out = Path(tmp) / "prog"
-            rc, err = _link([a, b], out)
-            self.assertEqual(rc, 0, err)
-            exe = E.read_file(out)
-        files = [s.name for s in exe.symbols if s.type == E.STT_FILE]
-        self.assertNotIn(LIBRARY_NAME, files)
-        self.assertEqual(set(_own_helpers(exe)), {"sdivmod16", "udivmod16"})
-
-    def test_helper_without_code_is_an_error(self) -> None:
-        src = "float a = 1.5f; float b = 2.0f; " \
-              "int main(void) { return (int)(a + b); }"
-        with tempfile.TemporaryDirectory() as tmp:
-            obj = Path(tmp) / "a.o"
-            _compile(src, obj)
-            rc, err = _link([obj], Path(tmp) / "prog")
-        self.assertEqual(rc, 1)
-        self.assertIn("undefined symbol `fadd`", err)
-        self.assertIn("no 6502 code in the runtime library", err)
-        self.assertNotIn("isn't in the repository", err)
 
     def test_moved_hargs(self) -> None:
         # A fixed object in the classic block's bytes moves HARGS, and
@@ -489,14 +444,6 @@ class TestLinkerScript(unittest.TestCase):
         helpers = _own_helpers(exe)
         self.assertTrue(all(0x0800 <= a < 0x1800 for a in helpers.values()))
         self.assertEqual(_run(exe)[1], -176)
-
-    def test_unplaced(self) -> None:
-        script = _SCRIPT.replace(
-            ".runtime : { runtime.o(.text) } > lib", "")
-        with self.assertRaisesRegex(AssertionError,
-                                    r"`udivmod16` \(section \.text, "
-                                    r"runtime\.o\)"):
-            _build(_DIVIDE, script=script)
 
 
 if __name__ == "__main__":

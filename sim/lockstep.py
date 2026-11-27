@@ -69,16 +69,15 @@ class _Trace:
         self.written: list[dict[int, int]] = []
         self.stops: list[str] = []
         self.ends: list[tuple] = []
-        self.error: BaseException | None = None
+        self.error: IndexError | None = None
 
 
-def _drive(mpu, hooks, max_cycles: int) -> _Trace:
+def _drive(mpu, hooks, max_cycles: int, trace: _Trace) -> None:
     mem = mpu.memory
     log = mem.log
-    trace = _Trace()
     patches: list[list[int]] = []
     while True:
-        trace.segments.append({**_state(mpu), "patches": patches})
+        segment = {**_state(mpu), "patches": patches}
         digests = array.array("I")
         written: dict[int, int] = {}
         stop = None
@@ -96,7 +95,7 @@ def _drive(mpu, hooks, max_cycles: int) -> _Trace:
             log.clear()
             try:
                 mpu.step()
-            except Exception as e:
+            except IndexError as e:
                 trace.error = e
                 stop = "error"
                 break
@@ -106,18 +105,15 @@ def _drive(mpu, hooks, max_cycles: int) -> _Trace:
                 record += b"".join(_WRITE(a, v) for a, v in log)
                 written.update(log)
             digests.append(zlib.crc32(record))
+        trace.segments.append(segment)
         trace.digests.append(digests)
         trace.written.append(written)
         trace.stops.append(stop)
         trace.ends.append(tuple(_state(mpu).values()))
         if stop != "stop":
-            return trace
+            return
         log.clear()
-        try:
-            hook_and_rts(mpu, hooks)
-        except Exception as e:
-            trace.error = e
-            return trace
+        hook_and_rts(mpu, hooks)
         patches = [[a, v] for a, v in log]
 
 
@@ -151,9 +147,6 @@ def run(sim, max_cycles: int) -> bool:
     and compares the C++ CPU with it. Returns whether the run timed out,
     and leaves py65's state in `sim.mpu`. Raises `LockstepError` at the
     first difference, and then what py65 or a hook raised."""
-    import cpp_backend
-    from py65.devices.mpu6502 import MPU
-
     mpu = sim.mpu
     hooks = sim.runtime.hooks
     original = mpu.memory
@@ -161,11 +154,22 @@ def run(sim, max_cycles: int) -> bool:
     start = _state(mpu)
     mem = _RecordingMemory(original)
     mpu.memory = mem
+    trace = _Trace()
     try:
-        trace = _drive(mpu, hooks, max_cycles)
+        _drive(mpu, hooks, max_cycles, trace)
     finally:
         original[:] = mem
         mpu.memory = original
+        _check(trace, image, start, hooks, max_cycles)
+    if trace.error is not None:
+        raise trace.error
+    return trace.stops[-1] == "cycles"
+
+
+def _check(trace: _Trace, image: bytes, start: dict, hooks, max_cycles: int) -> None:
+    import cpp_backend
+    from py65.devices.mpu6502 import MPU
+
     results = cpp_backend.cpu_run(
         image, trace.segments, stops=hooks.keys(), stop_at_brk=True,
         max_cycles=max_cycles,
@@ -217,11 +221,8 @@ def run(sim, max_cycles: int) -> bool:
         raise LockstepError(f"the C++ CPU ran {len(results)} segments, and py65 {len(trace.digests)}")
 
     log_dir = os.environ.get("C6502_SIM_LOCKSTEP_LOG")
-    if log_dir:
+    if log_dir and trace.stops:
         total = sum(len(d) for d in trace.digests)
         with open(os.path.join(log_dir, f"lockstep-{os.getpid()}.txt"), "a",
                   encoding="utf-8") as f:
             f.write(f"{total} {len(trace.digests)} {trace.stops[-1]}\n")
-    if trace.error is not None:
-        raise trace.error
-    return trace.stops[-1] == "cycles"

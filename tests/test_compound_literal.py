@@ -19,13 +19,15 @@ Coverage:
     one initializer, too many initializers, a non-constant initializer
     at file scope, and a static initializer that takes the address of
     an automatic literal.
+
+The TAC interpreter's results are checked in
+cpp/tests/test_compound_literal.cpp.
 """
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -88,13 +90,6 @@ _PROGRAMS: list[tuple[str, str, int]] = [
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-    def test_tac_sim(self) -> None:
-        for name, src, expected in _PROGRAMS:
-            with self.subTest(case=name):
-                value = _run_tac(src) & 0xFFFF
-                if value & 0x8000:
-                    value -= 0x10000
-                self.assertEqual(value, expected)
 
     def test_asm_sim(self) -> None:
         for name, src, expected in _PROGRAMS:

@@ -21,85 +21,16 @@ Coverage:
     both pipelines and on the TAC interpreter. Before each function of
     automatic objects it fills the bytes those objects take with
     0xA5, and a control run without the initializers finds them.
+
+The tests of the `-S` text and the TAC, and the TAC interpreter's run of
+the program, are doctest cases in cpp/tests/test_empty_initializer.cpp.
 """
 from __future__ import annotations
 
-import io
 import unittest
-from unittest.mock import patch
 
-import tac_ast
-from compile import main as compile_main
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
-
-
-def _compile(src: str, *flags: str) -> str:
-    """compile.py's `-S` output for `src`."""
-    out = io.StringIO()
-    with patch("sys.stdin", io.StringIO(src)), patch("sys.stdout", out):
-        rc = compile_main(["compile.py", "-", "-S", "-o", "-", *flags])
-    assert rc == 0
-    return out.getvalue()
-
-
-def _tac_function(src: str, name: str) -> tac_ast.Function:
-    """The function `name` of the TAC that `compile.py --tac` prints for
-    `src`, read back into `tac_ast` objects. Its `pretty` text is the
-    constructors' calls with their fields as keywords, so Python can
-    evaluate it."""
-    from compile import _run_source
-    tac = eval(_run_source("tac", src), vars(tac_ast))
-    for tl in tac.top_level:
-        if isinstance(tl, tac_ast.Function) and tl.name == name:
-            return tl
-    raise KeyError(name)
-
-
-_STRUCTS = """\
-struct s { int a; char b[3]; long c; };
-union u { char c; long l; };
-"""
-
-
-@needs_c6502cpp
-class TestCode(unittest.TestCase):
-    def test_static_goes_in_bss(self) -> None:
-        asm = _compile(_STRUCTS + (
-            "struct s v = {}; static union u un = {};"
-            "int f(void) { static int a[10] = {}; return a[1] + v.a + un.c; }"
-        ), "-O")
-        for name, size in (("v", 9), ("un", 4)):
-            with self.subTest(name=name):
-                self.assertIn(f"\n{name}:\n   DS.B  {size}\n", asm)
-                self.assertIn(f"item {name} section=.bss", asm)
-        self.assertRegex(asm, r"\n@\d+\.a:\n   DS\.B  20\n")
-
-
-    def test_large_automatic_struct_is_a_loop(self) -> None:
-        src = (
-            _STRUCTS + "struct big { struct s s[4]; union u u; };"
-            "void use(struct big *p);"
-            "void f(void) { struct big v = {}; use(&v); }"
-        )
-        fn = _tac_function(src, "f")
-        labels = [i.name for i in fn.instructions
-                  if isinstance(i, tac_ast.Label)]
-        self.assertEqual(len(labels), 1)
-        self.assertTrue(labels[0].startswith(".clear@"))
-        stores = [i for i in fn.instructions if isinstance(i, tac_ast.Store)]
-        self.assertEqual(len(stores), 1)
-        # Under -O the object is in the function's pool and the loop
-        # indexes it with Y: 40 bytes, counted down. The 0 is loaded
-        # before the loop, and the BNE reads the flags DEY sets
-        # (cpp/src/passes/loop_constant_a.h).
-        asm = _compile(src, "-O")
-        self.assertIn(
-            "   LDY   #$28\n   LDA   #$00\n.clear@0:\n   DEY\n"
-            "   STA   __local_f__v,Y\n   BNE   .clear@0\n",
-            asm,
-        )
 
 
 # Bytes of `struct s`: a (2), b (3), c (4).
@@ -275,9 +206,6 @@ int main(void) {
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)
-
     def test_asm_sim(self) -> None:
         for optimize in (False, True):
             with self.subTest(optimize=optimize):

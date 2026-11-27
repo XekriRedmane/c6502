@@ -132,6 +132,50 @@ TEST_CASE("ali_baba: a disk call from $FFFD records its event when it returns to
   CHECK(machine.events.disk.at(0).entry == ali_baba::kDiskReadField);
 }
 
+TEST_CASE("ali_baba: a disk call's return is recorded after an earlier call to the same address returns") {
+  // Both calls are made from $1000. The first call jumps from the disk
+  // entry back to $1000, which makes the second call with the first's
+  // return address still on the stack. The second call then returns past
+  // its own return address to the first's, and the code there returns to
+  // the second's.
+  //
+  //   $1000  JSR $B300
+  //   $1003  TSX
+  //   $1004  CPX #$FF
+  //   $1006  BNE $100C      ; after the second return
+  //   $1008  LDX #$FB
+  //   $100A  TXS
+  //   $100B  RTS            ; to the second call's return
+  //   $100C  BRK
+  //   $B300  INC $10
+  //   $B302  LDA $10
+  //   $B304  CMP #1
+  //   $B306  BNE $B30B      ; in the second call
+  //   $B308  JMP $1000
+  //   $B30B  LDX #$FD
+  //   $B30D  TXS
+  //   $B30E  RTS            ; to the first call's return
+  c6502::sim::Cpu cpu;
+  const std::uint8_t caller[] = {0x20, 0x00, 0xB3, 0xBA, 0xE0, 0xFF, 0xD0, 0x04, 0xA2, 0xFB, 0x9A, 0x60, 0x00};
+  const std::uint8_t entry[] = {0xE6, 0x10, 0xA5, 0x10, 0xC9, 0x01, 0xD0, 0x03,
+                                0x4C, 0x00, 0x10, 0xA2, 0xFD, 0x9A, 0x60};
+  std::copy(std::begin(caller), std::end(caller), cpu.memory.begin() + 0x1000);
+  std::copy(std::begin(entry), std::end(entry), cpu.memory.begin() + ali_baba::kDiskReadField);
+  cpu.pc = 0x1000;
+  std::vector<std::pair<std::string, c6502::sim::disk2::Drive>> media;
+  media.emplace_back("game", c6502::sim::disk2::Drive::blank());
+  ali_baba::Machine machine(std::move(cpu), std::move(media), {}, {});
+  CHECK(machine.run(1'000) == ali_baba::End::kBrk);
+  CHECK(machine.cpu.sp == 0xFD);
+  REQUIRE(machine.events.size() == 2);
+  for (const ali_baba::Event& e : machine.events.events) {
+    CHECK(e.code == (ali_baba::kDiskEvent + ali_baba::kDiskReadField) << 1);
+    CHECK(e.pc == 0x1000);
+  }
+  CHECK(machine.events.disk.count(0) == 1);
+  CHECK(machine.events.disk.count(1) == 1);
+}
+
 TEST_CASE("ali_baba: original: the attract mode plays the tune" * doctest::skip(kNoFiles)) {
   const auto machine = run_original(games::ali_baba_script("attract"));
   const std::map<std::string, std::size_t> counts = machine->events.counts();

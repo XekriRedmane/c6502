@@ -74,7 +74,7 @@ bool is_reg_y(const ir::Type_operand& op) {
   return r != nullptr && isa<ir::Y>(r->reg);
 }
 bool is_reg_xy(const ir::Type_operand& op) { return is_reg_x(op) || is_reg_y(op); }
-bool is_indirect_y(const ir::Type_operand& op) {
+bool needs_ldy_setup(const ir::Type_operand& op) {
   return isa<ir::Stack, ir::Frame, ir::Indirect>(op);
 }
 bool is_memory(const ir::Type_operand& op) {
@@ -207,7 +207,7 @@ int Sizer::mov_size(const ir::Type_operand& src, const ir::Type_operand& dst) co
     return abs_fits_zp(dst) ? 2 : 3;
   }
   // `TXA` / `TYA`, `LDY #`, and `STA (zp),Y`.
-  if (is_reg_xy(src) && is_indirect_y(dst)) {
+  if (is_reg_xy(src) && needs_ldy_setup(dst)) {
     return 1 + 4;
   }
   if (is_reg_a(src) && is_memory(dst)) {
@@ -225,7 +225,7 @@ int Sizer::load_mem_to_a_size(const ir::Type_operand& src) const {
     return abs_fits_zp(src) ? 2 : 3;
   }
   // `LDY #` and `LDA (zp),Y`.
-  if (is_indirect_y(src)) {
+  if (needs_ldy_setup(src)) {
     return 4;
   }
   // `LDA (zp),Y`, with Y loaded already.
@@ -242,7 +242,7 @@ int Sizer::store_a_to_mem_size(const ir::Type_operand& dst) const {
   if (is_data_or_zp(dst)) {
     return abs_fits_zp(dst) ? 2 : 3;
   }
-  if (is_indirect_y(dst)) {
+  if (needs_ldy_setup(dst)) {
     return 4;
   }
   if (isa<ir::IndirectY, ir::IndirectZpY>(dst)) {
@@ -263,7 +263,7 @@ int Sizer::accum_arith_size(const ir::Type_operand& src) const {
   if (is_data_or_zp(src)) {
     return abs_fits_zp(src) ? 2 : 3;
   }
-  if (is_indirect_y(src)) {
+  if (needs_ldy_setup(src)) {
     return 4;
   }
   // abs,X or abs,Y.
@@ -301,7 +301,7 @@ int Sizer::compare_size(const ir::Type_operand& left,
     }
     return 3;
   }
-  if (is_indirect_y(right)) {
+  if (needs_ldy_setup(right)) {
     if (!left_a) {
       fail("Compare with left=" + repr(left) +
            " requires Imm/Data/ZP right (no indirect-Y for CPX/CPY)");
@@ -797,7 +797,7 @@ void Emitter::mov(const ir::Type_operand& src, const ir::Type_operand& dst, Byte
     zp_or_abs(is_reg_x(src) ? "STX" : "STY", resolve_abs(dst), out);
     return;
   }
-  if (is_reg_xy(src) && is_indirect_y(dst)) {
+  if (is_reg_xy(src) && needs_ldy_setup(dst)) {
     out.push_back(implied(is_reg_x(src) ? "TXA" : "TYA"));
     indy("STA", dst, out);
     return;
@@ -817,7 +817,7 @@ void Emitter::mov(const ir::Type_operand& src, const ir::Type_operand& dst, Byte
 void Emitter::load_mem_to_a(const ir::Type_operand& op, Bytes& out) const {
   if (is_data_or_zp(op)) {
     zp_or_abs("LDA", resolve_abs(op), out);
-  } else if (is_indirect_y(op)) {
+  } else if (needs_ldy_setup(op)) {
     indy("LDA", op, out);
   } else if (isa<ir::IndirectY>(op)) {
     indy_no_y_setup("LDA", out);
@@ -833,7 +833,7 @@ void Emitter::load_mem_to_a(const ir::Type_operand& op, Bytes& out) const {
 void Emitter::store_a_to_mem(const ir::Type_operand& op, Bytes& out) const {
   if (is_data_or_zp(op)) {
     zp_or_abs("STA", resolve_abs(op), out);
-  } else if (is_indirect_y(op)) {
+  } else if (needs_ldy_setup(op)) {
     indy("STA", op, out);
   } else if (isa<ir::IndirectY>(op)) {
     indy_no_y_setup("STA", out);
@@ -856,7 +856,7 @@ void Emitter::accum_arith(std::string_view mn, const ir::Type_operand& src, Byte
     out.push_back(static_cast<std::uint8_t>(resolve_imm_label(src)));
   } else if (is_data_or_zp(src)) {
     zp_or_abs(mn, resolve_abs(src), out);
-  } else if (is_indirect_y(src)) {
+  } else if (needs_ldy_setup(src)) {
     indy(mn, src, out);
   } else if (const auto* d = as<ir::IndexedData>(src)) {
     abs_indexed(mn, resolve_indexed(*d), d->index, out);
@@ -895,7 +895,7 @@ void Emitter::compare(const ir::Type_operand& left, const ir::Type_operand& righ
            "addressing modes)");
     }
     abs_indexed(mn, resolve_indexed(*d), d->index, out);
-  } else if (is_indirect_y(right)) {
+  } else if (needs_ldy_setup(right)) {
     if (!cmp) {
       fail("Compare with left=" + repr(left) + " requires Imm/Data/ZP right; got " +
            repr(right));

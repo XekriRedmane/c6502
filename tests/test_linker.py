@@ -2,24 +2,20 @@
 objects).
 
 Strategy: compile each input .c file separately to an object with
-`-c -O`, link the objects into an executable, then either inspect
-the executable's disassembly and metadata (`link_helpers.linked_text`)
-or simulate it.
+`-c -O`, link the objects into an executable, and simulate it.
 
 Coverage:
-  - Two TUs each defining one zp_abi function, with `main` in
-    one and a helper in the other. Linker re-allocates symbols
-    across them; sim runs correctly.
-  - Linker rejects cross-TU duplicate definition.
-  - Linker rejects a non-zp_abi extern callee.
-  - Linker rejects cross-TU recursion (mutual).
-  - The executable has one merged metadata block.
-  - A declaration that names a parameter differently from the
-    definition, or leaves it unnamed, links: its slot symbols are
-    bound to the definition's by position.
+  - A cycle whose every call saves the hardware stack runs.
+  - Slots go below the pool when it's full.
+  - Code run through a pointer parameter stays in each function whose
+    slots the link moves apart.
+  - Two units' `static` functions of the same name are renamed.
   - The halves of the tables of row addresses that several units
     make with the same bytes are one copy in the program, and units
     read through the copy another unit made.
+
+The tests that read only the linked program's text or the link's
+errors are doctest cases in cpp/tests/test_linker_source.cpp.
 """
 from __future__ import annotations
 
@@ -32,229 +28,6 @@ from tests.link_helpers import (
     link_capture_stderr as _link_capture_stderr, linked_text,
 )
 from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestLinkerHappyPath(unittest.TestCase):
-    def test_two_tus_link_and_simulate(self) -> None:
-        # TU A: defines main, calls extern helper.
-        # TU B: defines helper.
-        # Both are zp_abi-annotated. Linker re-allocates so the
-        # symbols agree across TUs. `base` arrives in A and X, so `x`
-        # arrives in its slot.
-        tu_a = (
-            "[[c6502::zp_abi]] extern int helper(int base, int x); "
-            "int main(void) { return helper(1, 7); }"
-        )
-        tu_b = (
-            "[[c6502::zp_abi]] int helper(int base, int x) { "
-            "  return base + x; "
-            "}"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            a = tmp / "a.o"
-            b = tmp / "b.o"
-            out = tmp / "linked"
-            self.assertEqual(_compile_to_obj(tu_a, a), 0)
-            self.assertEqual(_compile_to_obj(tu_b, b), 0)
-            self.assertEqual(_link([a, b], out), 0)
-            text = linked_text(out)
-            # One global EQU block at the top.
-            self.assertIn("__zpabi_helper__x_0\tEQU\t", text)
-            # The function bodies appear after the EQU block.
-            self.assertIn("main:", text)
-            self.assertIn("helper:", text)
-            # No leftover per-TU metadata bracketed blocks
-            # inside the body (one merged block remains at the
-            # top).
-            self.assertEqual(
-                text.count("@zp-link-meta-begin"), 1,
-                "Should have exactly one (merged) metadata block",
-            )
-
-    def test_reg_attribute_propagates_across_tus(self) -> None:
-        # `register`-param extern in TU A; definition in TU B. The
-        # linker must reconstruct the ZpLayout with the params'
-        # register assignment so the per-TU asm bodies agree on the
-        # calling convention. The first register arg-byte goes in A,
-        # the second in X — so TU A's main passes `a` in A and `b` in
-        # X; TU B's helper definition uses the entry-stub copies from
-        # A / X. The metadata block carries the param register info
-        # between them.
-        tu_a = (
-            'extern char helper(register char a, register char b);'
-            'int main(void) { return helper(5, 7); }'
-        )
-        tu_b = (
-            'char helper(register char a, register char b) {'
-            '    return (char)(a + b);'
-            '}'
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            a = tmp / "a.o"
-            b = tmp / "b.o"
-            out = tmp / "linked"
-            self.assertEqual(_compile_to_obj(tu_a, a), 0)
-            self.assertEqual(_compile_to_obj(tu_b, b), 0)
-            self.assertEqual(_link([a, b], out), 0)
-            text = linked_text(out)
-            # TU A's main should load `b` into X before JSR (the
-            # direct-into-X peephole renders `LDA #imm; TAX` as a
-            # single LDX #imm). NOT `STA __zpabi_helper__b` — that's
-            # the soft-stack-style slot write the linker would emit if
-            # it lost the register assignment.
-            main_idx = text.index("main:")
-            helper_idx = text.index("helper:")
-            if main_idx < helper_idx:
-                main_body = text[main_idx:helper_idx]
-            else:
-                main_body = text[main_idx:]
-            self.assertRegex(main_body, r"LDX\s+#")
-            self.assertNotIn("STA\t__zpabi_helper__b", main_body)
-            # And the metadata block at the top of the linked output
-            # should carry the param_regs annotation (A for `a`,
-            # X for `b`).
-            self.assertIn("param_regs=A,X", text)
-
-    def test_linker_dedupe_externs(self) -> None:
-        # Two TUs that both declare the same extern. The linker
-        # collapses them into one entry (no error). `base` arrives in
-        # A and X, so `x` arrives in its slot.
-        tu_a = (
-            "[[c6502::zp_abi]] extern int helper(int base, int x); "
-            "[[c6502::zp_abi]] int caller_a(int n) { "
-            "  return helper(0, n); "
-            "}"
-        )
-        tu_b = (
-            "[[c6502::zp_abi]] extern int helper(int base, int x); "
-            "[[c6502::zp_abi]] int caller_b(int n) { "
-            "  return helper(0, n + 1); "
-            "}"
-        )
-        tu_c = (
-            "[[c6502::zp_abi]] int helper(int base, int x) { "
-            "  return base + x + 100; "
-            "}"
-            "int main(void) { return 0; }"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            paths = []
-            for name, src in [("a", tu_a), ("b", tu_b), ("c", tu_c)]:
-                p = tmp / f"{name}.o"
-                self.assertEqual(_compile_to_obj(src, p), 0)
-                paths.append(p)
-            out = tmp / "linked"
-            self.assertEqual(_link(paths, out), 0)
-            text = linked_text(out)
-            # One EQU per symbol.
-            self.assertEqual(text.count("__zpabi_helper__x_0\tEQU\t"), 1)
-
-
-@needs_c6502cpp
-class TestLinkerErrors(unittest.TestCase):
-    def test_duplicate_definition_rejected(self) -> None:
-        # Both TUs define `helper`. Link error.
-        tu_a = (
-            "[[c6502::zp_abi]] int helper(int x) { "
-            "  return x + 1; "
-            "}"
-        )
-        tu_b = (
-            "[[c6502::zp_abi]] int helper(int x) { "
-            "  return x + 2; "
-            "}"
-            "int main(void) { return helper(3); }"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            a = tmp / "a.o"
-            b = tmp / "b.o"
-            out = tmp / "linked"
-            self.assertEqual(_compile_to_obj(tu_a, a), 0)
-            self.assertEqual(_compile_to_obj(tu_b, b), 0)
-            rc, err = _link_capture_stderr([a, b], out)
-            self.assertEqual(rc, 1)
-            self.assertIn("multiple TUs", err)
-            self.assertIn("helper", err)
-
-    def test_unannotated_extern_accepted_under_default_zp_abi(self) -> None:
-        # Under the default-zp_abi policy (`-O`), every
-        # extern is treated as zp_abi at the call site: here `x`
-        # arrives in A and X, since the declaration names no
-        # register, and any later args in the callee's
-        # `__zpabi_*` slots, and the per-TU output
-        # advertises the extern in `; @zp-link-meta-begin`. The
-        # linker's allocation accepts it, and the function's address
-        # has to come from somewhere: no object defines it, so the
-        # link fails on the undefined symbol until `--defsym` gives
-        # one. The user is on the hook for the definition's ABI.
-        src = (
-            "extern int regular_lib_fn(int x); "
-            "int main(void) { return regular_lib_fn(7); }"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            p = tmp / "a.o"
-            out = tmp / "linked"
-            self.assertEqual(_compile_to_obj(src, p), 0)
-            rc, err = _link_capture_stderr([p], out)
-            self.assertEqual(rc, 1)
-            self.assertIn("undefined symbol `regular_lib_fn`", err)
-            rc, err = _link_capture_stderr(
-                [p], out, extra=["--defsym", "regular_lib_fn=0x6000"],
-            )
-            self.assertEqual(rc, 0, f"Expected link to succeed, stderr: {err!r}")
-
-    def test_recursion_across_units_rejected(self) -> None:
-        # Neither unit sees the cycle between `f` and `g`. The link used
-        # to fail in the slot allocator, with a message that called the
-        # cycle an internal error, when the functions take parameters in
-        # slots, and on the undefined `__local_f__t` when they don't.
-        cases = {
-            "slots": (
-                "void g(unsigned char a, unsigned char b, unsigned char c);\n"
-                "void f(unsigned char a, unsigned char b, unsigned char c)"
-                " { g(a, b, c); }\n",
-                "void f(unsigned char a, unsigned char b, unsigned char c);\n"
-                "void g(unsigned char a, unsigned char b, unsigned char c)"
-                " { if (a) f(a - 1, b, c); }\n"
-                "int main(void) { g(3, 4, 5); return 0; }\n",
-            ),
-            "locals": (
-                "extern unsigned char n;\nvoid g(void);\n"
-                "void f(void) { volatile unsigned char t = n; if (t) g(); }\n",
-                "unsigned char n = 3;\nvoid f(void);\n"
-                "void g(void) { n--; f(); }\n"
-                "int main(void) { g(); return 0; }\n",
-            ),
-        }
-        for label, (tu_a, tu_b) in cases.items():
-            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
-                tmp = Path(tmp)
-                self.assertEqual(_compile_to_obj(tu_a, tmp / "a.o"), 0)
-                self.assertEqual(_compile_to_obj(tu_b, tmp / "b.o"), 0)
-                rc, err = _link_capture_stderr(
-                    [tmp / "a.o", tmp / "b.o"], tmp / "linked")
-                self.assertEqual(rc, 1)
-                self.assertIn(
-                    "link error: function(s) on a cycle of calls between "
-                    "units, which can't have private pools (recursion is "
-                    "supported only within one unit, when every call in the "
-                    "cycle is marked `[[c6502::save_hardware_stack]]`): "
-                    "['f', 'g']", err)
-
-    def test_no_inputs_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "linked"
-            # argparse rejects empty positional with nargs=+
-            # (SystemExit from its built-in error path).
-            with self.assertRaises(SystemExit) as cm:
-                _link_capture_stderr([], out)
-            self.assertNotEqual(cm.exception.code, 0)
 
 
 def _equs(text: str) -> dict[str, int]:
@@ -280,95 +53,6 @@ class TestParameterNames(unittest.TestCase):
         "{ return w + c + n; }"
     )
 
-    def _link_with(self, decl: str) -> tuple[int, str, str]:
-        caller = decl + " int main(void) { return put(2, 4, 300); }"
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            a, b, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
-            self.assertEqual(_compile_to_obj(self._DEF, a), 0)
-            self.assertEqual(_compile_to_obj(caller, b), 0)
-            rc, err = _link_capture_stderr([a, b], out)
-            return rc, err, linked_text(out) if rc == 0 else ""
-
-    def _assert_bound_like_definition(self, text: str, names) -> None:
-        equs = _equs(text)
-        for decl_sym, def_sym in names:
-            self.assertEqual(equs[decl_sym], equs[def_sym], decl_sym)
-
-    def test_renamed_parameters_link(self) -> None:
-        rc, err, text = self._link_with(
-            "unsigned char put(unsigned int w, unsigned char x, int count);",
-        )
-        self.assertEqual(rc, 0, err)
-        self._assert_bound_like_definition(text, [
-            ("__zpabi_put__x", "__zpabi_put__c"),
-            ("__zpabi_put__count_0", "__zpabi_put__n_0"),
-            ("__zpabi_put__count_1", "__zpabi_put__n_1"),
-        ])
-
-    def test_unnamed_parameters_link(self) -> None:
-        rc, err, text = self._link_with(
-            "unsigned char put(unsigned int, unsigned char, int);",
-        )
-        self.assertEqual(rc, 0, err)
-        self._assert_bound_like_definition(text, [
-            ("__zpabi_put__1", "__zpabi_put__c"),
-            ("__zpabi_put__2_0", "__zpabi_put__n_0"),
-            ("__zpabi_put__2_1", "__zpabi_put__n_1"),
-        ])
-
-    def test_swapped_names_rejected(self) -> None:
-        # `__zpabi_put__a` would be the first byte in one unit and the
-        # second in the other.
-        definition = (
-            "unsigned char put(unsigned int w, unsigned char a, "
-            "unsigned char b) { return w + a - b; }"
-        )
-        caller = (
-            "unsigned char put(unsigned int w, unsigned char b, "
-            "unsigned char a);"
-            " int main(void) { return put(0, 4, 3); }"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            a, b, out = tmp / "a.o", tmp / "b.o", tmp / "linked"
-            self.assertEqual(_compile_to_obj(definition, a), 0)
-            self.assertEqual(_compile_to_obj(caller, b), 0)
-            rc, err = _link_capture_stderr([a, b], out)
-        self.assertEqual(rc, 1)
-        self.assertIn("same names", err)
-
-    def test_different_sizes_dont_collide(self) -> None:
-        # `n` and `c` swap, but one is 1 byte and the other 2, so their
-        # symbols (`__zpabi_put__n` and `__zpabi_put__n_0`) differ.
-        rc, err, text = self._link_with(
-            "unsigned char put(unsigned int w, unsigned char n, int c);",
-        )
-        self.assertEqual(rc, 0, err)
-        self._assert_bound_like_definition(text, [
-            ("__zpabi_put__n", "__zpabi_put__c"),
-            ("__zpabi_put__c_0", "__zpabi_put__n_0"),
-        ])
-
-    def test_byte_count_mismatch_rejected(self) -> None:
-        rc, err, _ = self._link_with(
-            "unsigned char put(unsigned int w, unsigned char c, long n);",
-        )
-        self.assertEqual(rc, 1)
-        self.assertIn("parameter byte", err)
-
-    def test_unnamed_parameter_in_one_unit(self) -> None:
-        # Calling a function declared with an unnamed parameter used
-        # to crash `-O`, with or without the annotation.
-        from compile import _run_source
-        for attr in ("", "[[c6502::zp_abi]] "):
-            src = (attr + "unsigned char put(unsigned char);\n"
-                   "int main(void) { return put(4); }\n")
-            with self.subTest(attr=attr):
-                self.assertIn("__zpabi_put__0", _run_source(
-                    "codegen", src, optimize=True,
-                ))
-
     def test_unnamed_prototype_then_definition_runs(self) -> None:
         from sim.harness import build_sim
         src = ("unsigned char put(unsigned int, unsigned char, int);\n"
@@ -383,8 +67,8 @@ class TestParameterNames(unittest.TestCase):
 
 class TestRecursionWithSaves(unittest.TestCase):
     """A cycle whose every call is marked
-    `[[c6502::save_hardware_stack]]` links, as Zork's print_zstring
-    does; one without the attribute doesn't."""
+    `[[c6502::save_hardware_stack]]` links and runs, as Zork's
+    print_zstring does."""
 
     _SAVED = """
     unsigned char depth;
@@ -407,13 +91,6 @@ class TestRecursionWithSaves(unittest.TestCase):
             text = linked_text(out) if rc == 0 else ""
         return rc, err, text
 
-    def test_saved_cycle_links(self):
-        rc, err, text = self._link_one(
-            self._SAVED + "int main(void) { walk(3); return out; }\n",
-        )
-        self.assertEqual(rc, 0, err)
-        self.assertIn("JSR   walk", text)
-
     def test_saved_cycle_runs(self):
         from sim.linked import build_linked_sim
         rc, err, text = self._link_one(
@@ -422,22 +99,6 @@ class TestRecursionWithSaves(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         # out = ((0 * 3 + 1) * 3 + 2) * 3 + 3
         self.assertEqual(build_linked_sim(text.exe).run().return_int(), 18)
-
-    def test_cycle_without_saves_rejected(self):
-        src = (
-            "unsigned char out;\n"
-            "void walk(unsigned char n) { if (n) { walk(n - 1); out++; } }\n"
-            "int main(void) { walk(3); return out; }\n"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp = Path(tmp)
-            p = tmp / "a.o"
-            # Without the attribute the compile itself falls back to the
-            # soft stack, which the linker can't re-allocate.
-            if _compile_to_obj(src, p) != 0:
-                return
-            rc, err = _link_capture_stderr([p], tmp / "linked")
-            self.assertNotEqual(rc, 0)
 
 if __name__ == "__main__":
     unittest.main()

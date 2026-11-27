@@ -9,6 +9,8 @@ by anything but a constant below the narrow width) and non-SSA-renamed
 names, the constant-narrowing logic that
 masks Constants modulo the target width, and a truncated comparison
 narrowing to its 1-byte result.
+
+The `-S` text is checked in cpp/tests/test_narrow_widened_arith.cpp.
 """
 
 import unittest
@@ -38,13 +40,6 @@ class TestGlobalShiftOnTwoPathsSim(unittest.TestCase):
         "}\n"
     )
 
-    def test_one_byte_shifts(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        body = asm[asm.index("\nf:"):asm.index("\nmain:")]
-        self.assertEqual(body.count("LSR   alive"), 2, body)
-        self.assertNotIn("ROR", body)
-
     def test_runs(self):
         from sim.harness import build_sim
         for optimize in (False, True):
@@ -72,16 +67,6 @@ class TestVariableLeftShift(unittest.TestCase):
         "    return bad;\n"
         "}\n"
     )
-
-    def test_shifts_one_byte(self):
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        body = asm[asm.index("\ns:"):asm.index("\nmain:")]
-        # `v` arrives in A, and the loop shifts it there
-        # (`shift_in_a._shift_loop_in_a`).
-        self.assertIn(".shift_loop@0:\n   ASL\n", body)
-        self.assertNotIn("ROL", body)
-        self.assertNotIn("JSR", body)
 
     def test_runs(self):
         from sim.harness import build_sim

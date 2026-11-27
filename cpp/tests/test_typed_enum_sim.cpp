@@ -1,47 +1,45 @@
-"""C23's enumerations with a fixed underlying type (§6.7.3.3), `enum
-e : T { ... }` and `enum e : T;`: the types of the enum and of its
-constants, the checks of each value against the type, declarations of
-the tag apart from its list, and programs run through the TAC
-simulator and the asm simulator with and without `-O`.
+// The simulator tests of tests/test_typed_enum.py: a program that checks
+// C23's enumerations with a fixed underlying type (§6.7.3.3) returns 0,
+// and narrowing casts in static initializers give the values C does, in
+// both pipelines.
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <vector>
 
-`_PROGRAM` returns 0 when every check passes, and otherwise the number
-of the first check that fails.
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
 
-The TAC interpreter's results are checked in
-cpp/tests/test_typed_enum.cpp."""
+namespace c6502::suite {
+namespace {
 
-from __future__ import annotations
+namespace narrowing_cast_in_static_init {
+// A cast to a narrower integer type in a static initializer kept
+// the value it was given, so `static long v = (unsigned char)400;`
+// stored 400. `test_sizeof_and_promotions` found it with `(unsigned
+// char)(M + M)`.
+TEST_CASE("typed_enum: values") {
+  for (const auto& [src, want] :
+       std::vector<std::tuple<std::string, int>>{{"static long v = (unsigned char)400;", 144},
+                                                 {"static int v = (signed char)200;", -56},
+                                                 {"static const int v = (signed char)200;", -56},
+                                                 {"static unsigned v = (unsigned char)-1;", 255},
+                                                 {"static long v = (short)40000;", -25536},
+                                                 {"static int v = (bool)256;", 1}}) {
+    auto program = src + " int main(void) { return v; }";
+    for (bool optimize : {false, true}) {
+      INFO("src=" << src << " optimize=" << optimize);
+      auto result = build_sim(program, optimize).run();
+      CHECK(result.return_int_signed() == want);
+    }
+  }
+}
 
-import unittest
+}  // namespace narrowing_cast_in_static_init
 
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestNarrowingCastInStaticInit(unittest.TestCase):
-    """A cast to a narrower integer type in a static initializer kept
-    the value it was given, so `static long v = (unsigned char)400;`
-    stored 400. `test_sizeof_and_promotions` found it with `(unsigned
-    char)(M + M)`."""
-
-    def test_values(self) -> None:
-        for src, want in [
-            ("static long v = (unsigned char)400;", 144),
-            ("static int v = (signed char)200;", -56),
-            ("static const int v = (signed char)200;", -56),
-            ("static unsigned v = (unsigned char)-1;", 255),
-            ("static long v = (short)40000;", -25536),
-            ("static int v = (bool)256;", 1),
-        ]:
-            program = src + " int main(void) { return v; }"
-            for optimize in (False, True):
-                with self.subTest(src=src, optimize=optimize):
-                    result = build_sim(program, optimize=optimize).run()
-                    self.assertEqual(result.return_int_signed(), want)
-
-
-_PROGRAM = """
+const std::string kProgram = R"c(
 #include <stdint.h>
 
 enum kind : uint8_t;
@@ -146,19 +144,18 @@ int main(void) {
     if (r == 0) r = pointers();
     return r;
 }
-"""
+)c";
+namespace programs {
+TEST_CASE("typed_enum: asm sim") {
+  for (bool optimize : {false, true}) {
+    INFO("optimize=" << optimize);
+    auto result = build_sim(kProgram, optimize).run();
+    CHECK_FALSE(result.timed_out);
+    CHECK(result.return_int_signed() == 0);
+  }
+}
 
+}  // namespace programs
 
-@needs_c6502cpp
-class TestPrograms(unittest.TestCase):
-
-    def test_asm_sim(self) -> None:
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                result = build_sim(_PROGRAM, optimize=optimize).run()
-                self.assertFalse(result.timed_out)
-                self.assertEqual(result.return_int_signed(), 0)
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace
+}  // namespace c6502::suite

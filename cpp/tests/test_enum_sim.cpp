@@ -1,20 +1,20 @@
-"""Enumerations (C99 §6.7.2.2): the parser's enumeration constants
-and enum tags, and programs run through the TAC simulator and the asm
-simulator with and without `-O`.
+// The simulator tests of tests/test_enum.py: programs with enumerations
+// (C99 §6.7.2.2) run to the values C gives in both pipelines.
+#include <cstdint>
+#include <string>
+#include <tuple>
+#include <vector>
 
-The TAC interpreter's results are checked in cpp/tests/test_enum.cpp."""
+#include "batch1_case.h"
+#include "compile_case.h"
+#include "doctest.h"
+#include "sim_case.h"
 
-from __future__ import annotations
+namespace c6502::suite {
+namespace {
 
-import unittest
-
-from sim.harness import build_sim
-from tests.cpp_build import needs_c6502cpp
-
-
-# (name, C source, expected int return of main)
-_PROGRAMS: list[tuple[str, str, int]] = [
-    ("enum", """
+// (name, C source, expected int return of main)
+const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {{"enum", R"c(
         enum color { RED, GREEN = 5, BLUE, LAST = BLUE + 10 };
         typedef enum { OFF, ON } state;
         enum { N = 4, NEG = -3, BIG = 32767 };
@@ -43,14 +43,16 @@ _PROGRAMS: list[tuple[str, str, int]] = [
             r += (enum color)3;
             return r;
         }
-    """, 158),
-    ("enum_negative_static", """
+    )c",
+                                                                           158},
+                                                                          {"enum_negative_static", R"c(
         enum { M = -32768, P = 32767 };
         long lo = M;
         int hi = P;
         int main(void) { return (lo == -32768L) + (hi == 32767) * 2; }
-    """, 3),
-    ("enum_one_byte", """
+    )c",
+                                                                           3},
+                                                                          {"enum_one_byte", R"c(
         typedef enum : unsigned char { IDLE, RUN, STOP = 250 } state;
         enum dir : signed char { LEFT = -1, NONE, RIGHT };
         struct actor { state s; enum dir d; unsigned char x; };
@@ -76,21 +78,18 @@ _PROGRAMS: list[tuple[str, str, int]] = [
             r += (actors[1].s == IDLE) * 10000;
             return r;
         }
-    """, 13167),
-]
+    )c",
+                                                                           13167}};
+TEST_CASE("enum: asm sim") {
+  for (const auto& [name, src, expected] : kPrograms) {
+    for (bool optimize : {false, true}) {
+      INFO("case=" << name << " optimize=" << optimize);
+      auto result = build_sim(src, optimize).run();
+      CHECK_FALSE(result.timed_out);
+      CHECK(result.return_int_signed() == expected);
+    }
+  }
+}
 
-
-@needs_c6502cpp
-class TestPrograms(unittest.TestCase):
-
-    def test_asm_sim(self) -> None:
-        for name, src, expected in _PROGRAMS:
-            for optimize in (False, True):
-                with self.subTest(case=name, optimize=optimize):
-                    result = build_sim(src, optimize=optimize).run()
-                    self.assertFalse(result.timed_out)
-                    self.assertEqual(result.return_int_signed(), expected)
-
-
-if __name__ == "__main__":
-    unittest.main()
+}  // namespace
+}  // namespace c6502::suite

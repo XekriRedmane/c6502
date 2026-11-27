@@ -17,6 +17,8 @@ Coverage:
   * Asm-level smoke: the `JSR f; LDA/BEQ/LDA #0/JMP/LDA #1/ORA/BEQ`
     materialize-then-test sequence collapses to a single inverted
     branch.
+
+The `-S` text is checked in cpp/tests/test_lnot_jump_fold.cpp.
 """
 from __future__ import annotations
 
@@ -72,46 +74,6 @@ class TestEndToEnd(unittest.TestCase):
         )
         a, b = self._both_paths(src)
         self.assertEqual((a, b), (30, 30))
-
-
-class TestAsmShape(unittest.TestCase):
-    """For `if (!uchar) return;` returning a single byte from a JSR,
-    the optimized body should drop the 0/1-materialize + re-test
-    sequence and use a single inverted branch."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_lnot_uchar_collapses_to_single_branch(self):
-        # `if (!a) return 1;` for uint8_t `a` — the body should NOT
-        # contain the LogicalNot's 0/1-materialize labels
-        # (.lnot_true / .lnot_end) after the fold.
-        src = (
-            "#include <stdint.h>\n"
-            "int f(uint8_t a) { if (!a) return 1; return 2; }\n"
-            "int main(void) { return f(0); }\n"
-        )
-        asm = self._compile(src)
-        body = self._extract_function(asm, "f")
-        self.assertNotIn(".lnot_true", body)
-        self.assertNotIn(".lnot_end", body)
-
-    @staticmethod
-    def _extract_function(asm: str, name: str) -> str:
-        out: list[str] = []
-        in_fn = False
-        for line in asm.splitlines():
-            if line.startswith(f"{name}:"):
-                in_fn = True
-            if in_fn:
-                if (
-                    line and not line.startswith((" ", "\t", "."))
-                    and line.endswith(":") and not line.startswith(f"{name}:")
-                ):
-                    break
-                out.append(line)
-        return "\n".join(out)
 
 
 if __name__ == "__main__":

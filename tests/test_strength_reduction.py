@@ -15,6 +15,8 @@ Coverage:
 Sim-end-to-end checks confirm the rewritten programs produce
 identical results to the unoptimized helper-call paths for both
 signed and unsigned arithmetic.
+
+The `-S` text is checked in cpp/tests/test_strength_reduction.cpp.
 """
 from __future__ import annotations
 
@@ -168,16 +170,6 @@ class TestInlineShiftByOne(unittest.TestCase):
 class TestThreeTermByteMultiply(unittest.TestCase):
     """A byte times a constant of three signed powers of two is shifts
     and adds, where it had called `mul8`."""
-
-    def test_prng_step(self):
-        from compile import _run_source
-        src = (
-            "#include <stdint.h>\n"
-            "uint8_t st;\n"
-            "uint8_t prng(void) { st = 69 * st + 0x53; return st >> 1; }\n"
-        )
-        asm = _run_source("codegen", src, optimize=True)
-        self.assertNotIn("mul8", asm)
 
     def test_every_byte_constant(self):
         # Each constant from 0 to 255 times a few values, against

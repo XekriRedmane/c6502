@@ -19,6 +19,9 @@ Coverage:
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in
+cpp/tests/test_redundant_load_after_rmw_source.cpp.
 """
 from __future__ import annotations
 
@@ -28,43 +31,6 @@ from tests.cpp_build import needs_c6502cpp
 
 @needs_c6502cpp
 class TestRedundantLoadAfterRmwE2E(unittest.TestCase):
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_signed_countdown_collapses_to_dec_bpl(self) -> None:
-        # `int8_t` (1 byte signed): the post-decrement is a 1-byte
-        # SBC chain that `dec_peephole` collapses to DEC, and the
-        # cond becomes a 1-byte test against zero. This pass then
-        # drops the redundant LDA between DEC and BPL.
-        src = (
-            "#include <stdint.h>\n"
-            "int sum;\n"
-            "int main(void) {\n"
-            "    for (int8_t x = 15; x >= 0; x--) sum += x;\n"
-            "    return sum;\n"
-            "}\n"
-        )
-        asm = self._compile(src)
-        # The loop tail must contain "DEC <op>" followed (possibly
-        # via a label) by "BPL", with no intervening "LDA <op>"
-        # for the same op.
-        lines = asm.split("\n")
-        dec_line = None
-        for i, l in enumerate(lines):
-            if l.strip().startswith("DEC   "):
-                dec_line = i
-                break
-        self.assertIsNotNone(dec_line, msg=f"no DEC in:\n{asm}")
-        # The instruction after DEC (skipping any blank lines)
-        # should be BPL — no LDA between.
-        nxt = dec_line + 1
-        while nxt < len(lines) and not lines[nxt].strip():
-            nxt += 1
-        self.assertTrue(
-            lines[nxt].strip().startswith("BPL "),
-            msg=f"expected BPL after DEC, got {lines[nxt]!r}\n{asm}",
-        )
 
     def test_simulator_returns_correct_value(self) -> None:
         # Verify semantics preserved end-to-end through the sim.

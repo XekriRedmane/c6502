@@ -4,6 +4,9 @@ Covers the `Truncate(Extend(x), u)` → `Copy(x, u)` / narrower-
 Truncate folds, plus the soundness gate that excludes non-SSA-
 renamed names (globals, statics, address-taken locals) which can
 have multiple definitions.
+
+The `-S` text is checked in
+cpp/tests/test_truncate_extend_fold_source.cpp.
 """
 
 import unittest
@@ -42,18 +45,6 @@ class TestByteLoopAgainstSizeof(unittest.TestCase):
     (`cmp_zero_jump_fold.NARROW_JUMP_COMPARE_RULE`), or keeps it when
     the extend has other readers, as the address of `p[i]` is in the
     third loop, and the narrowing looks through it."""
-
-    def test_one_byte_compare(self):
-        from compile import _run_source
-        asm = _run_source("codegen", _SIZEOF_LOOPS, optimize=True)
-        body = asm[asm.index("\nf:"):asm.index("\nmain:")]
-        # The third loop keeps its counter in memory, so its compare
-        # is `CMP #$28`.
-        self.assertEqual(
-            body.count("CPX   #$28") + body.count("CMP   #$28"), 3, body,
-        )
-        self.assertNotIn("SBC", body)
-        self.assertNotIn("sx_done", body)
 
     def test_runs(self):
         from sim.harness import build_sim

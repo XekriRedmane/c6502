@@ -20,6 +20,8 @@ Sim coverage: confirms each pattern produces correct results vs
 the unoptimized helper-call path. Plus an asm-level smoke check
 that direct-memory shifts appear in the output for in-place
 compound assignments.
+
+The `-S` text is checked in cpp/tests/test_inline_shift_direct.cpp.
 """
 from __future__ import annotations
 
@@ -108,72 +110,6 @@ class TestInlineShiftCorrectness(unittest.TestCase):
         )
         self.assertEqual(_run_int(src, opt=False, signed=False), 0x8642)
         self.assertEqual(_run_int(src, opt=True, signed=False), 0x8642)
-
-
-class TestInlineShiftDirectMemoryEmit(unittest.TestCase):
-    """Asm-level smoke check that direct-memory shift opcodes
-    appear in the output for compound assignments on ZP-coloreable
-    operands."""
-
-    def _compile_asm(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_direct_asl_appears(self):
-        # `g <<= 1` on a global shifts it in place, with a direct
-        # `ASL g` (not an `ASL A` round-trip).
-        src = (
-            "int g;\n"
-            "void f(void) { g <<= 1; }\n"
-            "int main(void) { g = 50; f(); return g; }\n"
-        )
-        asm = self._compile_asm(src)
-        # Scan f's body for direct-mode ASL.
-        body = self._extract_function(asm, "f")
-        # Direct ASL has the form `ASL   $XX` (zp) or `ASL name+off`
-        # (Data); accumulator form is `ASL   A`.
-        direct_asl_lines = [
-            line for line in body.splitlines()
-            if "ASL" in line and "A" not in line.split()[-1]
-        ]
-        self.assertTrue(
-            direct_asl_lines,
-            f"expected direct-memory ASL in f's body, got:\n{body}",
-        )
-
-    def test_shift_into_another_byte_runs_in_a(self):
-        # A parameter shifted into a local isn't in place, so each
-        # byte goes through A: `LDA x; ASL; STA t`, not `LDA x; STA
-        # t; ASL t` (cpp/src/passes/shift_in_a.h). `f` takes an unused `d`
-        # in A, so that `x` arrives in its slot.
-        src = (
-            "int f(unsigned char d [[c6502::in_a]], int x) {\n"
-            "    x <<= 1;\n"
-            "    return x;\n"
-            "}\n"
-            "int main(void) { return f(0, 50); }\n"
-        )
-        body = self._extract_function(self._compile_asm(src), "f")
-        ops = [line.split() for line in body.splitlines() if line.strip()]
-        self.assertIn(["ASL"], ops)
-        self.assertIn(["ROL"], ops)
-        self.assertNotIn("JSR", body)
-
-    @staticmethod
-    def _extract_function(asm: str, name: str) -> str:
-        out: list[str] = []
-        in_fn = False
-        for line in asm.splitlines():
-            if line.startswith(f"{name}:"):
-                in_fn = True
-            if in_fn:
-                if (
-                    line and not line.startswith((" ", "\t", "."))
-                    and line.endswith(":") and not line.startswith(f"{name}:")
-                ):
-                    break
-                out.append(line)
-        return "\n".join(out)
 
 
 if __name__ == "__main__":

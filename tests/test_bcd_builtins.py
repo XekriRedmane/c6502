@@ -1,10 +1,9 @@
 """Tests for the packed BCD builtins, `__c6502_bcd_add` and
 `__c6502_bcd_sub` (builtin_functions.py, docs/builtins.md).
 
-The arithmetic is checked against py65's decimal mode, which the
-simulator runs, for every pair of bytes, and both pipelines for the
-values the simulator computes. The tests of the constants the optimizer
-folds and the code the back end writes are doctest cases in
+Both pipelines are checked here for the values the simulator computes.
+The tests of the arithmetic, of the constants the optimizer folds, and
+of the code the back end writes are doctest cases in
 cpp/tests/test_bcd_builtins.cpp, which runs the programs below on the
 TAC interpreter too.
 """
@@ -17,45 +16,6 @@ import builtin_functions as bf
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
-
-
-
-class TestArithmetic(unittest.TestCase):
-    """`adc_byte` and `sbc_byte` against py65's decimal mode, for
-    every accumulator, operand, and carry."""
-
-    def test_every_byte_pair_matches_py65(self) -> None:
-        from py65.devices.mpu6502 import MPU
-        mpu = MPU()
-        for name, fn, opcode in (
-            ("ADC", bf.adc_byte, 0x69), ("SBC", bf.sbc_byte, 0xE9),
-        ):
-            bad = []
-            for a in range(256):
-                for b in range(256):
-                    for c in (0, 1):
-                        mpu.memory[0x200] = opcode
-                        mpu.memory[0x201] = b
-                        mpu.pc = 0x200
-                        mpu.a = a
-                        mpu.p = mpu.DECIMAL | mpu.UNUSED | (
-                            mpu.CARRY if c else 0
-                        )
-                        mpu.step()
-                        got = fn(a, b, c)
-                        want = (mpu.a, int(bool(mpu.p & mpu.CARRY)))
-                        if got != want:
-                            bad.append((a, b, c, got, want))
-            with self.subTest(op=name):
-                self.assertEqual(bad[:5], [])
-
-    def test_wraps_and_borrows(self) -> None:
-        self.assertEqual(bf.bcd_add(0x99, 0x01, 1), 0x00)
-        self.assertEqual(bf.bcd_add(0x0099, 0x0001, 2), 0x0100)
-        self.assertEqual(bf.bcd_add(0x9999, 0x0001, 2), 0x0000)
-        self.assertEqual(bf.bcd_sub(0x00, 0x01, 1), 0x99)
-        self.assertEqual(bf.bcd_sub(0x0100, 0x0001, 2), 0x0099)
-        self.assertEqual(bf.bcd_add(0x00999999, 0x250, 4), 0x01000249)
 
 
 # Programs whose `main` returns a 16-bit value. Each runs in the

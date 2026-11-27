@@ -1,18 +1,24 @@
 // The tests of tests/test_bcd_builtins.py that read the TAC and the `-S`
 // text or run the TAC interpreter: `__c6502_bcd_add` and
 // `__c6502_bcd_sub` of constants fold, and the code of the others is one
-// chain of ADC or SBC between SED and CLD.
+// chain of ADC or SBC between SED and CLD. Also its tests of the
+// arithmetic, `adc_byte` and `sbc_byte` against the CPU's decimal mode
+// and `bcd_add` and `bcd_sub` on wrapping operands.
 #include <algorithm>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include "builtin_functions.h"
 #include "compile_case.h"
 #include "doctest.h"
+#include "sim/cpu.h"
 
 namespace {
 
+namespace bf = c6502::builtin_functions;
 namespace suite = c6502::suite;
 namespace ir = c6502::tac_ast;
 
@@ -303,4 +309,44 @@ TEST_CASE("bcd_builtins: the decimal flag is set only around the chain") {
     }
     CHECK_FALSE(inside);
   }
+}
+
+TEST_CASE("bcd_builtins: adc_byte and sbc_byte give the CPU's A and C for every byte pair and carry") {
+  // test_cpu.cpp checks the CPU's decimal mode against py65's on every
+  // one of these inputs.
+  using c6502::sim::Cpu;
+  for (const bool subtract : {false, true}) {
+    INFO((subtract ? "SBC" : "ADC"));
+    std::vector<std::string> bad;
+    Cpu cpu;
+    for (int a = 0; a < 256; ++a) {
+      for (int b = 0; b < 256; ++b) {
+        for (int c = 0; c < 2; ++c) {
+          cpu.memory[0x200] = subtract ? 0xE9 : 0x69;
+          cpu.memory[0x201] = static_cast<std::uint8_t>(b);
+          cpu.pc = 0x200;
+          cpu.a = static_cast<std::uint8_t>(a);
+          cpu.p = static_cast<std::uint8_t>(Cpu::kDecimal | Cpu::kUnused | c);
+          cpu.step();
+          const bf::ByteResult got = subtract ? bf::sbc_byte(a, b, c) : bf::adc_byte(a, b, c);
+          if (got.a != cpu.a || got.carry != (cpu.p & Cpu::kCarry)) {
+            bad.push_back(std::to_string(a) + " " + std::to_string(b) + " " + std::to_string(c));
+          }
+        }
+      }
+    }
+    if (bad.size() > 5) bad.resize(5);
+    CHECK(bad == std::vector<std::string>{});
+  }
+}
+
+TEST_CASE("bcd_builtins: bcd_add and bcd_sub wrap and borrow") {
+  const auto add = [](long long x, long long y, int n) { return static_cast<long long>(bf::bcd_add(x, y, n)); };
+  const auto sub = [](long long x, long long y, int n) { return static_cast<long long>(bf::bcd_sub(x, y, n)); };
+  CHECK(add(0x99, 0x01, 1) == 0x00);
+  CHECK(add(0x0099, 0x0001, 2) == 0x0100);
+  CHECK(add(0x9999, 0x0001, 2) == 0x0000);
+  CHECK(sub(0x00, 0x01, 1) == 0x99);
+  CHECK(sub(0x0100, 0x0001, 2) == 0x0099);
+  CHECK(add(0x00999999, 0x250, 4) == 0x01000249);
 }

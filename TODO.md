@@ -307,3 +307,70 @@ step 8 had. The root CLAUDE.md lists the Python that is left, and
 module. Once the suite is in
 C++, compile.py, nm.py, and objdump.py stop being shims, and the
 messages that still say `compile.py:` can change.
+
+## Flags left by the comment cleanup of cpp/src/passes
+
+The cleanup of 26 Nov 2026 deleted the comments in cpp/src/passes,
+and where a deleted comment had been excusing the code, the worker
+flagged the code. Most flags were refactors, and many were fixed in
+the same work. These are the ones still open that may be bugs. None
+has a test yet, so each one starts with a test that shows whether
+the code is wrong.
+
+- **`aliases` in cpp/src/passes/redundant_store.cpp.** Its final
+  `return false`, and the Push and Pop branch of `memory_writes`,
+  assume every `Data` name that isn't a runtime symbol sits at $0800
+  or above, outside zero page and page 1. The `__local_*` and
+  `__zpabi_*` slots are zero-page `Data` names, and a `-T` script can
+  put `.data` anywhere, so a store could be dropped while a write
+  through a pointer or a `PHA` reaches the same byte.
+- **`rewrite_function` in cpp/src/passes/redundant_compare.cpp.**
+  Dropping the second of two identical compares never checks
+  volatile. The deleted comment relied on `volatile_void_read_cmp`
+  never putting a branch after a volatile compare.
+- **`register_temp` in
+  cpp/src/passes/optimization/recognize_indirect_indexed.cpp.** It
+  registers `<addr>.base` and `<ptr>.y<k>` in the symbol table before
+  the rewrite is certain. The same pattern in `narrow_widened_arith`
+  was the bug behind fuzz.stmts seed 4009. Registering them in
+  `finish`, once the rewrite commits, would rule it out.
+- **The extern check in `merge`, cpp/src/passes/linker_metadata.cpp.**
+  The first declaration of an extern is checked only against the
+  definition, following the Python linker's order, so two units'
+  declarations that disagree with each other may link.
+- **`<stdbit.h>` functions reached by address.** `add_definitions`
+  (cpp/src/passes/stdbit_functions.cpp) gives each unit its own
+  definition with internal linkage, so a pointer to
+  `stdc_leading_zeros_uc` from one unit compares unequal to one from
+  another, which C23 doesn't allow. One definition with external
+  linkage in a section the linker keeps once, as `merge_identical`
+  does for the halves of row-address tables, would fix it.
+- **The rewrite in cpp/src/passes/optimization/copy_propagation.cpp.**
+  Its list of instruction kinds came from Python's `_rewrite`, so it
+  never propagates into the operands of `IndexedLoad` and the
+  indirect-indexed instructions. That costs code but gives no wrong
+  result. var_visit's use rewriter covers every kind.
+
+These flags would change the compiler's output, so they wait on a
+decision:
+
+- **Messages spelled in Python's syntax.** LinkError messages print
+  lists as Python reprs (`repr_list` and `repr_sorted` in
+  linker_metadata.cpp and linker_objects.cpp), a script's expression
+  in a message is a dataclass repr (`expr_repr` in link_layout.cpp),
+  and type errors say "NoneType", "LocalAttr", "StaticAttr", and
+  "FunAttr" (type_checker.cpp, `attr_class_name` in
+  type_checker_decls.cpp). The tests compare some of these messages.
+- **How a linker script is read.** `digit_value` and `int_base0` in
+  link_script.cpp take any Unicode digit, the lexer takes Unicode
+  white space, and `locale_encoding` imitates Python's choice of
+  encoding (PYTHONUTF8 and PEPs 538 and 540). Reading scripts as UTF-8
+  with ASCII digits and spaces would drop all of that.
+- **`fresh_label` in cpp/src/passes/tail_merge.cpp.** It makes a
+  label for each site, even one that never uses it, to number labels
+  as the Python pass did. Testing `in_reach` first changes the
+  numbers in golden/.
+- **The order of Phis.** `place_phis` in
+  cpp/src/passes/optimization/ssa_construction.cpp walks a
+  `PyIntSet`, which copies Python's set iteration order. A sorted set
+  changes the order of Phis in golden/.

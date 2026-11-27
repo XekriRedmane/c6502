@@ -15,6 +15,8 @@ run reaches the cycle cap.
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_volatile_named.cpp.
 """
 from __future__ import annotations
 
@@ -54,24 +56,6 @@ def _run(src: str, optimize: bool, mem=None, max_cycles=None):
 
 class TestReadsKept(unittest.TestCase):
 
-    def test_bare_read_statement(self) -> None:
-        for stmt in ("KBDSTRB;", "(void)KBDSTRB;"):
-            for optimize in (False, True):
-                with self.subTest(stmt, optimize=optimize):
-                    asm = _codegen(
-                        _KBD + f"void clear(void) {{ {stmt} }}\n", optimize,
-                    )
-                    self.assertEqual(_reads(asm, "KBDSTRB"), 1)
-
-    def test_each_read_happens(self) -> None:
-        src = (
-            "volatile unsigned char g;\n"
-            "unsigned char twice(void) { return g + g; }\n"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                self.assertEqual(_reads(_codegen(src, optimize), "g"), 2)
-
     def test_wait_loop(self) -> None:
         src = _KBD + (
             "int main(void) {\n"
@@ -87,14 +71,6 @@ class TestReadsKept(unittest.TestCase):
                 result = _run(src, optimize, {0xC000: 0xC1}, 20_000)
                 self.assertFalse(result.timed_out)
                 self.assertEqual(result.return_int(), 0xC1)
-
-    def test_optimized_wait_loop_shape(self) -> None:
-        asm = _codegen(
-            _KBD + "void wait(void) { while (!(KBD & 0x80)) ; }\n", True,
-        )
-        self.assertRegex(
-            asm, r"(?m)^(\.\S+):\n\s+LDA\s+KBD\n\s+BPL\s+\1$",
-        )
 
 
 class TestWrites(unittest.TestCase):
@@ -159,17 +135,6 @@ class TestWrites(unittest.TestCase):
                 self.assertEqual(_run(src, optimize).return_int(), 7)
                 # The value is the one stored, so `g` isn't read back.
                 self.assertEqual(_reads(_codegen(src, optimize), "g"), 0)
-
-    def test_self_assignment(self) -> None:
-        src = (
-            "volatile unsigned char g;\n"
-            "void touch(void) { g = g; }\n"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                asm = _codegen(src, optimize)
-                self.assertEqual(_reads(asm, "g"), 1)
-                self.assertRegex(asm, r"(?m)^\s+STA\s+g$")
 
 
 class TestQualifiedSignedWidening(unittest.TestCase):

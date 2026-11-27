@@ -3,7 +3,6 @@
 // both pipelines.
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -14,7 +13,7 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {{"unary_plus", R"c(
+const std::vector<ReturnCase> kPrograms = {{"unary_plus", R"c(
         unsigned char c = 200;
         signed char s = -5;
         int n = +7;

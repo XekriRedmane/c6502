@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -11,7 +10,7 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {{"enum", R"c(
+const std::vector<ReturnCase> kPrograms = {{"enum", R"c(
         enum color { RED, GREEN = 5, BLUE, LAST = BLUE + 10 };
         typedef enum { OFF, ON } state;
         enum { N = 4, NEG = -3, BIG = 32767 };

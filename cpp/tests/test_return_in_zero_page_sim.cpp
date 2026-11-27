@@ -4,7 +4,6 @@
 // does in both pipelines.
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -15,7 +14,7 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, std::string, int>> kCases = {
+const std::vector<ReturnCase> kCases = {
     // The result read right after the call, kept across a second
     // call (so it has to be copied out of `F@ret`), stored into a
     // static, compared, and returned on from another function.

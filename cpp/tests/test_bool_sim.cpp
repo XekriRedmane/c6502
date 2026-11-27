@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -11,7 +10,7 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, std::string, int>> kPrograms = {
+const std::vector<ReturnCase> kPrograms = {
     {"int_conversion", "int main(void) { int x = 512; bool b = x; return b; }", 1},
     {"long_conversion", "int main(void) { long x = 0x10000L; bool b = x; long z = 0; bool c = z; return b * 2 + c; }",
      2},

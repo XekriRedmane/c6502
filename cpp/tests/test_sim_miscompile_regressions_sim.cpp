@@ -4,7 +4,6 @@
 // comment on each case names the defect it pins down.
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -15,7 +14,7 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, std::string, int>> kCases = {
+const std::vector<ReturnCase> kCases = {
     // from_ssa placed the copies for a conditional jump's taken edge
     // after the jump, on the fall-through, when the fall-through edge
     // had copies too: the first edge's copies went after the jump,

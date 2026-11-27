@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
-#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "compile_case.h"
@@ -26,7 +26,12 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, int>> kTypes = {
+struct IntType {
+  std::string spelling;
+  int bytes;
+};
+
+const std::vector<IntType> kTypes = {
     {"int", 2}, {"unsigned int", 2}, {"long", 4}, {"unsigned long", 4}, {"long long", 8}, {"unsigned long long", 8}};
 const std::vector<int> kMultipliers = {3,  5,  6,  7,  9,  10, 12,  15,  17,  24,  31,
                                        33, 40, 48, 63, 65, 96, 127, 129, 192, 255, 257};
@@ -52,19 +57,25 @@ struct Program {
   std::vector<std::pair<std::string, std::uint64_t>> expected;
 };
 
+struct Operation {
+  std::string name;
+  std::string expr;
+  std::uint64_t want;
+};
+
 std::vector<Program> programs(const std::string& ctype, int size, std::uint64_t x) {
   const int bits = size * 8;
   const std::uint64_t mask = mask_of(size);
   const bool is_signed = ctype.rfind("unsigned", 0) != 0;
-  std::vector<std::tuple<std::string, std::string, std::uint64_t>> ops;
+  std::vector<Operation> ops;
   for (int k = 1; k < bits; ++k) {
-    ops.emplace_back(cat("l", k), cat("x << ", k), (x << k) & mask);
+    ops.push_back({cat("l", k), cat("x << ", k), (x << k) & mask});
     const std::int64_t sx = is_signed ? signed_of(x, size) : static_cast<std::int64_t>(x);
     // An unsigned 64-bit x shifts as an unsigned value.
     const std::uint64_t shifted = is_signed || bits < 64 ? static_cast<std::uint64_t>(sx >> k) : x >> k;
-    ops.emplace_back(cat("r", k), cat("x >> ", k), shifted & mask);
+    ops.push_back({cat("r", k), cat("x >> ", k), shifted & mask});
   }
-  for (int c : kMultipliers) ops.emplace_back(cat("m", c), cat("x * ", c), (x * c) & mask);
+  for (int c : kMultipliers) ops.push_back({cat("m", c), cat("x * ", c), (x * c) & mask});
   const std::string lit = cat(x, size == 8 ? "ULL" : "UL");
   std::vector<Program> out;
   for (std::size_t start = 0; start < ops.size(); start += kChunk) {

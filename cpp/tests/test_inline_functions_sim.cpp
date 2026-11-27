@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -11,7 +10,7 @@
 namespace c6502::suite {
 namespace {
 
-const std::vector<std::tuple<std::string, std::string, int>> kCases = {
+const std::vector<ReturnCase> kCases = {
     // Each argument's side effects happen once, in order, before the
     // body, which reads its parameter twice.
     {"argument_side_effects", R"c(

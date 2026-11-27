@@ -7,6 +7,12 @@
 
 namespace c6502::suite {
 
+struct ReturnCase {
+  std::string name;
+  std::string source;
+  int main_returns;
+};
+
 struct SimOptions {
   bool optimize = false;
   bool inline_calls = true;

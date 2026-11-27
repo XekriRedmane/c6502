@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <tuple>
-#include <utility>
 #include <vector>
 
 #include "compile_case.h"
@@ -17,10 +15,15 @@
 namespace c6502::suite {
 namespace {
 
+struct MarkedProgram {
+  std::string name;
+  std::string source_with_marks;
+};
+
 // The attribute, before a statement or declaration. In the programs
 // below, `SAVE ` stands where it goes.
 const std::string kSave = "[[c6502::save_hardware_stack]] ";
-const std::vector<std::pair<std::string, std::string>> kPrograms = {
+const std::vector<MarkedProgram> kPrograms = {
     {"globals", R"c(
 unsigned char level;
 unsigned char deepest;

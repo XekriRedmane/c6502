@@ -85,6 +85,10 @@ add_executable(c6502_tests ${C6502_TEST_SOURCES})
 target_link_libraries(c6502_tests PRIVATE c6502)
 target_include_directories(c6502_tests PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest")
+# The checkout's root, where the tests read include/, docs/, golden/,
+# and the files under tests/ and cpp/tests/.
+get_filename_component(C6502_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+target_compile_definitions(c6502_tests PRIVATE C6502_SOURCE_ROOT="${C6502_ROOT}")
 
 enable_testing()
 add_test(NAME c6502_tests COMMAND c6502_tests)

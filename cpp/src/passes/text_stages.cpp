@@ -25,16 +25,21 @@ TextStageResult run_text_stage(TextStage stage, const std::string& text, bool op
     case TextStage::kTac:
       break;
   }
+  out.text = asdl::py_pretty(tac_stage(text, optimize, inline_calls).tac) + "\n";
+  return out;
+}
+
+TacStage tac_stage(const std::string& text, bool optimize, bool inline_calls) {
   c99_ast::Program prog = resolved(text, optimize);
   type_checking::CheckedProgram tables = type_checking::check_program(prog);
-  tac_ast::Program tac = c99_to_tac::translate_program(prog, tables.symbols, &tables.types);
+  TacStage out{.symbols = std::move(tables.symbols), .types = std::move(tables.types)};
+  out.tac = c99_to_tac::translate_program(prog, out.symbols, &out.types);
   if (optimize) {
     if (inline_calls) {
-      tac = inline_functions(std::move(tac), tables.symbols, prog);
+      out.tac = inline_functions(std::move(out.tac), out.symbols, prog);
     }
-    tac = optimize_program(std::move(tac), &tables.symbols);
+    out.tac = optimize_program(std::move(out.tac), &out.symbols);
   }
-  out.text = asdl::py_pretty(tac) + "\n";
   return out;
 }
 

@@ -7,8 +7,29 @@
 #include <string>
 
 #include "json.h"
+#include "passes/front_end.h"
+#include "passes/type_checking.h"
+#include "tac_ast.h"
 
 namespace c6502::tac_sim_modes {
+
+// The TAC of a program and the tables it was translated with.
+struct Translated {
+  tac_ast::Program tac;
+  passes::SymbolTable symbols;
+  passes::TypeTable types;
+};
+
+// Runs the front end of `tests.test_sim_chapters._run_program` on
+// `source` (the preprocessor, the parser, the three passes that resolve
+// names, string lifting, and the type checker) and translates the
+// program to TAC. With `fell_off`, each function definition that
+// returns a value, other than `main`, ends with a call of the function
+// that the mode `tac-falls-off` below declares. What the preprocessor
+// writes to stderr is appended to `err`. Throws the `CompileError` of
+// the pass that rejects the program.
+Translated translate(const std::string& source, const passes::FrontEndOptions& options,
+                     std::string& err, bool fell_off = false);
 
 // Returns whether `mode` is one of the modes below.
 bool is_tac_mode(const std::string& mode);

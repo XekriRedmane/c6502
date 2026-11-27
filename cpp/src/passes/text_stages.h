@@ -5,6 +5,7 @@
 #include <string>
 
 #include "c99_ast.h"
+#include "passes/type_checking.h"
 #include "tac_ast.h"
 
 namespace c6502::passes {
@@ -36,5 +37,17 @@ struct TextStageResult {
 // Throws the `CompileError` of the pass that rejects the program.
 TextStageResult run_text_stage(TextStage stage, const std::string& text, bool optimize,
                                bool inline_calls);
+
+// The program that `--tac` prints, and the tables it was translated
+// with.
+struct TacStage {
+  tac_ast::Program tac;
+  SymbolTable symbols;
+  TypeTable types;
+};
+
+// Runs the stage `kTac` on `text` as `run_text_stage` does, and returns
+// the program in place of its text.
+TacStage tac_stage(const std::string& text, bool optimize, bool inline_calls);
 
 }  // namespace c6502::passes

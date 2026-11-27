@@ -33,13 +33,6 @@ namespace c99 = ::c6502::c99_ast;
 // appends to each function that returns a value.
 constexpr std::string_view kFellOff = "__reduce_fell_off";
 
-// The TAC of a program and the tables it was translated with.
-struct Translated {
-  ir::Program tac;
-  passes::SymbolTable symbols;
-  passes::TypeTable types;
-};
-
 // Appends `__reduce_fell_off();` to the body of each function
 // definition of `prog` that returns a value, other than `main`, as the
 // parser would have built the call.
@@ -56,23 +49,6 @@ void append_fell_off_calls(c99::Program& prog) {
     c99::Block& body = std::get<c99::Block>(**f.body);
     body.block_item.push_back(c99::S{.statement = c99::Expression{.exp = std::move(call)}});
   }
-}
-
-// Runs the front end of `_run_program` on `source` and translates the
-// program to TAC. Throws the `CompileError` of the pass that rejects it.
-Translated translate(const std::string& source, const passes::FrontEndOptions& options,
-                     std::string& err, bool fell_off) {
-  const std::string text = passes::preprocess_source(source, options, err);
-  c99::Program prog = parser::parse(text);
-  if (fell_off) append_fell_off_calls(prog);
-  prog = passes::resolve_identifiers(std::move(prog));
-  prog = passes::lift_strings(std::move(prog));
-  prog = passes::resolve_labels(std::move(prog));
-  prog = passes::label_program(std::move(prog));
-  passes::type_checking::CheckedProgram tables = passes::type_checking::check_program(prog);
-  Translated out{.symbols = std::move(tables.symbols), .types = std::move(tables.types)};
-  out.tac = c99_to_tac::translate_program(prog, out.symbols, &out.types);
-  return out;
 }
 
 // Returns an outcome as the JSON of the `result` and `optimized` lines.
@@ -144,6 +120,21 @@ std::string observe(Translated& t) {
 }
 
 }  // namespace
+
+Translated translate(const std::string& source, const passes::FrontEndOptions& options,
+                     std::string& err, bool fell_off) {
+  const std::string text = passes::preprocess_source(source, options, err);
+  c99::Program prog = parser::parse(text);
+  if (fell_off) append_fell_off_calls(prog);
+  prog = passes::resolve_identifiers(std::move(prog));
+  prog = passes::lift_strings(std::move(prog));
+  prog = passes::resolve_labels(std::move(prog));
+  prog = passes::label_program(std::move(prog));
+  passes::type_checking::CheckedProgram tables = passes::type_checking::check_program(prog);
+  Translated out{.symbols = std::move(tables.symbols), .types = std::move(tables.types)};
+  out.tac = c99_to_tac::translate_program(prog, out.symbols, &out.types);
+  return out;
+}
 
 bool is_tac_mode(const std::string& mode) {
   return mode == "tac-run" || mode == "tac-observe" || mode == "tac-falls-off";

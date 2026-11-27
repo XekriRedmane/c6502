@@ -1400,10 +1400,7 @@ void lay_down(std::vector<std::uint8_t>& image, std::int64_t addr, const Bytes& 
   if (bytes.empty()) {
     return;
   }
-  if (addr < 0) {
-    fail("the program's bytes start at -$" + pyrepr::hex(-addr, 4) + ", below $0000");
-  }
-  if (addr + static_cast<std::int64_t>(bytes.size()) > 0x10000) {
+  if (addr +static_cast<std::int64_t>(bytes.size()) > 0x10000) {
     fail("the program's bytes end at $" + pyrepr::hex(code_end, 4) + ", past $FFFF");
   }
   std::copy(bytes.begin(), bytes.end(), image.begin() + addr);
@@ -1428,6 +1425,10 @@ AssembledProgram assemble(const ir::Program& program, std::int64_t origin,
     symbols[name] = addr;
   }
   const Runtime runtime{symbols.at("SSP"), symbols.at("FP"), symbols.at("DPTR")};
+  if (origin < 0x100) {
+    fail("origin " + hex_alt(Int(origin)) +
+         " is below 0x100, and only the zero-page symbols assemble starts from may lie there");
+  }
   passes::NameSet zp_names;
   for (const auto& [name, addr] : symbols) {
     if (0 <= addr && addr <= 0xFF) {

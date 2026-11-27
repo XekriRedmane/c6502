@@ -49,8 +49,8 @@ struct AssembledProgram {
 // symbols (SSP $00, FP $02, HARGS $04, DPTR $24). The soft-stack,
 // frame, and DPTR operands, the prologues, and the epilogues use the
 // SSP, FP, and DPTR that result. Throws `AssemblerError` for a program
-// it can't assemble, and `InternalError` for an instruction no pass
-// writes.
+// it can't assemble or an `origin` below $100, and `InternalError` for
+// an instruction no pass writes.
 AssembledProgram assemble(const asm_ast::Program& program, std::int64_t origin = 0x0800,
                           const std::map<std::string, std::int64_t>& extra_symbols = {});
 

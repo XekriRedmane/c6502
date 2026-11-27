@@ -165,6 +165,17 @@ TEST_CASE("sim assembler: a program past $FFFF") {
   CHECK(error_of({fits}) == "no error");
 }
 
+TEST_CASE("sim assembler: an origin in zero page") {
+  // A static below $100 would be sized with absolute addressing in pass
+  // 1, before its address is known, and written with zero-page
+  // addressing in pass 2.
+  const ir::Program prog{.top_level = {function("f", {kRts})}};
+  CHECK_THROWS_WITH_AS(assemble(prog, 0xFF), "origin 0xff is below 0x100, and only the zero-page symbols "
+                       "assemble starts from may lie there", AssemblerError);
+  CHECK_THROWS_AS(assemble(prog, -1), AssemblerError);
+  CHECK(assemble(prog, 0x100).symbols.at("f") == 0x100);
+}
+
 TEST_CASE("sim assembler: an operand that doesn't fit") {
   CHECK(error_of({function("f", {lda_imm(256)})}) == "immediate 256 out of range 0..255");
   CHECK(error_of({function("f", {ir::Mov{.src = ir::Imm{.value = 1},

@@ -5,102 +5,21 @@ optional with the attribute, and the parameter may be any integer or
 pointer with one byte for each register named. A `register` parameter
 without the attribute keeps the positional rule (A, then X), skipping
 the registers the named ones take, and can't be a pointer.
+
+The tests of the errors and of the code are doctest cases in
+cpp/tests/test_param_registers.cpp.
 """
 from __future__ import annotations
 
-import io
 import unittest
-from unittest.mock import patch
 
-from compile import _run_source, main as compile_main
-from errors import AbiSelectionError, TypeCheckError
+from compile import _run_source
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
 
 
 def _codegen(src: str, optimize: bool = True) -> str:
     return _run_source("codegen", src, optimize=optimize)
-
-
-def _body(asm: str, fn: str) -> str:
-    return asm.split(f"\n{fn}:")[1].split("SUBROUTINE")[1].split("\n\n", 2)[1]
-
-
-@needs_c6502cpp
-class TestAbiErrors(unittest.TestCase):
-
-    _CASES = {
-        "wrong width": (
-            "[[c6502::zp_abi, c6502::address(0xD000)]]\n"
-            "void f(unsigned int a [[c6502::in_y]]);\n"
-            "int main(void) { f(1); return 0; }\n",
-            "is 2 bytes, but `in_y` names 1 register",
-        ),
-        "shared register": (
-            "void f(register unsigned char a [[c6502::in_y]],\n"
-            "       register unsigned char b [[c6502::in_y]]) {}\n"
-            "int main(void) { f(1, 2); return 0; }\n",
-            "both arrive in Y",
-        ),
-        "positional overflow": (
-            "void f(register unsigned char a [[c6502::in_a]],\n"
-            "       register unsigned int b) {}\n"
-            "int main(void) { f(1, 2); return 0; }\n",
-            "the free ones here are: X",
-        ),
-        "declarations disagree": (
-            "void f(register unsigned char a [[c6502::in_y]]);\n"
-            "void f(register unsigned char a) {}\n"
-            "int main(void) { f(1); return 0; }\n",
-            "`a in_y` against `register a`",
-        ),
-    }
-
-    def test_errors(self):
-        for label, (src, needle) in self._CASES.items():
-            with self.subTest(label):
-                with self.assertRaisesRegex(AbiSelectionError, needle):
-                    _codegen(src)
-
-    def test_pointer_needs_named_registers(self):
-        # A pointer takes `in_*`; a plain `register` one is an error.
-        with self.assertRaisesRegex(
-                TypeCheckError, "register parameter 'p': a pointer"):
-            _codegen(
-                "void f(register unsigned char *p) {}\n"
-                "int main(void) { f(0); return 0; }\n"
-            )
-
-    def test_type_errors(self):
-        cases = {
-            "wrong width": (
-                "void f(unsigned int a [[c6502::in_y]]) {}\n",
-                "parameter 'a' is 2 bytes, but `in_y` names 1 register",
-            ),
-            "pointer in one register": (
-                "void f(unsigned char *p [[c6502::in_y]]) {}\n",
-                "parameter 'p' is 2 bytes, but `in_y` names 1 register",
-            ),
-            "struct": (
-                "struct s { unsigned char a, b; };\n"
-                "void f(struct s v [[c6502::in_xy]]) {}\n",
-                "integer or a pointer",
-            ),
-        }
-        for label, (src, needle) in cases.items():
-            with self.subTest(label):
-                with self.assertRaisesRegex(TypeCheckError, needle):
-                    _codegen(src + "int main(void) { return 0; }\n")
-
-    def test_one_line_error(self):
-        err = io.StringIO()
-        src = self._CASES["shared register"][0]
-        with patch("sys.stdin", io.StringIO(src)), \
-                patch("sys.stderr", err), patch("sys.stdout", io.StringIO()):
-            rc = compile_main(["compile.py", "-", "-S", "-O"])
-        self.assertEqual(rc, 1)
-        self.assertTrue(err.getvalue().startswith("<stdin>: error: "))
-        self.assertNotIn("Traceback", err.getvalue())
 
 
 @needs_c6502cpp
@@ -215,52 +134,6 @@ class TestSim(unittest.TestCase):
         )
         self.assertIn("PHA", _codegen(src, optimize=False))
         self._check(src, 10 + 2 * 11, standin=self._ROM_CODE)
-
-
-@needs_c6502cpp
-class TestShape(unittest.TestCase):
-
-    def test_callee_stores_y_and_caller_loads_it(self):
-        asm = _codegen(
-            "unsigned char out[2];\n"
-            "unsigned char g;\n"
-            "void put(register unsigned char hi [[c6502::in_a]],\n"
-            "         register unsigned char lo [[c6502::in_y]]) {\n"
-            "    out[0] = hi; out[1] = lo;\n"
-            "}\n"
-            "int main(void) { put(1, g); return 0; }\n"
-        )
-        self.assertEqual(_body(asm, "put").split(),
-                         ["STA", "out", "STY", "out+1", "RTS"])
-        self.assertIn("LDY   g", asm.split("\nmain:")[1])
-
-    def test_pointer_goes_straight_to_registers(self):
-        # Zork's RWTS takes the address of its block in Y and A.
-        asm = _codegen(
-            "struct iob { unsigned char t[17]; };\n"
-            "struct iob iob;\n"
-            "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]\n"
-            "bool RWTS(struct iob *p [[c6502::in_ya]]);\n"
-            "int main(void) { return RWTS(&iob); }\n"
-        )
-        main = asm.split("\nmain:")[1]
-        self.assertIn("LDA   #>iob\n   LDY   #<iob\n   JSR   RWTS", main)
-
-    def test_address_bytes_go_straight_to_registers(self):
-        # The shape of Zork's RWTS call: `LDA #>iob; LDY #<iob`.
-        asm = _codegen(
-            "unsigned char iob[17];\n"
-            "[[c6502::zp_abi, c6502::return_bool_in_carry, c6502::address(0x2900)]]\n"
-            "bool RWTS(register unsigned char hi [[c6502::in_a]],\n"
-            "                   register unsigned char lo [[c6502::in_y]]);\n"
-            "int main(void) {\n"
-            "    return RWTS((unsigned char)((unsigned int)iob >> 8),\n"
-            "                (unsigned char)(unsigned int)iob);\n"
-            "}\n"
-        )
-        main = asm.split("\nmain:")[1]
-        self.assertIn("LDA   #>iob\n   LDY   #<iob\n   JSR   RWTS", main)
-        self.assertNotIn("PHA", main)
 
 
 if __name__ == "__main__":

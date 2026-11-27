@@ -74,6 +74,28 @@ class TestSim(unittest.TestCase):
         self.assertEqual(got, self._WANT)
         self.assertNotEqual(changed, [])
 
+    def test_wide_return_from_moved_block(self) -> None:
+        # A zero-page object at $10 moves the block, so `main`'s `long`
+        # and `long long` come back in the moved HARGS, which
+        # `return_long` and `return_longlong` read.
+        head = (
+            "[[c6502::zeropage(0x10)]] unsigned char z;\n"
+            "long f(long a) { return a * 3 + z; }\n"
+            "long long g(long long a) { return a * 5 + z; }\n"
+        )
+        for optimize in (False, True):
+            with self.subTest(optimize=optimize):
+                sim = build_sim(
+                    head + "long main(void) { z = 1; return f(100000L); }\n",
+                    optimize=optimize)
+                self.assertNotEqual(sim.symbols["HARGS"], 0x04)
+                self.assertEqual(sim.run().return_long(), 300001)
+                sim = build_sim(
+                    head + "long long main(void) "
+                    "{ z = 2; return g(1000000000000LL); }\n",
+                    optimize=optimize)
+                self.assertEqual(sim.run().return_longlong(), 5000000000002)
+
 
 class TestMonitorHeaders(unittest.TestCase):
     """`<apple2/monitor_io.h>` reserves the zero page of the Monitor

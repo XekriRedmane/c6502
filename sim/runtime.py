@@ -92,6 +92,7 @@ class Runtime:
     boot_addr: int = BOOT_ADDR
     ssp_init: int = SSP_INIT
     ssp: int = SSP
+    hargs: int = HARGS
 
 
 # -------- HARGS read/write helpers --------
@@ -530,7 +531,8 @@ def build_runtime(layout=None) -> Runtime:
 
     if layout is None:
         layout = CLASSIC
-    rt = Runtime(helper_origin=TRAP_BASE, ssp=layout.ssp)
+    rt = Runtime(helper_origin=TRAP_BASE, ssp=layout.ssp,
+                 hargs=layout.hargs)
 
     # Assemble the real-asm helpers into a contiguous chunk at
     # TRAP_BASE. The resulting symbol table maps each helper's name

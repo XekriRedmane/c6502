@@ -83,6 +83,7 @@ class SimResult:
     cycles: int             # py65 cycle count at exit
     memory: bytearray       # full 64KiB snapshot
     timed_out: bool = False
+    hargs: int = rt_mod.HARGS   # the program's HARGS
 
     def return_char(self) -> int:
         """Return value as an unsigned 1-byte integer (Char / SChar /
@@ -116,7 +117,7 @@ class SimResult:
         slot, where 4-byte returns land per the calling convention."""
         v = 0
         for i in range(4):
-            v |= self.memory[rt_mod.HARGS + 8 + i] << (i * 8)
+            v |= self.memory[self.hargs + 8 + i] << (i * 8)
         return v
 
     def return_long_signed(self) -> int:
@@ -129,7 +130,7 @@ class SimResult:
         the 8-byte slot per the calling convention."""
         v = 0
         for i in range(8):
-            v |= self.memory[rt_mod.HARGS + 16 + i] << (i * 8)
+            v |= self.memory[self.hargs + 16 + i] << (i * 8)
         return v
 
     def return_longlong_signed(self) -> int:
@@ -217,7 +218,7 @@ class Simulation:
             a=mpu.a, x=mpu.x, y=mpu.y, pc=mpu.pc, sp=mpu.sp,
             cycles=mpu.processorCycles,
             memory=bytearray(mpu.memory),
-            timed_out=timed_out,
+            timed_out=timed_out, hargs=self.runtime.hargs,
         )
 
     def run_bucketed(
@@ -279,7 +280,7 @@ class Simulation:
             a=mpu.a, x=mpu.x, y=mpu.y, pc=mpu.pc, sp=mpu.sp,
             cycles=mpu.processorCycles,
             memory=bytearray(mpu.memory),
-            timed_out=timed_out,
+            timed_out=timed_out, hargs=self.runtime.hargs,
         )
         return result, cycles_by_fn
 

@@ -424,9 +424,9 @@ void Machine::rts() {
   cpu.cycles += 6;
 }
 
-// On a call from outside the kept code, the hook notes the stack pointer
-// and sets a hook at the return address that records the event when the
-// call returns there. The entry's own code then runs.
+// On a call from outside the kept code, the hook adds the call to
+// `pending_returns_` at its return address, and `run` records the event
+// when the call returns there. The entry's own code then runs.
 Machine::Hook Machine::disk_entry(std::uint16_t entry) {
   return [this, entry]() -> std::optional<End> {
     const std::uint16_t from = caller();
@@ -436,21 +436,22 @@ Machine::Hook Machine::disk_entry(std::uint16_t entry) {
     const auto at = static_cast<std::uint16_t>((pushed + 1) & 0xFFFF);
     std::optional<unsigned> iob;
     if (entry == kRwtsEntry) iob = cpu.a << 8 | cpu.y;
-    const auto back = static_cast<std::uint8_t>(cpu.sp + 2);
-    Hook previous;
-    if (const auto it = hooks.find(at); it != hooks.end()) previous = it->second;
-    hooks[at] = [this, entry, from, iob, back, previous, at]() -> std::optional<End> {
-      if (cpu.sp != back) return previous ? previous() : std::nullopt;
-      if (previous) {
-        hooks[at] = previous;
-      } else {
-        hooks.erase(at);
-      }
-      disk_returned(entry, from, iob);
-      return previous ? previous() : std::nullopt;
-    };
+    pending_returns_[at].push_back(PendingReturn{entry, from, iob, static_cast<std::uint8_t>(cpu.sp + 2)});
     return std::nullopt;
   };
+}
+
+void Machine::disk_returns(std::uint16_t pc) {
+  const auto it = pending_returns_.find(pc);
+  if (it == pending_returns_.end()) return;
+  std::vector<PendingReturn>& pending = it->second;
+  std::vector<PendingReturn> due;
+  for (auto r = pending.rbegin(); r != pending.rend(); ++r) {
+    if (r->back == cpu.sp) due.push_back(*r);
+  }
+  std::erase_if(pending, [this](const PendingReturn& r) { return r.back == cpu.sp; });
+  if (pending.empty()) pending_returns_.erase(it);
+  for (const PendingReturn& r : due) disk_returned(r.entry, r.from, r.iob);
 }
 
 void Machine::disk_returned(std::uint16_t entry, std::uint16_t from, std::optional<unsigned> iob) {
@@ -675,9 +676,9 @@ End Machine::run(std::uint64_t max_cycles, const std::function<bool(const Machin
   };
   while (cpu.cycles < max_cycles) {
     const std::uint16_t pc = cpu.pc;
+    if (!pending_returns_.empty()) disk_returns(pc);
     if (const auto it = hooks.find(pc); it != hooks.end()) {
-      const Hook hook = it->second;
-      if (const std::optional<End> why = hook()) return *why;
+      if (const std::optional<End> why = it->second()) return *why;
       if (cpu.pc != pc) {
         if (stopped()) return End::kStop;
         continue;
@@ -714,7 +715,8 @@ bool Machine::delay_loop(std::uint16_t pc, std::uint8_t op) {
     return false;
   }
   for (unsigned a = pc + 1u; a < pc + size; ++a) {
-    if (hooks.count(static_cast<std::uint16_t>(a)) != 0 && a <= 0xFFFF) return false;
+    const auto addr = static_cast<std::uint16_t>(a);
+    if (a <= 0xFFFF && (hooks.count(addr) != 0 || pending_returns_.count(addr) != 0)) return false;
   }
   const unsigned end = pc + size;
   const std::uint64_t taken = ((end ^ pc) & 0xFF00) != 0 ? 4 : 3;

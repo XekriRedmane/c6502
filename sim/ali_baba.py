@@ -396,6 +396,10 @@ class Machine:
         self.seen = bytearray(0x10000)
         self._copy: bytes | None = None
         self._crc = 0
+        # The disk calls that haven't returned, by return address, in
+        # the order they were made: (entry, caller, IOB, SP after RTS).
+        self._pending_returns: dict[
+            int, list[tuple[int, int, int | None, int]]] = {}
         rom = {
             WAIT: self._wait, COUT: self._cout, PREAD: self._pread,
             SETPWRC: self._setpwrc, COUT1: self._cout1, VTAB: self._vtab,
@@ -748,9 +752,9 @@ class Machine:
 
     def _disk_entry(self, entry: int) -> Callable[[], None]:
         """The hook at a disk entry. On a call from outside the kept
-        code, it notes the stack pointer and sets a hook at the return
-        address that records the event when the call returns there. The
-        entry's own code then runs."""
+        code, it adds the call to `_pending_returns` at its return
+        address, and `run` records the event when the call returns
+        there. The entry's own code then runs."""
         def hook() -> None:
             mpu = self.mpu
             caller = self._caller()
@@ -761,21 +765,24 @@ class Machine:
             ret = ((mem[0x100 + ((sp + 1) & 0xFF)]
                     | mem[0x100 + ((sp + 2) & 0xFF)] << 8) + 1) & 0xFFFF
             iob = (mpu.a << 8) | mpu.y if entry == RWTS_ENTRY else None
-            back = (sp + 2) & 0xFF
-            previous = self.hooks.get(ret)
-
-            def returned() -> str | None:
-                if mpu.sp != back:
-                    return previous() if previous else None
-                if previous is None:
-                    del self.hooks[ret]
-                else:
-                    self.hooks[ret] = previous
-                self._disk_returned(entry, caller, iob)
-                return previous() if previous else None
-
-            self.hooks[ret] = returned
+            self._pending_returns.setdefault(ret, []).append(
+                (entry, caller, iob, (sp + 2) & 0xFF))
         return hook
+
+    def _disk_returns(self, pc: int) -> None:
+        """Records the event of each call in `_pending_returns` at `pc`
+        whose RTS has left SP where it was before the JSR, the latest
+        call first."""
+        pending = self._pending_returns.get(pc)
+        if pending is None:
+            return
+        sp = self.mpu.sp
+        due = [r for r in reversed(pending) if r[3] == sp]
+        pending[:] = [r for r in pending if r[3] != sp]
+        if not pending:
+            del self._pending_returns[pc]
+        for entry, caller, iob, _ in due:
+            self._disk_returned(entry, caller, iob)
 
     def _disk_returned(self, entry: int, caller: int,
                        iob: int | None) -> None:
@@ -830,8 +837,11 @@ class Machine:
         fast = self.fast_loops
         events = self.events
         n_events = len(events)
+        pending_returns = self._pending_returns
         while mpu.processorCycles < max_cycles:
             pc = mpu.pc
+            if pending_returns:
+                self._disk_returns(pc)
             hook = hooks.get(pc)
             if hook is not None:
                 why = hook()
@@ -899,8 +909,9 @@ class Machine:
         else:
             return False
         hooks = self.hooks
+        pending_returns = self._pending_returns
         for a in range(pc + 1, pc + size):
-            if a in hooks:
+            if a in hooks or a in pending_returns:
                 return False
         end = pc + size
         taken = 4 if (end ^ pc) & 0xFF00 else 3

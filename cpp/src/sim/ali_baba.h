@@ -267,6 +267,9 @@ class Machine {
   std::uint16_t caller() const;
   Hook rom_hook(std::uint16_t addr, RomRoutine routine);
   Hook disk_entry(std::uint16_t entry);
+  // Records the event of each call in `pending_returns_` at `pc` whose
+  // RTS has left SP where it was before the JSR, the latest call first.
+  void disk_returns(std::uint16_t pc);
   void disk_returned(std::uint16_t entry, std::uint16_t caller, std::optional<unsigned> iob);
   bool delay_loop(std::uint16_t pc, std::uint8_t op);
 
@@ -292,6 +295,17 @@ class Machine {
   RomExit scroll();
   RomExit cout1();
 
+  // A disk call from outside the kept code that hasn't returned: its
+  // entry, its caller, its IOB for RWTS, and SP after its RTS.
+  struct PendingReturn {
+    std::uint16_t entry;
+    std::uint16_t from;
+    std::optional<unsigned> iob;
+    std::uint8_t back;
+  };
+  // The disk calls that haven't returned, by return address, in the
+  // order they were made.
+  std::map<std::uint16_t, std::vector<PendingReturn>> pending_returns_;
   std::map<int, std::uint8_t> keys_;
   std::map<int, std::string> swaps_;
   game::PageCrc page1_crc_{0x2000, 0x4000};

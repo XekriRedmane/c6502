@@ -62,7 +62,7 @@ const char* const kStorage[] = {"local", "static", "global", "zp", "ptr", "array
 struct Op {
   const char* name;
   const char* text;
-  const char* kind;
+  const char* start_kind;
 };
 
 const Op kOps[] = {
@@ -145,7 +145,7 @@ struct Case {
   std::string use;
   Int start;
   Int want;
-  int ret_size;
+  int ret_bytes;
 
   std::string describe() const {
     char buf[40];
@@ -162,18 +162,18 @@ std::vector<Case> cases() {
     for (const char* storage : kStorage) {
       for (const Op& op : kOps) {
         if (std::string(op.name) == "shr_neg" && !t.is_signed) continue;
-        const Int start = wrap(start_value(op.kind, t.size), t.size, t.is_signed);
+        const Int start = wrap(start_value(op.start_kind, t.size), t.size, t.is_signed);
         const auto [value, after] = apply(op.name, start, t.size, t.is_signed);
         for (const char* use : kUses) {
           Int want = value;
-          int ret_size = t.size;
+          int ret_bytes = t.size;
           if (std::string(use) == "if") {
             want = 1;
-            ret_size = 2;
+            ret_bytes = 2;
           } else if (std::string(use) == "after") {
             want = after;
           }
-          out.push_back({"c" + std::to_string(n), t, storage, &op, use, start, want, ret_size});
+          out.push_back({"c" + std::to_string(n), t, storage, &op, use, start, want, ret_bytes});
           ++n;
         }
       }
@@ -284,14 +284,14 @@ const std::vector<Program>& programs() {
     for (const Case& c : cases()) {
       const int extra = c.storage == "zp" ? c.type.size : 0;
       if (!chunk.empty() && (chunk.size() >= kChunk || zp_bytes + extra > kZpBudget ||
-                             result_bytes + c.ret_size > kResultBudget)) {
+                             result_bytes + c.ret_bytes > kResultBudget)) {
         ps.push_back(emit(chunk));
         chunk.clear();
         zp_bytes = result_bytes = 0;
       }
       chunk.push_back(c);
       zp_bytes += extra;
-      result_bytes += c.ret_size;
+      result_bytes += c.ret_bytes;
     }
     if (!chunk.empty()) ps.push_back(emit(chunk));
     return ps;
@@ -316,8 +316,8 @@ void check(Pipeline pipeline, int shard) {
     for (const Case& c : p.cases) {
       const std::int64_t addr = s.symbol("r_" + c.name);
       Int raw = 0;
-      for (int b = 0; b < c.ret_size; ++b) raw |= Int(s.cpu.memory[static_cast<std::size_t>(addr + b)]) << (8 * b);
-      const Int want = c.want & ((Int(1) << (8 * c.ret_size)) - 1);
+      for (int b = 0; b < c.ret_bytes; ++b) raw |= Int(s.cpu.memory[static_cast<std::size_t>(addr + b)]) << (8 * b);
+      const Int want = c.want & ((Int(1) << (8 * c.ret_bytes)) - 1);
       if (raw != want) {
         failures.push_back(c.name + ": " + c.describe() + ": got " + asdl::int_to_string(raw) + ", want " +
                            asdl::int_to_string(want));

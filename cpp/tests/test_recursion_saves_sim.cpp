@@ -177,9 +177,9 @@ int main(void) { return ping(5); }
 TEST_CASE("recursion_saves: programs") {
   for (const auto& [name, marked] : kPrograms) {
     const std::string src = replace_all(marked, "SAVE ", kSave);
-    const std::optional<asdl::Int> tac = run_program(src);
-    REQUIRE(tac.has_value());
-    const std::int64_t expected = static_cast<std::int64_t>(*tac) & 0xFFFF;
+    const std::optional<asdl::Int> unoptimized_tac_return = run_program(src);
+    REQUIRE(unoptimized_tac_return.has_value());
+    const std::int64_t expected = static_cast<std::int64_t>(*unoptimized_tac_return) & 0xFFFF;
     for (bool optimize : {false, true}) {
       INFO(name << " optimize=" << optimize);
       auto result = build_sim(src, optimize).run(5'000'000);

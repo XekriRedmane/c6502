@@ -60,7 +60,7 @@ bool any_holds_main(const std::vector<std::string>& records) {
   return false;
 }
 
-std::vector<std::string> body(const std::string& asm_text, const std::string& fn) {
+std::vector<std::string> collapsed_body(const std::string& asm_text, const std::string& fn) {
   const std::string head = "\n" + fn + ":\n";
   const std::size_t at = asm_text.find(head);
   REQUIRE(at != std::string::npos);
@@ -236,7 +236,7 @@ TEST_CASE("slot_sharing sim: a forwarded parameter and a local held in its bytes
   CHECK(contains(records[0], "member=forward:"));
   CHECK(contains(records[0], "holder=main"));
   // `forward` passes its parameter on where it already is.
-  CHECK(body(text, "forward") == std::vector<std::string>{"JMP add_page"});
+  CHECK(collapsed_body(text, "forward") == std::vector<std::string>{"JMP add_page"});
   // The two slots are one pair of bytes.
   const auto e = equs(text);
   CHECK(e.at("__zpabi_forward__p_0") == e.at("__zpabi_add_page__p_0"));
@@ -284,8 +284,8 @@ int main(void) {
   CHECK(contains(records[0], "member=take:"));
   CHECK(contains(records[0], "member=take_next:"));
   CHECK(contains(records[0], "holder=main"));
-  CHECK(body(text, "take_next") == std::vector<std::string>{"JMP take"});
-  const std::vector<std::string> main = body(text, "main");
+  CHECK(collapsed_body(text, "take_next") == std::vector<std::string>{"JMP take"});
+  const std::vector<std::string> main = collapsed_body(text, "main");
   REQUIRE(main.size() >= 3);
   CHECK(std::vector<std::string>(main.begin(), main.begin() + 3) ==
         std::vector<std::string>{"JSR first", "STA __zpabi_take_next__s_0", "STX __zpabi_take_next__s_1"});
@@ -390,7 +390,7 @@ TEST_CASE("slot_sharing sim: a defined function reads its pinned parameter in pl
   const auto e = equs(text);
   CHECK(e.at("__zpabi_sum__p_0") == 0x30);
   CHECK(e.at("__zpabi_sum__p_1") == 0x31);
-  CHECK(contains_line(body(text, "sum"), "ADC (__zpabi_sum__p_0),Y"));
+  CHECK(contains_line(collapsed_body(text, "sum"), "ADC (__zpabi_sum__p_0),Y"));
   CHECK(contains(text, "STA   __zpabi_sum__p_0"));
   CHECK(contains(text, "pinned=$30,$31,"));
   for (const Pipeline pipeline : kBothPipelines) {
@@ -417,13 +417,13 @@ TEST_CASE("slot_sharing sim: a pinned parameter is copied when a callee takes on
         int main(void) { return both(a, b); }
         )c";
   const std::string text = codegen_of(src);
-  const std::vector<std::string> both = body(text, "both");
+  const std::vector<std::string> both = collapsed_body(text, "both");
   REQUIRE(both.size() >= 4);
   CHECK(std::vector<std::string>(both.begin(), both.begin() + 4) ==
         std::vector<std::string>{"LDA __zpabi_both__q_0", "STA __local_both__q", "LDA __zpabi_both__q_1",
                                  "STA __local_both__2"});
   std::vector<std::string> first_zpabi;
-  for (const std::string& line : body(text, "first")) {
+  for (const std::string& line : collapsed_body(text, "first")) {
     if (contains(line, "__zpabi")) first_zpabi.push_back(line);
   }
   CHECK(first_zpabi == std::vector<std::string>{"LDA (__zpabi_first__p_0),Y"});

@@ -76,10 +76,10 @@ std::string literal(Int v, int size = 8) {
 
 struct Case {
   std::string name;
-  std::string text;
-  std::vector<std::string> calls;
+  std::string function_source;
+  std::vector<std::string> call_args;
   std::string rtype;
-  int size;
+  int result_bytes;
   std::string what;
 };
 
@@ -333,11 +333,11 @@ std::vector<Program> programs(const std::vector<Case>& cases,
     for (const Case& c : chunk) {
       const auto it = decls.find(c.name);
       if (it != decls.end()) head.insert(head.end(), it->second.begin(), it->second.end());
-      body += c.text;
-      for (std::size_t j = 0; j < c.calls.size(); ++j) {
+      body += c.function_source;
+      for (std::size_t j = 0; j < c.call_args.size(); ++j) {
         const std::string r = "r_" + c.name + "_" + std::to_string(j);
         results.push_back(c.rtype + " " + r + ";");
-        calls.push_back("    " + r + " = f_" + c.name + "(" + c.calls[j] + ");");
+        calls.push_back("    " + r + " = f_" + c.name + "(" + c.call_args[j] + ");");
       }
     }
     std::vector<std::string> all = head;
@@ -349,8 +349,8 @@ std::vector<Program> programs(const std::vector<Case>& cases,
   std::vector<Case> chunk;
   int budget = 0, zp = 0;
   for (const Case& c : cases) {
-    const int need = c.size * static_cast<int>(c.calls.size());
-    const int extra = c.name.find("_zp_") != std::string::npos ? c.size : 0;
+    const int need = c.result_bytes * static_cast<int>(c.call_args.size());
+    const int extra = c.name.find("_zp_") != std::string::npos ? c.result_bytes : 0;
     if (!chunk.empty() && (chunk.size() >= kChunk || budget + need > kResultBudget || zp + extra > kZpBudget)) {
       emit(chunk);
       chunk.clear();
@@ -433,12 +433,12 @@ void check(const std::vector<Program>& ps, Pipeline pipeline, int shard, int sha
       continue;
     }
     for (const Case& c : p.cases) {
-      for (std::size_t j = 0; j < c.calls.size(); ++j) {
+      for (std::size_t j = 0; j < c.call_args.size(); ++j) {
         const std::string r = "r_" + c.name + "_" + std::to_string(j);
         const std::string want = frozen().want.at(r);
-        const std::string got = hex_high_first(s.cpu.memory, s.symbol(r), c.size);
+        const std::string got = hex_high_first(s.cpu.memory, s.symbol(r), c.result_bytes);
         if (got != want) {
-          failures.push_back(c.name + ": " + c.what + ", call '" + c.calls[j] + "': got " + got + ", want " + want);
+          failures.push_back(c.name + ": " + c.what + ", call '" + c.call_args[j] + "': got " + got + ", want " + want);
         }
       }
     }
@@ -465,7 +465,7 @@ TEST_CASE("bitint sim: the programs are those test_bitint_sim.py wrote") {
   std::size_t results = 0;
   for (const auto* ps : {&operator_programs(), &grid_programs()}) {
     for (const Program& p : *ps) {
-      for (const Case& c : p.cases) results += c.calls.size();
+      for (const Case& c : p.cases) results += c.call_args.size();
     }
   }
   CHECK(results == frozen().want.size());

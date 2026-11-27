@@ -173,7 +173,7 @@ struct Ran {
   std::map<std::string, std::int64_t> symbols;
 };
 
-Ran run(const Exe& exe) {
+Ran run_without_sim_helpers(const Exe& exe) {
   sim::Simulation s = sim::build_linked_sim(exe.bytes);
   std::fill_n(s.cpu.memory.begin() + s.runtime.helper_origin, s.runtime.helper_image.size(), std::uint8_t{0});
   s.runtime.hooks.clear();
@@ -237,7 +237,7 @@ void check(const std::set<std::string>& helpers, const Type& t, const Type& u,
   for (const std::string& h : absent) CHECK_MESSAGE(own.count(h) == 0, h << " is linked");
   const std::set<std::string> names = helper_names();
   for (const auto& s : exe.elf.symbols) CHECK_FALSE((names.count(s->name) != 0 && s->is_absolute()));
-  const Ran ran = run(exe);
+  const Ran ran = run_without_sim_helpers(exe);
   for (std::size_t k = 0; k < outs.size(); ++k) {
     const std::vector<Int> got = read(ran, "out" + std::to_string(k), t, kN);
     for (std::size_t i = 0; i < kN; ++i) {
@@ -330,7 +330,7 @@ TEST_CASE("runtime_library sim: bin16_to_bcd") {
                           "    return 0;\n}\n";
   const Exe exe = build(src);
   CHECK(keys(own_helpers(exe.elf)) == std::set<std::string>{"bin16_to_bcd"});
-  const std::vector<Int> got = read(run(exe), "out0", U32, kN);
+  const std::vector<Int> got = read(run_without_sim_helpers(exe), "out0", U32, kN);
   for (std::size_t i = 0; i < kN; ++i) {
     // The five decimal digits read as hexadecimal.
     char digits[8];
@@ -352,7 +352,7 @@ TEST_CASE("runtime_library sim: every helper is tested") {
 TEST_CASE("runtime_library sim: a link takes only the called helpers and their callees") {
   const Exe exe = build(kDivide);
   CHECK(keys(own_helpers(exe.elf)) == std::set<std::string>{"sdivmod16", "udivmod16"});
-  CHECK(run(exe).result == -176);
+  CHECK(run_without_sim_helpers(exe).result == -176);
 }
 
 TEST_CASE("runtime_library sim: --defsym takes precedence over the library") {
@@ -381,7 +381,7 @@ TEST_CASE("runtime_library sim: the helpers use a moved HARGS") {
                         "int a = -1234; int b = 7;\n"
                         "int main(void) { wndtop = 3; return a / b; }\n");
   CHECK(exe.elf.symbol("HARGS")->value != 0x04);
-  CHECK(run(exe).result == -176);
+  CHECK(run_without_sim_helpers(exe).result == -176);
   const std::string meta = exe.elf.link_text().value();
   const std::string after = meta.substr(meta.find("hargs_size=") + 11);
   const long long size = std::stoll(after.substr(0, after.find_first_of(" \n")));
@@ -394,7 +394,7 @@ TEST_CASE("runtime_library sim: a linker script places the helpers by the librar
   CHECK(keys(helpers) == std::set<std::string>{"sdivmod16", "udivmod16"});
   for (const auto& [name, a] : helpers) CHECK((0x4000 <= a && a < 0x4400));
   CHECK(exe.elf.symbol("main")->value < 0x4000);
-  CHECK(run(exe).result == -176);
+  CHECK(run_without_sim_helpers(exe).result == -176);
 }
 
 TEST_CASE("runtime_library sim: a linker script places the helpers with a pattern") {
@@ -402,5 +402,5 @@ TEST_CASE("runtime_library sim: a linker script places the helpers with a patter
   script.replace(script.find("a.o(.text .text.*)"), 18, "*(.text .text.*)");
   const Exe exe = build(kDivide, {}, script);
   for (const auto& [name, a] : own_helpers(exe.elf)) CHECK((0x0800 <= a && a < 0x1800));
-  CHECK(run(exe).result == -176);
+  CHECK(run_without_sim_helpers(exe).result == -176);
 }

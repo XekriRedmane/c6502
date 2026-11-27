@@ -40,7 +40,7 @@ struct Run {
   std::vector<int> changed;
 };
 
-Run run(const std::string& src, Pipeline pipeline, const std::vector<int>& bytes, int seed) {
+Run run_with_seeded_bytes(const std::string& src, Pipeline pipeline, const std::vector<int>& bytes, int seed) {
   sim::Simulation s = build_sim(src, pipeline);
   for (int a : bytes) s.cpu.memory[a] = static_cast<std::uint8_t>((seed ^ a) & 0xFF);
   const sim::SimResult result = s.run();
@@ -63,7 +63,7 @@ TEST_CASE("runtime_layout: the bytes of the fixed object are untouched") {
   // trip (the hooks) all run with the block moved clear of $1F-$49.
   for (const Pipeline pipeline : kBothPipelines) {
     INFO("pipeline=" << pipeline);
-    const Run r = run(kMonitor + kSrc, pipeline, range(0x1F, 0x4A), 0xA5);
+    const Run r = run_with_seeded_bytes(kMonitor + kSrc, pipeline, range(0x1F, 0x4A), 0xA5);
     CHECK(r.value == kWant);
     CHECK(r.changed.empty());
   }
@@ -75,7 +75,7 @@ TEST_CASE("runtime_layout: the classic layout writes those bytes") {
   // checks doesn't happen. The optimized build keeps its pointers in
   // zero-page locals instead of DPTR, and its helpers stay below $1F, so
   // it doesn't.
-  const Run r = run(kSrc, Pipeline::kUnoptimized, range(0x1F, 0x4A), 0xA5);
+  const Run r = run_with_seeded_bytes(kSrc, Pipeline::kUnoptimized, range(0x1F, 0x4A), 0xA5);
   CHECK(r.value == kWant);
   CHECK_FALSE(r.changed.empty());
 }
@@ -118,7 +118,7 @@ TEST_CASE("runtime_layout: the Monitor headers' reserved bytes are untouched") {
   for (const auto& [header, include, reserved] : headers) {
     for (const Pipeline pipeline : kBothPipelines) {
       INFO(header << " pipeline=" << pipeline);
-      const Run r = run(include + kSrc, pipeline, reserved, 0x5A);
+      const Run r = run_with_seeded_bytes(include + kSrc, pipeline, reserved, 0x5A);
       CHECK(r.value == kWant);
       CHECK(r.changed.empty());
     }

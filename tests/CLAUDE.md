@@ -15,7 +15,9 @@ it. `C6502_CHECK_IR=1` makes c6502cpp check the IR after every
 optimizer pass and at the asm stage boundaries
 (cpp/src/passes/ir_check.h), and a test that needs the checks whatever
 the variable says calls `cpp_backend.enable_ir_check()`. The fuzzers
-always run with them.
+always run with them. `C6502_SIM_LOCKSTEP=1` runs the C++ CPU beside
+py65 in every `Simulation.run` and fails a test at the first
+instruction where they differ (sim/lockstep.py).
 
 In parallel, with pytest and pytest-xdist (dev dependencies; `uv
 sync` installs them):

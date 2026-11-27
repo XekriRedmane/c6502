@@ -282,10 +282,17 @@ cpp/
                       edited by hand since step 8
     preprocessor_cases.*  the check of a recorded call of `preprocess`
     sim/assembler.*   instruction_size, from sim/assembler.py
+    sim/cpu.*         the simulator's 6502, which executes as py65 1.2.0
+                      does, with its trap table and callbacks (step 9, G3)
+    sim/cpu_run.*     the backend mode `cpu-run`, which runs it for
+                      sim/lockstep.py's comparison with py65
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
     compile_case.*    the library of the tests of whole compiles (step 9)
     frozen/py_random.txt   CPython 3.11's results of random.Random
+    frozen/cpu/       py65's single steps and decimal-mode results,
+                      which tools/py65_cpu_vectors.py wrote, for
+                      test_cpu.cpp
     asm_text.h        a test's program and expected instructions as dump text
     call_case.h       a recorded call of a function of emission, for the
                       tests recorded from the Python unit tests
@@ -3453,6 +3460,36 @@ CMakeLists.txt defines. src/py_random.h is CPython 3.11's
 CPython's own results, frozen in tests/frozen/py_random.txt, so that a
 case or a fuzzer that draws operands at random draws the Python
 test's.
+
+## The simulator's CPU
+
+src/sim/cpu.h is the 6502 that the C++ simulator runs on (step 9, G3).
+It executes each instruction as py65 1.2.0's `MPU` does, py65's
+departures from the NMOS 6502 included, because the simulator's
+expected values and cycle counts were all taken on py65. A step reads
+and writes memory in py65's order, so `set_io`'s callbacks on an address
+range see a read-modify-write's read before its write. `run` checks the
+cycles, an instruction count, the trap table, and BRK before each
+instruction, in the order of sim/harness.py's step loop, and then calls
+`before_instruction`, which the game machines' decoding of each
+instruction's soft-switch access can use.
+
+The CPU is checked against py65 in two ways while py65 is installed.
+
+- tools/py65_cpu_vectors.py writes cpp/tests/frozen/cpu/vectors.txt,
+  2,971 single steps of py65 from random states, with the cases of each
+  addressing mode forced (a page crossed and not, an index that wraps
+  in page 0, a pointer at $FF, branches taken across a page, the stack
+  pointer at each end, and the instruction at the end of memory). Each
+  gives the bytes read before written, every read address in order, the
+  state and cycles after, and every write. It also writes
+  decimal.txt, a CRC-32 of the A and P that ADC and SBC give in decimal
+  mode for each operand, per accumulator and carry. test_cpu.cpp runs
+  the CPU on all of them, and they stay the reference once py65 is gone.
+- With `C6502_SIM_LOCKSTEP=1`, sim/lockstep.py runs each simulation
+  of the Python harness on py65 and then on the C++ CPU, through the
+  backend mode `cpu-run` (src/sim/cpu_run.h), and compares a digest of
+  the state and the writes after each instruction.
 
 ## Status
 

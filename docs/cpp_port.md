@@ -5117,3 +5117,104 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   - sim/runtime.py's check that every name in `ASM_IMPLEMENTED` had
     been assembled went with the tuple, since the names now come from
     the functions that `helper_program` gives.
+- 26 Nov 2026: group G3 of step 9 is done. cpp/src/sim/cpu.h is a 6502
+  that executes each instruction as py65 1.2.0's `MPU` does, with
+  py65's cycle tables, its decimal mode (Z, N, and V from the result
+  before the adjustment), its 3 cycles for `DEC abs`, its 105
+  undefined opcodes, which skip a byte in no cycles, its reset state,
+  and its B and bit 5 in P. A word read at $FFFF, where py65 raises
+  `IndexError`, throws `CpuError`. It reads and writes memory in
+  py65's order, so the read and write callbacks on an address range
+  see a read-modify-write's read before its write. Its `run` checks the
+  cycles, an instruction count, the trap table, and BRK before each
+  instruction, in the order of sim/harness.py's loop, and calls
+  `before_instruction` and `after_instruction` around each step. A trap
+  or `before_instruction` gives `kRts` (return as the harness's hooks
+  do), `kExecute`, `kContinue` (it has set PC itself, as Ali Baba's
+  hooks and `_delay_loop` do), or `kStop`. The backend mode `cpu-run`
+  (src/sim/cpu_run.h) runs it in segments from a given image and state.
+
+  The CPU was checked against py65 in two ways.
+  - tools/py65_cpu_vectors.py wrote cpp/tests/frozen/cpu/vectors.txt,
+    2,971 single steps of py65 covering all 256 opcodes from random
+    states, with the cases of each addressing mode forced, 48 of them
+    the reads at $FFFF that raise. Each holds the bytes read before
+    they were written, every read address in order, the state and
+    cycles after, and every write. decimal.txt holds 1,024 CRC-32s of
+    the A and P that `ADC #b` and `SBC #b` give in decimal mode, one per
+    instruction, carry, and accumulator over the 256 operands, which
+    covers all 262,144 inputs in 10 KB. test_cpu.cpp runs the CPU on
+    both, and on py65's cycle tables, and every step matched on the
+    first build.
+  - With `C6502_SIM_LOCKSTEP=1`, sim/lockstep.py runs each
+    `Simulation.run` on py65 as before, records each segment between
+    hook calls with a CRC-32 of the state and the writes after each
+    instruction, and then runs the same segments on the C++ CPU in one
+    `cpu-run` request and compares them. The first difference raises
+    `LockstepError` with both states at that instruction, which it
+    finds by replaying py65 from the start. A copy of py65 with `LDA #`
+    broken on purpose was caught at its first instruction. The suite
+    ran with it in three parts, and the fuzzers on seeds 0 to 999 of
+    `exprs`, `calls`, and `stmts`. No run differed.
+
+  | Lockstep run | Runs | Instructions compared | Segments |
+  |---|---|---|---|
+  | the chapter corpus, unoptimized and `-O` (test_sim_asm.py, test_sim_asm_optimized.py, test_sim_differential.py) | 1,849 | 2,629,493 | 3,797 |
+  | the `*_sim.py` tests | 936 | 25,327,708 | 5,620 |
+  | the rest of the suite | 1,478 | 81,762,091 | 1,538 |
+  | the fuzzers, 3,000 seeds | 5,812 | 16,384,990 | 7,870 |
+  | in all | 10,075 | 126,104,282 | 18,825 |
+
+  The suite's three parts gave 753 passed and 22 skipped in all, with
+  `C6502_CHECK_IR=1` and the games' files present. Of the fuzzers'
+  seeds, 187 were the known rejection of an unoptimized frame over 253
+  bytes, and `stmts` seed 854 failed under `-O` with an IR check. It
+  was a compiler bug, fixed in its own commit with a doctest case. The
+  narrowing of a compare in `fold_producer_jumps` looked through a
+  global's one definition in the function, a copy in a later loop, so
+  `if (z < k) for (...) z = (p ? i : i);` compared `i` before the loop
+  set it.
+
+  | Module | Ported | Dropped | Left in Python |
+  |---|---|---|---|
+  | test_bcd_builtins.py | 2 | 0 | 2 G4 |
+
+  test_bcd_builtins.py's `TestArithmetic` compared builtin_functions.py's
+  `adc_byte` and `sbc_byte` with py65 on all 131,072 inputs of each, and
+  checked `bcd_add` and `bcd_sub` on six operands. The doctest cases
+  compare the C++ `adc_byte` and `sbc_byte` with the C++ CPU on the same
+  inputs, and the CPU with py65 through decimal.txt, and check the same
+  six values. builtin_functions.py's own copy is no longer compared
+  with py65, and it goes in R. No other Python test checks the CPU or
+  decimal arithmetic alone, since the rest compile a program.
+
+  The plan changed in five places once the code was read.
+  - The lockstep mode is sim/lockstep.py, which `Simulation.run` calls,
+    rather than code in sim/harness.py, so that it goes with py65 as one
+    file. It covers `run` alone. `run_bucketed`, which no test calls,
+    and a test's own calls of `step` aren't compared.
+  - A run sends one `cpu-run` request for all its segments, each with
+    the registers and the bytes the hook wrote (`patches`), rather than
+    one request a segment, since each request starts c6502cpp.
+  - The digest is zlib's CRC-32 of `struct.pack("<HBBBBBQ", ...)` and the
+    writes, which Python computes with `zlib.crc32` at a few
+    microseconds an instruction.
+  - The vectors hold the read addresses too, which check the order the
+    callbacks see, and the decimal check is frozen as CRC-32s of rows
+    rather than its 262,144 results.
+  - The read callback replaces memory's value, and a write goes to the
+    write callback and to memory, which is what the games' `_access`
+    leaves in memory. The opcode's fetch is a read like the others, as
+    py65's `step` reads it. Two of these matter to G5. The callbacks
+    see `JMP ($C0xx)`'s reads, which the games' decoding leaves out.
+    And `run` checks BRK before `before_instruction`, so a machine
+    that marks each PC it reaches, as Ali Baba's `seen` does, sets
+    `stop_at_brk` false and stops at BRK itself.
+
+  The YARPGen seeds weren't run, since the YARPGen binary isn't built
+  in the worktree. The fresh MSVC build gave 10,453 doctest cases
+  passed (113,867 assertions), ctest 4 of 4, `check-golden` 19,678 jobs
+  with 0 differing, and `check-frozen` no difference. The suite, with
+  `C6502_CHECK_IR=1` and the games' files present, gave 753 passed and
+  22 skipped, against 755 and 22 at the base, and the two tests of
+  `TestArithmetic` account for the difference. No GCC build was made.

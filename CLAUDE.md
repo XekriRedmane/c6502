@@ -35,6 +35,10 @@ and drive the compiler from there.
 - The runtime helpers are built in C++ (cpp/src/rtlib/helpers.h), and
   the simulator reads them from `c6502cpp helper-dump` through
   `cpp_backend.helper_program`.
+- The simulator still runs on py65. Its C++ replacement starts with
+  the CPU, cpp/src/sim/cpu.h, which executes as py65 does, and
+  `C6502_SIM_LOCKSTEP=1` compares the two on every simulation
+  (sim/lockstep.py).
 - `binutils/elf.py` and `binutils/opcodes.py` read executables and
   decode opcodes for the simulator.
 - `bit_precise.py` and `builtin_functions.py` are read by the tests,

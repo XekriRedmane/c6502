@@ -17,6 +17,9 @@ Coverage:
       * a 2-byte `register` local (a local gets only Y),
       * `&x` on a `register` parameter,
       * `register` params on a recursive (zp_abi-ineligible) function.
+
+The tests that only read compile.py's output or errors are doctest
+cases in cpp/tests/test_register_keyword_sim.cpp.
 """
 from __future__ import annotations
 
@@ -110,84 +113,7 @@ class TestRegisterKeywordSim(unittest.TestCase):
         self.assertNotIn("__local_sum_n__acc", sum_n_body)
         self.assertRegex(sum_n_body, r"\b(TYA|TAY|INY|DEY)\b")
 
-    def test_caller_loads_second_arg_into_x(self) -> None:
-        src = (
-            "char add2(register char a, register char b) {"
-            "    return (char)(a + b);"
-            "}"
-            "int main(void) { return add2(5, 7); }"
-        )
-        out = self._codegen(src)
-        main_body = out[out.index("main:"):]
-        # `b` (7) loads into X via the direct-into-X peephole.
-        self.assertRegex(main_body, r"LDX\s+#\$07")
-        # The register args don't get a slot store at the call site.
-        self.assertNotRegex(main_body, r"STA\s+__zpabi_add2__b")
-
     # --- constraint / eligibility failures ---
-
-    def _assert_compile_error(self, src: str, needle: str) -> None:
-        # `main()` reports the problem on stderr and returns 1.
-        with patch("sys.stdin", io.StringIO(src)),              patch("sys.stdout", new_callable=io.StringIO),              patch("sys.stderr", new_callable=io.StringIO) as err:
-            rc = compile_main([
-                "compile.py", "-", "-S", "-O",
-            ])
-        self.assertEqual(rc, 1)
-        self.assertTrue(err.getvalue().startswith("<stdin>: error: "))
-        self.assertIn(needle, err.getvalue())
-
-    def test_pointer_register_param_rejected(self) -> None:
-        src = (
-            "char deref(register char *p) { return *p; }"
-            "int main(void) { char c = 7; return deref(&c); }"
-        )
-        self._assert_compile_error(src, "pointer")
-
-    def test_three_register_bytes_rejected(self) -> None:
-        # Three 1-byte register params need three registers; only A
-        # and X are available for args.
-        src = (
-            "char add3("
-            "    register char a, register char b, register char c) {"
-            "    return (char)(a + b + c);"
-            "}"
-            "int main(void) { return add3(1, 2, 3); }"
-        )
-        self._assert_compile_error(src, "register")
-
-    def test_two_byte_register_local_rejected(self) -> None:
-        # A `register` local gets only Y (one byte); a 2-byte int
-        # doesn't fit.
-        src = (
-            "int main(void) {"
-            "    register int x = 7;"
-            "    return x;"
-            "}"
-        )
-        self._assert_compile_error(src, "register")
-
-    def test_address_of_register_param_rejected(self) -> None:
-        src = (
-            "char fst(register char x) {"
-            "    char *p = &x;"
-            "    return *p;"
-            "}"
-            "int main(void) { return fst(5); }"
-        )
-        self._assert_compile_error(src, "register")
-
-    def test_register_on_recursive_function_rejected(self) -> None:
-        # A `register` param requires zp_abi eligibility; recursion
-        # makes the function ineligible -> hard error.
-        src = (
-            "int fib(register int n) {"
-            "    if (n < 2) return n;"
-            "    return fib(n - 1) + fib(n - 2);"
-            "}"
-            "int main(void) { return fib(5); }"
-        )
-        self._assert_compile_error(src, "register")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,15 +1,24 @@
-// The tests of tests/test_register_keyword_sim.py that read compile.py's
-// `-S -O` output or errors: the caller of a function with `register`
-// parameters loads the second byte into X, and the uses of `register`
-// that the convention can't give are one-line errors.
+// The tests of tests/test_register_keyword_sim.py: functions with
+// `register` parameters, a `register` local, and returns in A and X,
+// run under `-O`; the caller of a function with `register` parameters
+// loads the second byte into X; and the uses of `register` that the
+// convention can't give are one-line errors.
 #include <string>
 
 #include "compile_case.h"
 #include "doctest.h"
+#include "sim_case.h"
 
 namespace {
 
 namespace suite = c6502::suite;
+
+// Runs `src` under `-O` and returns what `main` returns as a signed int.
+std::int64_t sim_return_int(const std::string& src) {
+  const c6502::sim::SimResult r = suite::build_sim(src, true).run(5'000'000);
+  CHECK_FALSE(r.timed_out);
+  return r.return_int_signed();
+}
 
 // Checks that `compile.py - -S -O` reports a problem with `src` in one
 // line that names `needle`, with exit status 1.
@@ -88,4 +97,38 @@ TEST_CASE("register_keyword_sim: a register parameter of a recursive function is
       "}"
       "int main(void) { return fib(5); }",
       "register");
+}
+
+TEST_CASE("register_keyword_sim: two register parameters in A and X") {
+  CHECK(sim_return_int(R"c(char add2(register char a, register char b) {    return (char)(a + b);}int main(void) { return add2(30, 12); })c") == 42);
+}
+
+TEST_CASE("register_keyword_sim: a 2-byte register parameter spreads over A and X") {
+  CHECK((sim_return_int(R"c(unsigned int echo(register unsigned int a) { return a; }int main(void) { return (int)echo(0x1234); })c") & 0xFFFF) == 0x1234);
+}
+
+TEST_CASE("register_keyword_sim: a 1-byte return in A") {
+  CHECK(sim_return_int(R"c(char add_one(register char x) { return (char)(x + 1); }int main(void) { return add_one(41); })c") == 42);
+}
+
+TEST_CASE("register_keyword_sim: a 2-byte return in A and X") {
+  CHECK((sim_return_int(R"c(unsigned int widen(register char x) {    return (unsigned int)((unsigned int)x << 8 | 0x07);}int main(void) { return (int)widen(0x12); })c") & 0xFFFF) == 0x1207);
+}
+
+TEST_CASE("register_keyword_sim: a register local is kept in Y") {
+  // The `register` parameter `n` comes in A, so the function must stay
+  // without a soft-stack frame, whose prologue would overwrite A.
+  const std::string src = R"c(char sum_n(register char n) {    register char acc = 0;    while (n > 0) {        acc = (char)(acc + n);        n = (char)(n - 1);    }    return acc;}int main(void) { return sum_n(5); })c";
+  CHECK(sim_return_int(src) == 5 + 4 + 3 + 2 + 1);
+  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"}, src);
+  REQUIRE(o.status.has_value());
+  REQUIRE(*o.status == 0);
+  const std::string out = o.out();
+  const std::size_t sum_n_at = out.find("sum_n:");
+  const std::size_t main_at = out.find("main:");
+  REQUIRE(sum_n_at != std::string::npos);
+  REQUIRE(main_at != std::string::npos);
+  const std::string sum_n_body = out.substr(sum_n_at, main_at - sum_n_at);
+  CHECK_FALSE(suite::contains(sum_n_body, "__local_sum_n__acc"));
+  CHECK(suite::search("\\b(TYA|TAY|INY|DEY)\\b", sum_n_body));
 }

@@ -4,8 +4,9 @@
 `return`, or a declaration in a block. Covers where the grammar takes
 attributes before a statement, the errors for each attribute where it
 doesn't apply, and the error for the `#pragma c6502` lines they
-replaced. tests/test_unroll.py and tests/test_recursion_saves.py test
-what `unroll` and `save_hardware_stack` do."""
+replaced. cpp/tests/test_unroll.cpp, cpp/tests/test_unroll_source.cpp,
+and tests/test_recursion_saves.py test what `unroll` and
+`save_hardware_stack` do."""
 
 from __future__ import annotations
 

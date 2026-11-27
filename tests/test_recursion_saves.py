@@ -5,36 +5,18 @@ stack (`cpp/src/passes/recursion_saves.h`).
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6), and those that compile a source
+and run no simulator are in cpp/tests/test_recursion_saves.cpp."""
 from __future__ import annotations
 
 import unittest
 
-from compile import _run_source
-from errors import RecursionSaveError
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program as _run_tac
 
 # The attribute, before a statement or declaration. In the programs
 # below, `SAVE ` stands where it goes.
 _SAVE = "[[c6502::save_hardware_stack]] "
-
-
-def _codegen(src: str, optimize: bool = True) -> str:
-    return _run_source("codegen", src, optimize=optimize)
-
-
-def _function(asm: str, name: str) -> str:
-    """The text of function `name` in `asm`, up to the next one."""
-    lines = asm.splitlines()
-    start = lines.index(f"{name}:")
-    end = start + 1
-    while end < len(lines) and not (
-        lines[end] and not lines[end][0].isspace()
-        and lines[end].endswith(":") and not lines[end].startswith(".")
-    ):
-        end += 1
-    return "\n".join(lines[start:end])
 
 
 _DESCEND = """
@@ -59,100 +41,6 @@ int main(void) {
     return deepest * 10 + level;
 }
 """
-
-
-class TestSyntax(unittest.TestCase):
-
-    def test_call_that_cant_recurse(self) -> None:
-        src = ("int g(int x) { return x; }\nint f(int x) {\n"
-               + _SAVE + "return g(x);\n}\n")
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                with self.assertRaises(RecursionSaveError) as cm:
-                    _codegen(src, optimize)
-                self.assertIn("'g' can't call 'f' again", str(cm.exception))
-
-    def test_call_through_a_pointer(self) -> None:
-        src = ("int f(int x) {\nint (*p)(int) = f;\nif (x == 0) return 0;\n"
-               + _SAVE + "return p(x - 1);\n}\n")
-        with self.assertRaises(RecursionSaveError) as cm:
-            _codegen(src)
-        self.assertIn("function pointer", str(cm.exception))
-
-
-class TestCodegen(unittest.TestCase):
-
-    def test_saves_around_the_call(self) -> None:
-        body = _function(
-            _codegen(_DESCEND.replace("SAVE ", _SAVE)), "descend",
-        )
-        self.assertNotIn("prologue", body)
-        self.assertIn(
-            "   LDA   __local_descend__here\n   PHA\n   JSR   descend\n"
-            "   PLA\n   STA   level\n",
-            body,
-        )
-
-    def test_without_the_attribute(self) -> None:
-        body = _function(
-            _codegen(_DESCEND.replace("SAVE ", "")), "descend",
-        )
-        self.assertIn("callee-saved", body)
-        self.assertNotIn("PHA", body)
-
-    def test_pushes_from_and_pulls_into_globals(self) -> None:
-        src = """
-unsigned char a, b, depth;
-void load(void) { depth++; }
-void f(void) {
-    if (depth < 2) {
-        unsigned char sa = a;
-        unsigned char sb = b;
-        load();
-        SAVE f();
-        b = sb;
-        a = sa;
-    }
-}
-int main(void) { f(); return depth; }
-""".replace("SAVE ", _SAVE)
-        body = _function(_codegen(src), "f")
-        self.assertIn(
-            "   LDA   a\n   PHA\n   LDA   b\n   PHA\n   JSR   load\n"
-            "   JSR   f\n   PLA\n   STA   b\n   PLA\n   STA   a\n",
-            body,
-        )
-
-    def test_caller_keeps_zp_abi(self) -> None:
-        # rec has a pool, so f0 can call it and read its own
-        # parameter slot afterwards. f0 takes `d` in A, so `p0`
-        # arrives in its slot.
-        src = _PROGRAMS["zp_abi caller"].replace("SAVE ", _SAVE)
-        body = _function(_codegen(src), "f0")
-        self.assertNotIn("prologue", body)
-        self.assertIn("JSR   rec", body)
-        self.assertIn("__zpabi_f0__p0_0", body.split("JSR   rec")[1])
-
-    def test_unmarked_call_on_the_cycle(self) -> None:
-        src = """
-int pong(int n);
-int ping(int n) {
-    int a = n * 2;
-    if (n <= 0) return 0;
-    SAVE int r = pong(n - 1);
-    return r + a;
-}
-int pong(int n) {
-    int b = n + 5;
-    if (n <= 0) return 1;
-    int r = ping(n - 1);
-    return r * 2 + b;
-}
-int main(void) { return ping(5); }
-""".replace("SAVE ", _SAVE)
-        asm = _codegen(src)
-        self.assertIn("callee-saved", _function(asm, "ping"))
-        self.assertNotIn("PHA\n   JSR", _function(asm, "ping"))
 
 
 _PROGRAMS = {

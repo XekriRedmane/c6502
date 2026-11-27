@@ -1,13 +1,6 @@
-// tests/test_zork_interpreter.py's `TestSessions`: Zork played on the
-// interpreter in examples/zork and on Zork's own, which is read from the
-// game's disk image (tracks 1 and 2), with the story file read from
-// track 3 on. Each session runs on the stand-in Apple II of
-// sim/apple2.h, with the game's disk in slot 6, drive 1, and an empty
-// save disk in drive 2. The two programs must make the same calls to the
-// Monitor and to RWTS, with the same characters and cursor, write the
-// same sectors, and leave the same screen and printer output. The cases
-// run only with ZORK_DSK set to the path of `Zork I r15 (4am crack).dsk`
-// from https://github.com/XekriRedmane/zorki-r15-reveng.
+// The cases run only with ZORK_DSK set to the path of
+// `Zork I r15 (4am crack).dsk` from
+// https://github.com/XekriRedmane/zorki-r15-reveng.
 #include <memory>
 #include <string>
 #include <vector>

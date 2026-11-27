@@ -1,18 +1,5 @@
-// tests/test_ali_baba.py's `TestOriginal`, `TestRuns`, and
-// `TestReadmeLink`: Electronic Arts' Ali Baba and the Forty Thieves,
-// main.asm of https://github.com/XekriRedmane/ali_baba_reveng, and the C
-// program in examples/ali_baba that translates it, on the stand-in Apple
-// II of sim/ali_baba.h, which records every soft-switch access, Monitor
-// routine call, and call into the kept disk code, with a CRC of hi-res
-// page 1. The `original` cases play each script on the original and
-// check that it reaches what the script is for. The `program` cases play
-// each on the C program as well, linked with the simulator's runtime
-// helpers, and compare the two: the streams of events must be the same
-// up to the event at which the original's run ends, and so must the
-// disks the scripts write. The `readme link` cases link the program by
-// the README's command, which takes the helpers from the runtime
-// library, and play the game on it. The cases run only with ALI_BABA_DIR
-// set to the project's directory after its build.py.
+// The cases run only with ALI_BABA_DIR set to the directory of
+// https://github.com/XekriRedmane/ali_baba_reveng after its build.py.
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -65,7 +52,6 @@ struct DiskCall {
   bool operator==(const DiskCall&) const = default;
 };
 
-// The command, track, and sector of each RWTS call of a run.
 std::vector<DiskCall> disk_reads(const ali_baba::Machine& machine) {
   std::vector<DiskCall> out;
   for (const auto& [_, r] : machine.events.disk) {

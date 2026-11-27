@@ -1,10 +1,8 @@
 """Compares the games' C++ machines (cpp/src/sim/games.h) with the Python
-machines in sim/, for step 9 of the port (docs/cpp_port.md, G5).
+machines in sim/.
 
 Each run plays one script of one game, on the original or on the C
-program, the way tests/test_zork_interpreter.py, test_lode_runner.py,
-and test_ali_baba.py played them before group G5 moved those tests to
-doctest. The Python machine writes the run as text, and `c6502cpp
+program. The Python machine writes the run as text, and `c6502cpp
 game-run` (cpp/src/sim/game_run.h) writes the same text from the C++
 machine: a line per event (a Monitor or RWTS call, for Zork) with its
 PC and cycle count, which the tests leave out, and a CRC-32 of the
@@ -23,9 +21,7 @@ reach with `c6502cpp game-run ali_baba coverage`.
 The runs of the originals come first, since a C program runs until it
 has made as many events as the original, and -j runs that many at once.
 It needs the C++ build (`C6502_CPP` or cpp/build/bin/c6502cpp) and the
-games' files, through ZORK_DSK, LODE_RUNNER_DIR, and ALI_BABA_DIR. The C
-programs are built as the tests built them. It goes with sim/'s
-machines.
+games' files, through ZORK_DSK, LODE_RUNNER_DIR, and ALI_BABA_DIR.
 """
 from __future__ import annotations
 
@@ -57,14 +53,6 @@ def _digest(mpu) -> int:
 
 
 class _Tracer:
-    """What a run records besides the machine's own events: the digest
-    at each event, the instructions, the undefined opcodes, and the
-    steps after an event. It stands in for sim.lockstep's
-    `MachineRecorder`, which every machine's `run` calls around each
-    instruction when the lockstep mode is on. The digests, the steps,
-    and the undefined opcodes are recorded only while `tracing`, which
-    is the C++ side's run after the machine is made."""
-
     def __init__(self) -> None:
         self.reset(None, 0)
 
@@ -129,8 +117,6 @@ def _crc(data) -> int:
     return zlib.crc32(bytes(data))
 
 
-# ---- Building the C programs, as the tests did ---------------------------------
-
 _UNITS = {
     "zork": ["main", "decode", "objects", "numbers", "input", "pages",
              "zstring", "output", "disk", "prompts", "save"],
@@ -146,7 +132,6 @@ _SCRIPTS = {"zork": "interpreter.ld", "lode_runner": "lode_runner.ld",
 def build(game: str, tmp: Path, defsyms: bool) -> Path:
     from sim.linked import defsym_args
     d = ROOT / "examples" / game
-    # The linker scripts place sections by the objects' names.
     tmp = tmp / game
     tmp.mkdir(exist_ok=True)
     objects = []
@@ -162,8 +147,6 @@ def build(game: str, tmp: Path, defsyms: bool) -> Path:
                          *(defsym_args() if defsyms else []), "-o", str(exe)]) == 0
     return exe
 
-
-# ---- Zork ------------------------------------------------------------------------
 
 _ZORK = {
     "walk": ([
@@ -248,8 +231,6 @@ def run_zork(script: str, exe: Path | None) -> tuple[list[str], int]:
                f"instructions {TRACER.instructions} why {why}")
     return out, len(a.calls)
 
-
-# ---- Lode Runner -----------------------------------------------------------------
 
 _LODE_RUNNER = {
     "demo": ([], (1, 2), "master", 400_000_000),
@@ -341,8 +322,6 @@ def run_lode_runner(script: str, exe: Path | None,
     return out, len(ev)
 
 
-# ---- Ali Baba --------------------------------------------------------------------
-
 class _AliBabaScript(NamedTuple):
     keys: list[tuple[int, int]]
     end: int
@@ -425,9 +404,6 @@ def _ali_baba_file(name: str) -> bytes:
 
 
 def _ali_baba_disks(script: str) -> dict[str, bytes | None]:
-    """The disks a script swaps in besides the game's: an unformatted
-    one for the save, and for the load, the one the save script writes
-    on the original."""
     from sim import ali_baba as A
     if script == "save":
         return {"scenario": None}
@@ -443,9 +419,6 @@ def _ali_baba_disks(script: str) -> dict[str, bytes | None]:
 
 
 def _ali_baba_coverage() -> list[str]:
-    """Each script's coverage of the original, and the routines of the
-    C program's spans that no script reaches, as tests/test_ali_baba.py's
-    `coverage` entry printed them."""
     from sim import ali_baba as A
     root = Path(os.environ["ALI_BABA_DIR"]) / "output"
     labels = A.original_labels((root / "main.asm").read_text(errors="replace"),
@@ -519,8 +492,6 @@ def run_ali_baba(script: str, exe: Path | None,
     return out, len(ev)
 
 
-# ---- Comparing -------------------------------------------------------------------
-
 _RUNNERS = {"zork": run_zork, "lode_runner": run_lode_runner,
             "ali_baba": run_ali_baba}
 _ALL = {"zork": list(_ZORK), "lode_runner": list(_LODE_RUNNER),
@@ -559,9 +530,6 @@ def _first_difference(a: list[str], b: list[str]) -> int | None:
 
 def compare(game: str, script: str, program: str, exe: Path | None,
             events: int | None, out_dir: Path) -> tuple[bool, int, int, list[str]]:
-    """Runs one script on both machines and compares the texts. Returns
-    whether they're equal, the events, the instructions, and the lines
-    of the report."""
     t = time.time()
     py, _ = python_run(game, script, exe, events)
     t_py = time.time() - t
@@ -636,8 +604,6 @@ def main() -> int:
         for game, _, program in runs:
             if program != "original" and (game, program) not in exes:
                 exes[(game, program)] = build(game, Path(tmp), game == "ali_baba" and program == "c")
-        # A program runs until it has made as many events as the original,
-        # so the originals run first.
         originals = {(g, s) for g, s, p in runs if p != "original" and g != "zork"}
         counts: dict[tuple[str, str], int] = {}
         first = [(g, s, "original") for g, s, p in runs if p == "original" or (g, s) in originals]

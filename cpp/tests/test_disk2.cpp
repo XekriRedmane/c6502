@@ -1,6 +1,3 @@
-// tests/test_ali_baba.py's `TestDisk`: the nibble-level disk of
-// sim/disk2.h gives back the sectors it was made from. The data comes
-// from CPython's `random.Random` on the Python test's seeds.
 #include <algorithm>
 #include <cstdint>
 #include <vector>

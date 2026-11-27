@@ -1,14 +1,5 @@
-// tests/test_lode_runner.py's `TestRuns`: Broderbund's Lode Runner
-// played on the C program in examples/lode_runner and on the original,
-// main.asm of https://github.com/XekriRedmane/lode_runner_reveng, on the
-// stand-in Apple II of sim/lode_runner.h, which records every
-// soft-switch access and RWTS call with the state of the two
-// high-resolution pages. The original starts at MAIN. The C program is
-// loaded over the same image with the original's code cleared and
-// starts at `main`. The two streams of events must be the same, up to
-// the point where the original reaches the end of the script's run, and
-// the two disks must end the same. The cases run only with
-// LODE_RUNNER_DIR set to the project's directory.
+// The cases run only with LODE_RUNNER_DIR set to the directory of
+// https://github.com/XekriRedmane/lode_runner_reveng.
 #include <memory>
 #include <string>
 #include <vector>

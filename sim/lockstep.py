@@ -228,17 +228,14 @@ def _check(trace: _Trace, image: bytes, start: dict, hooks, max_cycles: int) -> 
             f.write(f"{total} {len(trace.digests)} {trace.stops[-1]}\n")
 
 
-# A chunk of a machine's run goes to the C++ CPU in one request once it
-# holds this many instructions or segments.
 _CHUNK_INSTRUCTIONS = 2_000_000
 _CHUNK_SEGMENTS = 20_000
 
 
 class MachineRecorder:
-    """Records a game machine's run on py65 (sim/apple2.py,
-    lode_runner.py, and ali_baba.py) and runs it on the C++ CPU too. The
-    machine calls `before` just before it executes an instruction and
-    `after` just after. Whatever the machine changes in between, with its
+    """Records a game machine's run on py65 and runs it on the C++ CPU
+    too. The machine calls `before` just before it executes an
+    instruction and `after` just after. Whatever the machine changes in between, with its
     hooks, its soft switches, or a delay loop taken in one step, starts a
     new segment, whose patches are the bytes the machine wrote and whose
     registers are the machine's, and each segment runs on the C++ CPU for
@@ -347,10 +344,6 @@ class MachineRecorder:
                     f"{_fmt_writes(diff[:8])}")
 
     def _report(self, k: int, i: int) -> None:
-        """Raises `LockstepError` for instruction `i` of segment `k` of the
-        chunk, with py65's state before and after it, found by replaying
-        the chunk's segments on a fresh py65 from the chunk's image, and
-        the C++ CPU's after it."""
         import cpp_backend
         from py65.devices.mpu6502 import MPU
         fresh = MPU()

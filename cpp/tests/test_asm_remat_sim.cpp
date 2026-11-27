@@ -25,7 +25,7 @@ unsigned char f(unsigned char *p) {
 }
 int main(void) { g = 3; return f(&g); }
 )c";
-  CHECK(build_sim(src, true).run().return_int() == 3);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int() == 3);
 }
 
 }  // namespace remat_pointer_store

@@ -190,33 +190,33 @@ int main(void) {
 )c";
 const auto kScenarios = 24;
 const auto kRecordSize = 8;
-auto run(const auto& optimize) {
-  auto s = build_sim(kProgram, optimize);
+auto run(Pipeline pipeline) {
+  auto s = build_sim(kProgram, pipeline);
   auto result = s.run(5'000'000);
-  CHECK_FALSE_MESSAGE(result.timed_out, cat("beam_target_tick diff sim timed out (optimize=", optimize, ")"));
+  CHECK_FALSE_MESSAGE(result.timed_out, cat("beam_target_tick diff sim timed out (pipeline=", pipeline, ")"));
   CHECK_MESSAGE((result.return_int() & 0xFFFF) == kScenarios * kRecordSize,
-                cat("log_idx mismatch (optimize=", optimize, ")"));
+                cat("log_idx mismatch (pipeline=", pipeline, ")"));
   auto log_addr = s.symbol("result_log");
   return slice(result.memory, log_addr, log_addr + kScenarios * kRecordSize);
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt full buffer") {
-  auto unopt = run(false);
-  auto opt = run(true);
+  auto unopt = run(Pipeline::kUnoptimized);
+  auto opt = run(Pipeline::kOptimized);
   CHECK_MESSAGE(unopt == opt, "optimizer changed observable state");
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt attack state 80") {
-  auto unopt = run(false);
-  auto opt = run(true);
+  auto unopt = run(Pipeline::kUnoptimized);
+  auto opt = run(Pipeline::kOptimized);
   auto size = 6 * kRecordSize;
   CHECK_MESSAGE(slice(unopt, 0, size) == slice(opt, 0, size),
                 "optimizer perturbed the beam_state == 0x80 (attack) cases");
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt chase state 01") {
-  auto unopt = run(false);
-  auto opt = run(true);
+  auto unopt = run(Pipeline::kUnoptimized);
+  auto opt = run(Pipeline::kOptimized);
   auto start = 6 * kRecordSize;
   auto end = 12 * kRecordSize;
   CHECK_MESSAGE(slice(unopt, start, end) == slice(opt, start, end),
@@ -224,8 +224,8 @@ TEST_CASE("beam_target_tick_diff: opt matches unopt chase state 01") {
 }
 
 TEST_CASE("beam_target_tick_diff: opt matches unopt idle state 00") {
-  auto unopt = run(false);
-  auto opt = run(true);
+  auto unopt = run(Pipeline::kUnoptimized);
+  auto opt = run(Pipeline::kOptimized);
   auto start = 12 * kRecordSize;
   auto end = 20 * kRecordSize;
   CHECK_MESSAGE(slice(unopt, start, end) == slice(opt, start, end),

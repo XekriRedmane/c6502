@@ -12,7 +12,7 @@ namespace c6502::suite {
 namespace {
 
 void run_optimized(const std::string& src, std::int64_t expected) {
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto result = s.run(200'000);
   CHECK_FALSE_MESSAGE(result.timed_out, cat("sim timed out at ", result.cycles));
   CHECK(result.return_int_signed() == expected);

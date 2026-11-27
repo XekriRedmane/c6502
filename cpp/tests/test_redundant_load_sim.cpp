@@ -23,7 +23,7 @@ unsigned char g;
 unsigned char f(unsigned char i) { unsigned char j = tab[i]; if (j == 0) return 0; g = tab[j]; return j; }
 int main(void) { unsigned char r = f(0); return g * 100 + r; }
 )c";
-  CHECK(build_sim(src, true).run().return_int() == 703);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int() == 703);
 }
 
 }  // namespace index_register_of_indexed_data

@@ -15,7 +15,7 @@
 namespace c6502::suite {
 namespace {
 
-std::string codegen_o(const std::string& src) { return codegen(src, true); }
+std::string codegen_o(const std::string& src) { return codegen(src, Pipeline::kOptimized); }
 
 void check(const auto& src, const auto& expected) {
   for (bool optimize : {false, true}) {

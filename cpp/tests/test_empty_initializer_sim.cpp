@@ -219,11 +219,11 @@ TEST_CASE("empty_initializer sim: the bytes dirty leaves reach the objects") {
     }
   }
   const std::string src = replace_all(kLarge, " = {}", "");
-  CHECK(build_sim(src, true).run(2'000'000).return_int_signed() == 1);
+  CHECK(build_sim(src, Pipeline::kOptimized).run(2'000'000).return_int_signed() == 1);
 }
 
 TEST_CASE("empty_initializer sim: an automatic object over 256 bytes is cleared") {
-  const sim::SimResult r = build_sim(kLarge, true).run(2'000'000);
+  const sim::SimResult r = build_sim(kLarge, Pipeline::kOptimized).run(2'000'000);
   CHECK_FALSE(r.timed_out);
   CHECK(r.return_int_signed() == 0);
 }

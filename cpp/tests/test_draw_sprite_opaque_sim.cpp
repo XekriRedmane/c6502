@@ -48,8 +48,8 @@ int main(void) {
 )c";
 }
 
-std::int64_t run(bool optimize) {
-  const sim::SimResult result = build_sim(source(), optimize).run(2'000'000);
+std::int64_t run(Pipeline pipeline) {
+  const sim::SimResult result = build_sim(source(), pipeline).run(2'000'000);
   CHECK_FALSE(result.timed_out);
   return result.return_int() & 0xFFFF;
 }
@@ -57,11 +57,11 @@ std::int64_t run(bool optimize) {
 }  // namespace
 
 TEST_CASE("draw_sprite_opaque_sim: the unoptimized program writes on the page the flag selects") {
-  CHECK(run(false) == 0xA5A5);
+  CHECK(run(Pipeline::kUnoptimized) == 0xA5A5);
 }
 
 TEST_CASE("draw_sprite_opaque_sim: the optimized program writes on the page the flag selects") {
-  CHECK(run(true) == 0xA5A5);
+  CHECK(run(Pipeline::kOptimized) == 0xA5A5);
 }
 
 }  // namespace c6502::suite

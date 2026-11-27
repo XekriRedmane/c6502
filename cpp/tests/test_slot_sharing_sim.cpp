@@ -27,17 +27,20 @@ namespace c6502::suite {
 
 namespace {
 
-std::string codegen_of(const std::string& src, bool optimize = true, bool inline_calls = true) {
+enum class Inlining { kOn, kOff };
+
+std::string codegen_of(const std::string& src, Pipeline pipeline = Pipeline::kOptimized,
+                       Inlining inlining = Inlining::kOn) {
   Options options;
-  options.optimize = optimize;
-  options.inline_calls = inline_calls;
+  options.optimize = optimized(pipeline);
+  options.inline_calls = inlining == Inlining::kOn;
   return codegen(src, options);
 }
 
-std::int64_t run_of(const std::string& src, bool optimize, bool inline_calls = true) {
+std::int64_t run_of(const std::string& src, Pipeline pipeline, Inlining inlining = Inlining::kOn) {
   SimOptions options;
-  options.optimize = optimize;
-  options.inline_calls = inline_calls;
+  options.optimize = optimized(pipeline);
+  options.inline_calls = inlining == Inlining::kOn;
   return build_sim(src, options).run().return_int();
 }
 
@@ -106,11 +109,11 @@ struct Linked {
   std::string exe;
 };
 
-Linked link_units(const std::vector<std::string>& sources, bool inline_calls = true) {
+Linked link_units(const std::vector<std::string>& sources, Inlining inlining = Inlining::kOn) {
   TempDir tmp;
   std::vector<std::string> paths;
   MainOptions options;
-  options.inline_calls = inline_calls;
+  options.inline_calls = inlining == Inlining::kOn;
   for (std::size_t k = 0; k < sources.size(); ++k) {
     const std::string path = tmp.file("u" + std::to_string(k) + ".o");
     const compile_command::Outcome o = compile_main({"compile.py", "-", "-c", "-O", "-o", path}, sources[k], options);
@@ -217,16 +220,16 @@ int main(void) { return sum(data, 4) + sum(data + 1, 2); }
 // The programs of the Python module's `TestShares` and `TestAcrossUnits`
 // ran with inlining off.
 void check_runs_no_inlining(const std::string& src, std::int64_t want) {
-  for (const bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    CHECK(run_of(src, optimize, false) == want);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    CHECK(run_of(src, pipeline, Inlining::kOff) == want);
   }
 }
 
 }  // namespace
 
 TEST_CASE("slot_sharing sim: a forwarded parameter and a local held in its bytes") {
-  const std::string text = codegen_of(kPages, true, false);
+  const std::string text = codegen_of(kPages, Pipeline::kOptimized, Inlining::kOff);
   const std::vector<std::string> records = shares(text);
   REQUIRE(records.size() == 1);
   CHECK(contains(records[0], "member=add_page:"));
@@ -275,7 +278,7 @@ int main(void) {
     return sum;
 }
 )c";
-  const std::string text = codegen_of(src, true, false);
+  const std::string text = codegen_of(src, Pipeline::kOptimized, Inlining::kOff);
   const std::vector<std::string> records = shares(text);
   REQUIRE(records.size() == 1);
   CHECK(contains(records[0], "member=take:"));
@@ -304,7 +307,7 @@ TEST_CASE("slot_sharing sim: no share while another argument goes to the bytes")
             return s + first(0, p);
         }
         )c";
-  CHECK(shares(codegen_of(src, true, false)).empty());
+  CHECK(shares(codegen_of(src, Pipeline::kOptimized, Inlining::kOff)).empty());
   check_runs_no_inlining(src, 10 + 3 + 10);
 }
 
@@ -319,7 +322,7 @@ TEST_CASE("slot_sharing sim: no share while a call reaches a writer of the bytes
             return s + first(0, p);
         }
         )c";
-  CHECK(shares(codegen_of(src, true, false)).empty());
+  CHECK(shares(codegen_of(src, Pipeline::kOptimized, Inlining::kOff)).empty());
   check_runs_no_inlining(src, 10 + 3 + 10);
 }
 
@@ -341,7 +344,7 @@ TEST_CASE("slot_sharing sim: a callee that steps a copy of its parameter") {
             return s + sum(p, 2);
         }
         )c";
-  CHECK(any_holds_main(shares(codegen_of(src, true, false))));
+  CHECK(any_holds_main(shares(codegen_of(src, Pipeline::kOptimized, Inlining::kOff))));
   check_runs_no_inlining(src, 6 + 3);
 }
 
@@ -362,7 +365,7 @@ TEST_CASE("slot_sharing sim: a value held across a sibling with locals") {
             return s + first(0, p) + out[7];
         }
         )c";
-  const std::string text = codegen_of(src, true, false);
+  const std::string text = codegen_of(src, Pipeline::kOptimized, Inlining::kOff);
   CHECK(any_holds_main(shares(text)));
   const auto e = equs(text);
   const std::set<std::int64_t> held = {e.at("__zpabi_first__p_0"), e.at("__zpabi_first__p_1")};
@@ -376,7 +379,7 @@ TEST_CASE("slot_sharing sim: a value held across a sibling with locals") {
 }
 
 TEST_CASE("slot_sharing sim: a program linked from two units runs") {
-  const Linked l = link_units({kUnitDef, kUnitUse}, false);
+  const Linked l = link_units({kUnitDef, kUnitUse}, Inlining::kOff);
   REQUIRE_MESSAGE(l.status == 0, l.err);
   CHECK(sim::build_linked_sim(l.exe).run().return_int() == pages_sum());
 }
@@ -390,9 +393,9 @@ TEST_CASE("slot_sharing sim: a defined function reads its pinned parameter in pl
   CHECK(contains_line(body(text, "sum"), "ADC (__zpabi_sum__p_0),Y"));
   CHECK(contains(text, "STA   __zpabi_sum__p_0"));
   CHECK(contains(text, "pinned=$30,$31,"));
-  for (const bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    CHECK(run_of(src, optimize) == 10 + 5);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    CHECK(run_of(src, pipeline) == 10 + 5);
   }
 }
 
@@ -424,9 +427,9 @@ TEST_CASE("slot_sharing sim: a pinned parameter is copied when a callee takes on
     if (contains(line, "__zpabi")) first_zpabi.push_back(line);
   }
   CHECK(first_zpabi == std::vector<std::string>{"LDA (__zpabi_first__p_0),Y"});
-  for (const bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    CHECK(run_of(src, optimize) == 3 + 20);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    CHECK(run_of(src, pipeline) == 3 + 20);
   }
 }
 
@@ -444,7 +447,7 @@ TEST_CASE("slot_sharing sim: a pinned parameter needs zp_abi") {
   CHECK_MESSAGE(search(R"(declares a `zeropage\(addr\)` parameter)", e.message), e.message);
   // Without -O, the function takes it on the soft stack, as its callers
   // pass it.
-  CHECK(run_of(src, false) == 3);
+  CHECK(run_of(src, Pipeline::kUnoptimized) == 3);
 }
 
 TEST_CASE("slot_sharing sim: a pinned parameter across a link") {
@@ -468,9 +471,9 @@ TEST_CASE("slot_sharing sim: arguments go to a pinned parameter's address") {
         unsigned char data[4] = {1, 2, 3, 4};
         int main(void) { return total(data, 4) + total(data + 1, 2); }
         )c";
-  for (const bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    const std::string text = codegen_of(src, optimize);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    const std::string text = codegen_of(src, pipeline);
     const auto e = equs(text);
     CHECK(e.at("__zpabi_total__p_0") == 0xE6);
     CHECK(e.at("__zpabi_total__p_1") == 0xE7);
@@ -481,7 +484,7 @@ TEST_CASE("slot_sharing sim: arguments go to a pinned parameter's address") {
         FAIL_CHECK("another name at the address: " << name);
       }
     }
-    sim::Simulation s = build_sim(src, optimize);
+    sim::Simulation s = build_sim(src, pipeline);
     for (std::size_t k = 0; k < kTotalCode.size(); ++k) s.cpu.memory[0xD000 + k] = kTotalCode[k];
     CHECK(s.run().return_int() == 10 + 5);
   }
@@ -504,9 +507,9 @@ TEST_CASE("slot_sharing sim: a register parameter kept in its register sets no f
             return (int)(r ^ (r >> 16));
         }
         )c";
-  for (const bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    CHECK(run_of(src, optimize) == 64);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    CHECK(run_of(src, pipeline) == 64);
   }
 }
 
@@ -540,9 +543,9 @@ TEST_CASE("slot_sharing sim: a parameter passed on to two callees") {
         return n * 16 + calls;
     }
     )c";
-  for (const bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    CHECK(run_of(src, optimize) == 0b1100 * 16 + 7);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    CHECK(run_of(src, pipeline) == 0b1100 * 16 + 7);
   }
 }
 

@@ -70,7 +70,7 @@ TEST_CASE("asm_regalloc sim: an index survives the reads of spilled values") {
   const auto value = run_program(src);
   REQUIRE(value.has_value());
   CHECK(static_cast<long long>(*value) == 13);
-  CHECK(build_sim(src, true).run().return_int_signed() == 13);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int_signed() == 13);
 }
 
 }  // namespace c6502::suite

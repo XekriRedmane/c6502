@@ -598,10 +598,10 @@ struct Run {
   std::vector<std::uint8_t> log;
 };
 
-Run run(bool optimize) {
-  sim::Simulation s = build_sim(kProgram, optimize);
+Run run(Pipeline pipeline) {
+  sim::Simulation s = build_sim(kProgram, pipeline);
   Run out{s.run(5'000'000), {}};
-  INFO("optimize=" << optimize);
+  INFO("pipeline=" << pipeline);
   CHECK_FALSE(out.result.timed_out);
   const std::int64_t at = s.symbol("result_log");
   out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + 16 * 8);
@@ -611,20 +611,20 @@ Run run(bool optimize) {
 }  // namespace
 
 TEST_CASE("companion_update_sim: the unoptimized program records each scenario") {
-  const Run r = run(false);
+  const Run r = run(Pipeline::kUnoptimized);
   // log_idx is 16 bytes for each of the 8 scenarios.
   CHECK((r.result.return_int() & 0xFFFF) == 8 * 16);
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("companion_update_sim: the optimized program records each scenario") {
-  const Run r = run(true);
+  const Run r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == 8 * 16);
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("companion_update_sim: both pipelines record the same state") {
-  CHECK(run(false).log == run(true).log);
+  CHECK(run(Pipeline::kUnoptimized).log == run(Pipeline::kOptimized).log);
 }
 
 }  // namespace c6502::suite

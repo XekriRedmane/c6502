@@ -9,6 +9,7 @@
 #pragma once
 
 #include <filesystem>
+#include <iosfwd>
 #include <map>
 #include <optional>
 #include <string>
@@ -36,6 +37,13 @@ std::string read_repo_file(std::string_view rel);
 // The stages of compile.py's `_run_source`: `--lex`, `--parse`,
 // `--resolve`, `--tac`, and `-S`.
 enum class Stage { kLex, kParse, kResolve, kTac, kCodegen };
+
+// compile.py's pipeline without `-O` and with it.
+enum class Pipeline { kUnoptimized, kOptimized };
+inline constexpr Pipeline kBothPipelines[] = {Pipeline::kUnoptimized, Pipeline::kOptimized};
+inline bool optimized(Pipeline pipeline) { return pipeline == Pipeline::kOptimized; }
+// Writes "unoptimized" or "optimized", for a case's messages.
+std::ostream& operator<<(std::ostream& out, Pipeline pipeline);
 
 struct Options {
   bool optimize = false;
@@ -80,6 +88,7 @@ Compiled compile(Stage stage, const std::string& source, const Options& options 
 std::string run_source(Stage stage, const std::string& source, const Options& options = {});
 // Returns the `-S` text of `source`, as `run_source(Stage::kCodegen)`.
 std::string codegen(const std::string& source, bool optimize = false);
+std::string codegen(const std::string& source, Pipeline pipeline);
 std::string codegen(const std::string& source, const Options& options);
 
 // Returns the error that rejects `source` at `stage`, and throws

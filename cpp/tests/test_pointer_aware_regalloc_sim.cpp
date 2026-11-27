@@ -16,7 +16,7 @@ namespace c6502::suite {
 namespace {
 
 std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
+  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
 }
 
 std::string extract_function_body(const std::string& text, const std::string& name) {
@@ -82,12 +82,12 @@ void copy(uint8_t mask) {
 }
 int main(void) { copy(0xFF); return out[3]; }
 )c";
-  const std::string body = extract_function_body(codegen(src, true), "copy");
+  const std::string body = extract_function_body(codegen(src, Pipeline::kOptimized), "copy");
   CHECK_FALSE(contains(body, "; prologue:"));
   CHECK_FALSE(contains(body, "; epilogue"));
   CHECK_FALSE(contains(body, "STA   SSP"));
   CHECK_FALSE(contains(body, "STA   FP"));
-  CHECK(build_sim(src, true).run().return_int_signed() == 3);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int_signed() == 3);
 }
 
 }  // namespace c6502::suite

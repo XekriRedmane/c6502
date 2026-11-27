@@ -419,14 +419,14 @@ std::string hex_high_first(const std::vector<std::uint8_t>& memory, std::int64_t
   return out;
 }
 
-void check(const std::vector<Program>& ps, bool optimize, int shard, int shards) {
+void check(const std::vector<Program>& ps, Pipeline pipeline, int shard, int shards) {
   std::vector<std::string> failures;
   for (std::size_t k = 0; k < ps.size(); ++k) {
     if (static_cast<int>(k % static_cast<std::size_t>(shards)) != shard) continue;
     const Program& p = ps[k];
     sim::Simulation s;
     try {
-      s = build_sim(p.source, optimize);
+      s = build_sim(p.source, pipeline);
       s.run();
     } catch (const std::exception& e) {
       failures.push_back(p.cases[0].name + "..: " + e.what());
@@ -471,46 +471,46 @@ TEST_CASE("bitint sim: the programs are those test_bitint_sim.py wrote") {
   CHECK(results == frozen().want.size());
 }
 
-TEST_CASE("shard: bitint operators unoptimized 0") { check(operator_programs(), false, 0, 16); }
-TEST_CASE("shard: bitint operators optimized 0") { check(operator_programs(), true, 0, 16); }
-TEST_CASE("shard: bitint operators unoptimized 1") { check(operator_programs(), false, 1, 16); }
-TEST_CASE("shard: bitint operators optimized 1") { check(operator_programs(), true, 1, 16); }
-TEST_CASE("shard: bitint operators unoptimized 2") { check(operator_programs(), false, 2, 16); }
-TEST_CASE("shard: bitint operators optimized 2") { check(operator_programs(), true, 2, 16); }
-TEST_CASE("shard: bitint operators unoptimized 3") { check(operator_programs(), false, 3, 16); }
-TEST_CASE("shard: bitint operators optimized 3") { check(operator_programs(), true, 3, 16); }
-TEST_CASE("shard: bitint operators unoptimized 4") { check(operator_programs(), false, 4, 16); }
-TEST_CASE("shard: bitint operators optimized 4") { check(operator_programs(), true, 4, 16); }
-TEST_CASE("shard: bitint operators unoptimized 5") { check(operator_programs(), false, 5, 16); }
-TEST_CASE("shard: bitint operators optimized 5") { check(operator_programs(), true, 5, 16); }
-TEST_CASE("shard: bitint operators unoptimized 6") { check(operator_programs(), false, 6, 16); }
-TEST_CASE("shard: bitint operators optimized 6") { check(operator_programs(), true, 6, 16); }
-TEST_CASE("shard: bitint operators unoptimized 7") { check(operator_programs(), false, 7, 16); }
-TEST_CASE("shard: bitint operators optimized 7") { check(operator_programs(), true, 7, 16); }
-TEST_CASE("shard: bitint operators unoptimized 8") { check(operator_programs(), false, 8, 16); }
-TEST_CASE("shard: bitint operators optimized 8") { check(operator_programs(), true, 8, 16); }
-TEST_CASE("shard: bitint operators unoptimized 9") { check(operator_programs(), false, 9, 16); }
-TEST_CASE("shard: bitint operators optimized 9") { check(operator_programs(), true, 9, 16); }
-TEST_CASE("shard: bitint operators unoptimized 10") { check(operator_programs(), false, 10, 16); }
-TEST_CASE("shard: bitint operators optimized 10") { check(operator_programs(), true, 10, 16); }
-TEST_CASE("shard: bitint operators unoptimized 11") { check(operator_programs(), false, 11, 16); }
-TEST_CASE("shard: bitint operators optimized 11") { check(operator_programs(), true, 11, 16); }
-TEST_CASE("shard: bitint operators unoptimized 12") { check(operator_programs(), false, 12, 16); }
-TEST_CASE("shard: bitint operators optimized 12") { check(operator_programs(), true, 12, 16); }
-TEST_CASE("shard: bitint operators unoptimized 13") { check(operator_programs(), false, 13, 16); }
-TEST_CASE("shard: bitint operators optimized 13") { check(operator_programs(), true, 13, 16); }
-TEST_CASE("shard: bitint operators unoptimized 14") { check(operator_programs(), false, 14, 16); }
-TEST_CASE("shard: bitint operators optimized 14") { check(operator_programs(), true, 14, 16); }
-TEST_CASE("shard: bitint operators unoptimized 15") { check(operator_programs(), false, 15, 16); }
-TEST_CASE("shard: bitint operators optimized 15") { check(operator_programs(), true, 15, 16); }
+TEST_CASE("shard: bitint operators unoptimized 0") { check(operator_programs(), Pipeline::kUnoptimized, 0, 16); }
+TEST_CASE("shard: bitint operators optimized 0") { check(operator_programs(), Pipeline::kOptimized, 0, 16); }
+TEST_CASE("shard: bitint operators unoptimized 1") { check(operator_programs(), Pipeline::kUnoptimized, 1, 16); }
+TEST_CASE("shard: bitint operators optimized 1") { check(operator_programs(), Pipeline::kOptimized, 1, 16); }
+TEST_CASE("shard: bitint operators unoptimized 2") { check(operator_programs(), Pipeline::kUnoptimized, 2, 16); }
+TEST_CASE("shard: bitint operators optimized 2") { check(operator_programs(), Pipeline::kOptimized, 2, 16); }
+TEST_CASE("shard: bitint operators unoptimized 3") { check(operator_programs(), Pipeline::kUnoptimized, 3, 16); }
+TEST_CASE("shard: bitint operators optimized 3") { check(operator_programs(), Pipeline::kOptimized, 3, 16); }
+TEST_CASE("shard: bitint operators unoptimized 4") { check(operator_programs(), Pipeline::kUnoptimized, 4, 16); }
+TEST_CASE("shard: bitint operators optimized 4") { check(operator_programs(), Pipeline::kOptimized, 4, 16); }
+TEST_CASE("shard: bitint operators unoptimized 5") { check(operator_programs(), Pipeline::kUnoptimized, 5, 16); }
+TEST_CASE("shard: bitint operators optimized 5") { check(operator_programs(), Pipeline::kOptimized, 5, 16); }
+TEST_CASE("shard: bitint operators unoptimized 6") { check(operator_programs(), Pipeline::kUnoptimized, 6, 16); }
+TEST_CASE("shard: bitint operators optimized 6") { check(operator_programs(), Pipeline::kOptimized, 6, 16); }
+TEST_CASE("shard: bitint operators unoptimized 7") { check(operator_programs(), Pipeline::kUnoptimized, 7, 16); }
+TEST_CASE("shard: bitint operators optimized 7") { check(operator_programs(), Pipeline::kOptimized, 7, 16); }
+TEST_CASE("shard: bitint operators unoptimized 8") { check(operator_programs(), Pipeline::kUnoptimized, 8, 16); }
+TEST_CASE("shard: bitint operators optimized 8") { check(operator_programs(), Pipeline::kOptimized, 8, 16); }
+TEST_CASE("shard: bitint operators unoptimized 9") { check(operator_programs(), Pipeline::kUnoptimized, 9, 16); }
+TEST_CASE("shard: bitint operators optimized 9") { check(operator_programs(), Pipeline::kOptimized, 9, 16); }
+TEST_CASE("shard: bitint operators unoptimized 10") { check(operator_programs(), Pipeline::kUnoptimized, 10, 16); }
+TEST_CASE("shard: bitint operators optimized 10") { check(operator_programs(), Pipeline::kOptimized, 10, 16); }
+TEST_CASE("shard: bitint operators unoptimized 11") { check(operator_programs(), Pipeline::kUnoptimized, 11, 16); }
+TEST_CASE("shard: bitint operators optimized 11") { check(operator_programs(), Pipeline::kOptimized, 11, 16); }
+TEST_CASE("shard: bitint operators unoptimized 12") { check(operator_programs(), Pipeline::kUnoptimized, 12, 16); }
+TEST_CASE("shard: bitint operators optimized 12") { check(operator_programs(), Pipeline::kOptimized, 12, 16); }
+TEST_CASE("shard: bitint operators unoptimized 13") { check(operator_programs(), Pipeline::kUnoptimized, 13, 16); }
+TEST_CASE("shard: bitint operators optimized 13") { check(operator_programs(), Pipeline::kOptimized, 13, 16); }
+TEST_CASE("shard: bitint operators unoptimized 14") { check(operator_programs(), Pipeline::kUnoptimized, 14, 16); }
+TEST_CASE("shard: bitint operators optimized 14") { check(operator_programs(), Pipeline::kOptimized, 14, 16); }
+TEST_CASE("shard: bitint operators unoptimized 15") { check(operator_programs(), Pipeline::kUnoptimized, 15, 16); }
+TEST_CASE("shard: bitint operators optimized 15") { check(operator_programs(), Pipeline::kOptimized, 15, 16); }
 
-TEST_CASE("shard: bitint storage unoptimized 0") { check(grid_programs(), false, 0, 4); }
-TEST_CASE("shard: bitint storage optimized 0") { check(grid_programs(), true, 0, 4); }
-TEST_CASE("shard: bitint storage unoptimized 1") { check(grid_programs(), false, 1, 4); }
-TEST_CASE("shard: bitint storage optimized 1") { check(grid_programs(), true, 1, 4); }
-TEST_CASE("shard: bitint storage unoptimized 2") { check(grid_programs(), false, 2, 4); }
-TEST_CASE("shard: bitint storage optimized 2") { check(grid_programs(), true, 2, 4); }
-TEST_CASE("shard: bitint storage unoptimized 3") { check(grid_programs(), false, 3, 4); }
-TEST_CASE("shard: bitint storage optimized 3") { check(grid_programs(), true, 3, 4); }
+TEST_CASE("shard: bitint storage unoptimized 0") { check(grid_programs(), Pipeline::kUnoptimized, 0, 4); }
+TEST_CASE("shard: bitint storage optimized 0") { check(grid_programs(), Pipeline::kOptimized, 0, 4); }
+TEST_CASE("shard: bitint storage unoptimized 1") { check(grid_programs(), Pipeline::kUnoptimized, 1, 4); }
+TEST_CASE("shard: bitint storage optimized 1") { check(grid_programs(), Pipeline::kOptimized, 1, 4); }
+TEST_CASE("shard: bitint storage unoptimized 2") { check(grid_programs(), Pipeline::kUnoptimized, 2, 4); }
+TEST_CASE("shard: bitint storage optimized 2") { check(grid_programs(), Pipeline::kOptimized, 2, 4); }
+TEST_CASE("shard: bitint storage unoptimized 3") { check(grid_programs(), Pipeline::kUnoptimized, 3, 4); }
+TEST_CASE("shard: bitint storage optimized 3") { check(grid_programs(), Pipeline::kOptimized, 3, 4); }
 
 }  // namespace c6502::suite

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <fstream>
 #include <memory>
+#include <ostream>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -116,6 +117,12 @@ std::string codegen(const std::string& source, bool optimize) {
   options.optimize = optimize;
   return run_source(Stage::kCodegen, source, options);
 }
+
+std::ostream& operator<<(std::ostream& out, Pipeline pipeline) {
+  return out << (optimized(pipeline) ? "optimized" : "unoptimized");
+}
+
+std::string codegen(const std::string& source, Pipeline pipeline) { return codegen(source, optimized(pipeline)); }
 
 std::string codegen(const std::string& source, const Options& options) {
   return run_source(Stage::kCodegen, source, options);

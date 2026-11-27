@@ -139,22 +139,22 @@ const std::vector<Bytes> kRows = {
     {3, 0xFF, 0x08, 0x00, 3, 0xFF, 5, 0},
 };
 
-LoggedRun run(bool optimize) { return run_logged(kProgram, optimize, "result_log", 8 * 5); }
+LoggedRun run(Pipeline pipeline) { return run_logged(kProgram, pipeline, "result_log", 8 * 5); }
 
 TEST_CASE("step_pos_sim: the unoptimized program logs the expected state") {
-  const LoggedRun r = run(false);
+  const LoggedRun r = run(Pipeline::kUnoptimized);
   // `main` returns log_idx, 8 bytes for each of the 5 scenarios.
   CHECK((r.result.return_int() & 0xFFFF) == 8 * 5);
   CHECK(r.log == flatten(kRows));
 }
 
 TEST_CASE("step_pos_sim: the optimized program logs the expected state") {
-  const LoggedRun r = run(true);
+  const LoggedRun r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == 8 * 5);
   CHECK(r.log == flatten(kRows));
 }
 
-TEST_CASE("step_pos_sim: the two pipelines agree") { CHECK(run(false).log == run(true).log); }
+TEST_CASE("step_pos_sim: the two pipelines agree") { CHECK(run(Pipeline::kUnoptimized).log == run(Pipeline::kOptimized).log); }
 
 }  // namespace
 }  // namespace c6502::suite

@@ -85,24 +85,24 @@ int main(void) {
 // Each row is the pre-call and post-call byte at the scenario's slot.
 const Bytes kExpected = {100, 98, 100, 102, 50, 50, 50, 50, 200, 73, 10, 9, 255, 0, 0, 254};
 
-LoggedRun run(bool optimize) { return run_logged(kProgram, optimize, "result_log", 2 * 8); }
+LoggedRun run(Pipeline pipeline) { return run_logged(kProgram, pipeline, "result_log", 2 * 8); }
 
 TEST_CASE("apply_bobble_sim: the unoptimized program logs the expected state") {
-  const LoggedRun r = run(false);
+  const LoggedRun r = run(Pipeline::kUnoptimized);
   // `main` returns log_idx, 2 bytes for each of the 8 scenarios.
   CHECK((r.result.return_int() & 0xFFFF) == 2 * 8);
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("apply_bobble_sim: the optimized program logs the expected state") {
-  const LoggedRun r = run(true);
+  const LoggedRun r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == 2 * 8);
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("apply_bobble_sim: the two pipelines agree") {
-  const LoggedRun unopt = run(false);
-  const LoggedRun opt = run(true);
+  const LoggedRun unopt = run(Pipeline::kUnoptimized);
+  const LoggedRun opt = run(Pipeline::kOptimized);
   CHECK(unopt.log == opt.log);
   CHECK(hargs_head(unopt.result) == hargs_head(opt.result));
 }

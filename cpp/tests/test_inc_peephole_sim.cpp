@@ -22,7 +22,7 @@ TEST_CASE("inc_peephole: loop counter 16bit correct sum") {
 }
 int main(void) { return sum10(); }
 )c";
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto result = s.run(5'000'000);
   CHECK_FALSE(result.timed_out);
   CHECK((result.return_int() & 0xFFFF) == 45);
@@ -44,7 +44,7 @@ TEST_CASE("inc_peephole: byte overflow propagates to high byte") {
 }
 long main(void) { return sum300(); }
 )c";
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto result = s.run(10'000'000);
   CHECK_FALSE(result.timed_out);
   // 300 iterations of `s += 1` → s == 300.

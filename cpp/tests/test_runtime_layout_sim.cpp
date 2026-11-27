@@ -40,8 +40,8 @@ struct Run {
   std::vector<int> changed;
 };
 
-Run run(const std::string& src, bool optimize, const std::vector<int>& bytes, int seed) {
-  sim::Simulation s = build_sim(src, optimize);
+Run run(const std::string& src, Pipeline pipeline, const std::vector<int>& bytes, int seed) {
+  sim::Simulation s = build_sim(src, pipeline);
   for (int a : bytes) s.cpu.memory[a] = static_cast<std::uint8_t>((seed ^ a) & 0xFF);
   const sim::SimResult result = s.run();
   Run out{result.return_int(), {}};
@@ -61,9 +61,9 @@ TEST_CASE("runtime_layout: the bytes of the fixed object are untouched") {
   // Pointer accesses (DPTR), recursion (SSP, FP), a 32-bit multiply and
   // divide (6502 helpers with HARGS scratch), and an int / float round
   // trip (the hooks) all run with the block moved clear of $1F-$49.
-  for (bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    const Run r = run(kMonitor + kSrc, optimize, range(0x1F, 0x4A), 0xA5);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    const Run r = run(kMonitor + kSrc, pipeline, range(0x1F, 0x4A), 0xA5);
     CHECK(r.value == kWant);
     CHECK(r.changed.empty());
   }
@@ -75,7 +75,7 @@ TEST_CASE("runtime_layout: the classic layout writes those bytes") {
   // checks doesn't happen. The optimized build keeps its pointers in
   // zero-page locals instead of DPTR, and its helpers stay below $1F, so
   // it doesn't.
-  const Run r = run(kSrc, false, range(0x1F, 0x4A), 0xA5);
+  const Run r = run(kSrc, Pipeline::kUnoptimized, range(0x1F, 0x4A), 0xA5);
   CHECK(r.value == kWant);
   CHECK_FALSE(r.changed.empty());
 }
@@ -88,12 +88,12 @@ TEST_CASE("runtime_layout: a wide return comes back in the moved block") {
       "[[c6502::zeropage(0x10)]] unsigned char z;\n"
       "long f(long a) { return a * 3 + z; }\n"
       "long long g(long long a) { return a * 5 + z; }\n";
-  for (bool optimize : {false, true}) {
-    INFO("optimize=" << optimize);
-    sim::Simulation s = build_sim(head + "long main(void) { z = 1; return f(100000L); }\n", optimize);
+  for (const Pipeline pipeline : kBothPipelines) {
+    INFO("pipeline=" << pipeline);
+    sim::Simulation s = build_sim(head + "long main(void) { z = 1; return f(100000L); }\n", pipeline);
     CHECK(s.symbol("HARGS") != 0x04);
     CHECK(s.run().return_long() == 300001);
-    sim::Simulation t = build_sim(head + "long long main(void) { z = 2; return g(1000000000000LL); }\n", optimize);
+    sim::Simulation t = build_sim(head + "long long main(void) { z = 2; return g(1000000000000LL); }\n", pipeline);
     CHECK(t.run().return_longlong() == 5000000000002ULL);
   }
 }
@@ -116,9 +116,9 @@ TEST_CASE("runtime_layout: the Monitor headers' reserved bytes are untouched") {
       {"interactive_monitor.h", "#include <apple2/interactive_monitor.h>\n", all_bytes},
   };
   for (const auto& [header, include, reserved] : headers) {
-    for (bool optimize : {false, true}) {
-      INFO(header << " optimize=" << optimize);
-      const Run r = run(include + kSrc, optimize, reserved, 0x5A);
+    for (const Pipeline pipeline : kBothPipelines) {
+      INFO(header << " pipeline=" << pipeline);
+      const Run r = run(include + kSrc, pipeline, reserved, 0x5A);
       CHECK(r.value == kWant);
       CHECK(r.changed.empty());
     }

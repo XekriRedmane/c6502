@@ -15,7 +15,7 @@ std::string codegen_main(const std::string& source) {
 }
 
 std::int64_t sim_return_int(const std::string& source) {
-  const sim::SimResult r = build_sim(source, true).run(5'000'000);
+  const sim::SimResult r = build_sim(source, Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   return r.return_int_signed();
 }

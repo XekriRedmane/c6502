@@ -14,7 +14,7 @@ namespace {
 namespace suite = c6502::suite;
 
 std::int64_t sim_return_int(const std::string& src) {
-  const c6502::sim::SimResult r = suite::build_sim(src, true).run(5'000'000);
+  const c6502::sim::SimResult r = suite::build_sim(src, suite::Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   return r.return_int_signed();
 }

@@ -13,7 +13,7 @@ namespace {
 
 void both_paths(const std::string& src, std::int64_t want) {
   CHECK(run_c_program(src).return_int_signed() == want);
-  CHECK(build_sim(src, true).run().return_int_signed() == want);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int_signed() == want);
 }
 
 TEST_CASE("lnot_jump_fold: uchar negated") {

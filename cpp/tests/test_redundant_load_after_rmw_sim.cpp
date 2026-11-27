@@ -12,7 +12,7 @@ TEST_CASE("redundant_load_after_rmw sim: the count-down loop sums its values") {
     for (int x = 15; x >= 0; x--) sum += x;
     return sum;
 }
-)c", true).run(200'000);
+)c", Pipeline::kOptimized).run(200'000);
   CHECK_FALSE(result.timed_out);
   CHECK(result.return_int_signed() == 120);
 }

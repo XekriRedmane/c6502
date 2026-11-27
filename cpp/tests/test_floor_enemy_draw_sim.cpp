@@ -201,10 +201,10 @@ struct Run {
   std::vector<std::uint8_t> log;
 };
 
-Run run(bool optimize) {
-  sim::Simulation s = build_sim(kProgram, optimize);
+Run run(Pipeline pipeline) {
+  sim::Simulation s = build_sim(kProgram, pipeline);
   Run out{s.run(2'000'000), {}};
-  INFO("optimize=" << optimize);
+  INFO("pipeline=" << pipeline);
   CHECK_FALSE(out.result.timed_out);
   const std::int64_t at = s.symbol("draw_log");
   out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + kExpected.size());
@@ -214,20 +214,20 @@ Run run(bool optimize) {
 }  // namespace
 
 TEST_CASE("floor_enemy_draw_sim: the unoptimized program records each call") {
-  const Run r = run(false);
+  const Run r = run(Pipeline::kUnoptimized);
   // `main` returns log_idx, the count of bytes written.
   CHECK((r.result.return_int() & 0xFFFF) == static_cast<std::int64_t>(kExpected.size()));
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("floor_enemy_draw_sim: the optimized program records each call") {
-  const Run r = run(true);
+  const Run r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == static_cast<std::int64_t>(kExpected.size()));
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("floor_enemy_draw_sim: both pipelines record the same calls") {
-  CHECK(run(false).log == run(true).log);
+  CHECK(run(Pipeline::kUnoptimized).log == run(Pipeline::kOptimized).log);
 }
 
 }  // namespace c6502::suite

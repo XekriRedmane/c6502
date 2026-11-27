@@ -183,24 +183,24 @@ const std::vector<Bytes> kScenarios = {
     {0x4C, 0x55, 0x99, 0xAA, 0xBB, 0xCC, 0x05, 0x02, 0x05, 0x04, 0x02, 0x04, 0x08, 0x00, 0x00, 0x00},
 };
 
-LoggedRun run(bool optimize) { return run_logged(kProgram, optimize, "result_log", 4 * 16); }
+LoggedRun run(Pipeline pipeline) { return run_logged(kProgram, pipeline, "result_log", 4 * 16); }
 
 TEST_CASE("do_ascend_sim: the unoptimized program logs the expected state") {
-  const LoggedRun r = run(false);
+  const LoggedRun r = run(Pipeline::kUnoptimized);
   // `main` returns log_idx, 16 bytes for each of the 4 scenarios.
   CHECK((r.result.return_int() & 0xFFFF) == 4 * 16);
   CHECK(r.log == flatten(kScenarios));
 }
 
 TEST_CASE("do_ascend_sim: the optimized program logs the expected state") {
-  const LoggedRun r = run(true);
+  const LoggedRun r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == 4 * 16);
   CHECK(r.log == flatten(kScenarios));
 }
 
 TEST_CASE("do_ascend_sim: the two pipelines agree") {
-  const LoggedRun unopt = run(false);
-  const LoggedRun opt = run(true);
+  const LoggedRun unopt = run(Pipeline::kUnoptimized);
+  const LoggedRun opt = run(Pipeline::kOptimized);
   CHECK(unopt.log == opt.log);
   CHECK(hargs_head(unopt.result) == hargs_head(opt.result));
 }

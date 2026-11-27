@@ -12,9 +12,9 @@ namespace c6502::suite {
 namespace {
 
 const auto kMaxCycles = 400'000;
-std::int64_t run(const std::string& source, bool optimize) {
-  const sim::SimResult result = build_sim(source, optimize).run(kMaxCycles);
-  REQUIRE_FALSE_MESSAGE(result.timed_out, "the run timed out with optimize=" << optimize);
+std::int64_t run(const std::string& source, Pipeline pipeline) {
+  const sim::SimResult result = build_sim(source, pipeline).run(kMaxCycles);
+  REQUIRE_FALSE_MESSAGE(result.timed_out, "the run timed out with pipeline=" << pipeline);
   return result.return_int();
 }
 
@@ -53,8 +53,8 @@ TEST_CASE("hwreg_pin_correctness: indirect store clobbers y resident iv") {
             return sum;
         }
         )c";
-  auto unopt = run(source, false);
-  auto opt = run(source, true);
+  auto unopt = run(source, Pipeline::kUnoptimized);
+  auto opt = run(source, Pipeline::kOptimized);
   CHECK_MESSAGE(unopt == 136, "oracle (unopt) sanity check");
   CHECK_MESSAGE(opt == 136,
                 "optimized run returned the wrong value — Reg(Y) was pinned to a Pseudo whose live range crosses an "

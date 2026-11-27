@@ -119,10 +119,10 @@ const Bytes kGameOut = {200, 0xAA, (200 + 201) & 0xFF};
 
 TEST_CASE("noreturn_call: a game that starts over runs in one unit") {
   const std::string src = kGameDeep + replace_all(kGameTop, "volatile unsigned char out[3];\n", "");
-  const std::string asm_text = codegen(src, true);
+  const std::string asm_text = codegen(src, Pipeline::kOptimized);
   CHECK_FALSE_MESSAGE(soft_stack(asm_text), asm_text);
   CHECK(contains(body(asm_text, "deep"), "JMP   reset_game"));
-  sim::Simulation s = build_sim(src, true);
+  sim::Simulation s = build_sim(src, Pipeline::kOptimized);
   s.run(500'000);
   CHECK(out_bytes(s) == kGameOut);
 }

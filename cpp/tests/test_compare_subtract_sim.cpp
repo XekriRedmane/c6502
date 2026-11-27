@@ -117,7 +117,7 @@ TEST_CASE("compare_subtract sim: a 16-bit loop of compare and subtract stays in 
         }
         int main(void) { k = 16; return f(2, 1000) + n; }
         )c";
-  const std::string text = codegen(src, true);
+  const std::string text = codegen(src, Pipeline::kOptimized);
   const std::string body = between(text, "\nf:\n", "\nmain:\n");
   const std::string loop = between(body, ".loop@0_continue:", ".loop@0_break:");
   std::vector<std::string> got;

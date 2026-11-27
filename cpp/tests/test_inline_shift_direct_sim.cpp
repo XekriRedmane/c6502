@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "compile_case.h"
@@ -11,15 +10,7 @@
 namespace c6502::suite {
 namespace {
 
-std::int64_t run_int(const std::string& src, bool opt = false, bool is_signed = true) {
-  const sim::SimResult res = opt ? build_sim(src, true).run() : run_c_program(src);
-  return is_signed ? res.return_int_signed() : res.return_int();
-}
-
-std::int64_t run_long(const std::string& src, bool opt = false, bool is_signed = true) {
-  const sim::SimResult res = opt ? build_sim(src, true).run() : run_c_program(src);
-  return is_signed ? res.return_long_signed() : static_cast<std::int64_t>(res.return_long());
-}
+sim::SimResult run(const std::string& src, Pipeline pipeline) { return build_sim(src, pipeline).run(); }
 
 TEST_CASE("inline_shift_direct: uint16 lsl inplace") {
   // `x <<= 1` on a 2-byte unsigned. Compound assignment makes
@@ -30,8 +21,8 @@ TEST_CASE("inline_shift_direct: uint16 lsl inplace") {
   std::string src = R"c(unsigned int f(unsigned int x) { x <<= 1; return x; }
 unsigned int main(void) { return f(0x1234u); }
 )c";
-  CHECK(run_int(src, false, false) == 0x2468);
-  CHECK(run_int(src, true, false) == 0x2468);
+  CHECK(run(src, Pipeline::kUnoptimized).return_int() == 0x2468);
+  CHECK(run(src, Pipeline::kOptimized).return_int() == 0x2468);
 }
 
 TEST_CASE("inline_shift_direct: int16 lsr signed") {
@@ -39,16 +30,16 @@ TEST_CASE("inline_shift_direct: int16 lsr signed") {
 int main(void) { return f(-5); }
 )c";
   // -5 >> 1 = -3 (arithmetic right shift).
-  CHECK(run_int(src, false) == -3);
-  CHECK(run_int(src, true) == -3);
+  CHECK(run(src, Pipeline::kUnoptimized).return_int_signed() == -3);
+  CHECK(run(src, Pipeline::kOptimized).return_int_signed() == -3);
 }
 
 TEST_CASE("inline_shift_direct: uint16 lsr unsigned") {
   std::string src = R"c(unsigned int f(unsigned int x) { x >>= 1; return x; }
 unsigned int main(void) { return f(0xFFFEu); }
 )c";
-  CHECK(run_int(src, false, false) == 0x7FFF);
-  CHECK(run_int(src, true, false) == 0x7FFF);
+  CHECK(run(src, Pipeline::kUnoptimized).return_int() == 0x7FFF);
+  CHECK(run(src, Pipeline::kOptimized).return_int() == 0x7FFF);
 }
 
 TEST_CASE("inline_shift_direct: uint32 lsl") {
@@ -57,8 +48,8 @@ TEST_CASE("inline_shift_direct: uint32 lsl") {
 unsigned long main(void) { return f(0x80000001UL); }
 )c";
   // 0x80000001 << 1 = 0x100000002 → 0x00000002 (32-bit wrap).
-  CHECK(run_long(src, false, false) == 0x2);
-  CHECK(run_long(src, true, false) == 0x2);
+  CHECK(run(src, Pipeline::kUnoptimized).return_long() == 0x2);
+  CHECK(run(src, Pipeline::kOptimized).return_long() == 0x2);
 }
 
 TEST_CASE("inline_shift_direct: int32 lsr signed") {
@@ -68,8 +59,8 @@ TEST_CASE("inline_shift_direct: int32 lsr signed") {
 long main(void) { return f(-100000L); }
 )c";
   // -100000 >> 1 = -50000.
-  CHECK(run_long(src, false) == -50000);
-  CHECK(run_long(src, true) == -50000);
+  CHECK(run(src, Pipeline::kUnoptimized).return_long_signed() == -50000);
+  CHECK(run(src, Pipeline::kOptimized).return_long_signed() == -50000);
 }
 
 TEST_CASE("inline_shift_direct: strength reduced multiply") {
@@ -78,8 +69,8 @@ TEST_CASE("inline_shift_direct: strength reduced multiply") {
   std::string src = R"c(unsigned int f(unsigned int x) { return x * 2; }
 unsigned int main(void) { return f(0x4321u); }
 )c";
-  CHECK(run_int(src, false, false) == 0x8642);
-  CHECK(run_int(src, true, false) == 0x8642);
+  CHECK(run(src, Pipeline::kUnoptimized).return_int() == 0x8642);
+  CHECK(run(src, Pipeline::kOptimized).return_int() == 0x8642);
 }
 
 }  // namespace

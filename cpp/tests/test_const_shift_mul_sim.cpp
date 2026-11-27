@@ -95,13 +95,13 @@ std::vector<Program> programs(const std::string& ctype, int size, std::uint64_t 
 
 std::uint64_t truncated(std::uint64_t raw, int size) { return raw & mask_of(size); }
 
-void check(bool optimize) {
+void check(Pipeline pipeline) {
   for (const auto& [ctype, size] : kTypes) {
     for (std::uint64_t raw : kInputs) {
       const std::uint64_t x = truncated(raw, size);
       for (const Program& p : programs(ctype, size, x)) {
         INFO("type=" << ctype << " x=" << x << " first=" << p.expected.front().first);
-        sim::Simulation s = build_sim(p.source, optimize);
+        sim::Simulation s = build_sim(p.source, pipeline);
         s.run();
         for (const auto& [name, want] : p.expected) {
           const std::int64_t addr = s.symbol(name);
@@ -132,9 +132,9 @@ TEST_CASE("const_shift_mul_sim: the generator writes the programs the Python one
   CHECK(sim::cpu_run::crc32(all) == 0x87799016u);
 }
 
-TEST_CASE("const_shift_mul_sim: every constant shift and product, unoptimized") { check(false); }
+TEST_CASE("const_shift_mul_sim: every constant shift and product, unoptimized") { check(Pipeline::kUnoptimized); }
 
-TEST_CASE("const_shift_mul_sim: every constant shift and product, optimized") { check(true); }
+TEST_CASE("const_shift_mul_sim: every constant shift and product, optimized") { check(Pipeline::kOptimized); }
 
 // `(uint8_t)(x << k)` narrows to a 1-byte shift, which runs in A.
 TEST_CASE("const_shift_mul_sim: a narrowed left shift") {

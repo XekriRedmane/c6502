@@ -37,7 +37,7 @@ int main(void) {
 TEST_CASE("const_static_fold sim: a folded static const int returned") {
   const sim::SimResult r = build_sim(R"c(static const int magic = 0x1234;
 int main(void) { return magic; }
-)c", true).run(5'000'000);
+)c", Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   CHECK((r.return_int() & 0xFFFF) == 0x1234);
 }

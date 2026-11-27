@@ -46,6 +46,10 @@ sim::Simulation build_sim(const std::string& source, bool optimize) {
   return build_sim(source, options);
 }
 
+sim::Simulation build_sim(const std::string& source, Pipeline pipeline) {
+  return build_sim(source, optimized(pipeline));
+}
+
 sim::SimResult run_c_program(const std::string& source, bool optimize, std::uint64_t max_cycles) {
   return build_sim(source, optimize).run(max_cycles);
 }

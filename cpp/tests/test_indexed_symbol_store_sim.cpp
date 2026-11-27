@@ -12,7 +12,7 @@ namespace c6502::suite {
 namespace {
 
 auto sim_return(const auto& src) {
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto result = s.run(5'000'000);
   CHECK_FALSE_MESSAGE(result.timed_out, "simulator timed out");
   return result.return_int();

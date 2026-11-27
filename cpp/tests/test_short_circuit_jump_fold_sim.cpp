@@ -13,7 +13,7 @@ namespace c6502::suite {
 namespace {
 
 std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
+  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
 }
 
 }  // namespace
@@ -93,7 +93,7 @@ TEST_CASE("short_circuit_jump_fold sim: a phi's copy between the tail and the co
         )c";
   const std::int64_t want = ('A' | 0x80) + ('Z' | 0x80) * 2 + 0x90 * 4;
   CHECK(run_c_program(src).return_int() == want);
-  CHECK(build_sim(src, true).run().return_int() == want);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int() == want);
 }
 
 }  // namespace c6502::suite

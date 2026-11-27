@@ -255,24 +255,24 @@ Bytes scenario_state() {
   return flatten(out);
 }
 
-LoggedRun run(bool optimize) { return run_logged(kProgram, optimize, "result_log", 16 * 8); }
+LoggedRun run(Pipeline pipeline) { return run_logged(kProgram, pipeline, "result_log", 16 * 8); }
 
 TEST_CASE("floor_enemy_advance_sim: the unoptimized program logs the expected state") {
-  const LoggedRun r = run(false);
+  const LoggedRun r = run(Pipeline::kUnoptimized);
   // `main` returns log_idx, 16 bytes for each of the 8 scenarios.
   CHECK((r.result.return_int() & 0xFFFF) == 8 * 16);
   CHECK(r.log == scenario_state());
 }
 
 TEST_CASE("floor_enemy_advance_sim: the optimized program logs the expected state") {
-  const LoggedRun r = run(true);
+  const LoggedRun r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == 8 * 16);
   CHECK(r.log == scenario_state());
 }
 
 TEST_CASE("floor_enemy_advance_sim: the two pipelines agree") {
-  const LoggedRun unopt = run(false);
-  const LoggedRun opt = run(true);
+  const LoggedRun unopt = run(Pipeline::kUnoptimized);
+  const LoggedRun opt = run(Pipeline::kOptimized);
   CHECK(unopt.log == opt.log);
   CHECK(hargs_head(unopt.result) == hargs_head(opt.result));
 }

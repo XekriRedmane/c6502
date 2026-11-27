@@ -55,7 +55,7 @@ TEST_CASE("preserves: the declaration is trusted") {
   // the loop, which is what shows the compiler relies on it.
   auto clobbers_x = Bytes{0x18, 0x6D, 0x00, 0x31, 0x8D, 0x00, 0x31, 0xA2, 0x07, 0x60};
   // ... LDX #7 ; RTS
-  auto s = build_sim(kKeepsX + kSumLoop, true);
+  auto s = build_sim(kKeepsX + kSumLoop, Pipeline::kOptimized);
   poke(s.cpu.memory, 0xD000, clobbers_x);
   s.cpu.memory[kTotal] = 0;
   auto result = s.run();

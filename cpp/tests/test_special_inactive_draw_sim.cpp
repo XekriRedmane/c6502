@@ -142,10 +142,10 @@ struct Run {
   std::vector<std::uint8_t> log;
 };
 
-Run run(bool optimize) {
-  sim::Simulation s = build_sim(kProgram, optimize);
+Run run(Pipeline pipeline) {
+  sim::Simulation s = build_sim(kProgram, pipeline);
   Run out{s.run(2'000'000), {}};
-  INFO("optimize=" << optimize);
+  INFO("pipeline=" << pipeline);
   CHECK_FALSE(out.result.timed_out);
   const std::int64_t at = s.symbol("result_log");
   out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + 8 * 5);
@@ -159,21 +159,21 @@ std::vector<std::uint8_t> hargs(const sim::SimResult& r) {
 }  // namespace
 
 TEST_CASE("special_inactive_draw_sim: the unoptimized program records each frame") {
-  const Run r = run(false);
+  const Run r = run(Pipeline::kUnoptimized);
   // log_idx is 8 bytes for each of the 5 scenarios.
   CHECK((r.result.return_int() & 0xFFFF) == 5 * 8);
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("special_inactive_draw_sim: the optimized program records each frame") {
-  const Run r = run(true);
+  const Run r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == 5 * 8);
   CHECK(r.log == kExpected);
 }
 
 TEST_CASE("special_inactive_draw_sim: both pipelines record the same frames and HARGS") {
-  const Run unopt = run(false);
-  const Run opt = run(true);
+  const Run unopt = run(Pipeline::kUnoptimized);
+  const Run opt = run(Pipeline::kOptimized);
   CHECK(unopt.log == opt.log);
   CHECK(hargs(unopt.result) == hargs(opt.result));
 }

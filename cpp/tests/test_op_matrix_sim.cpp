@@ -294,7 +294,7 @@ const std::vector<Program>& programs() {
   return out;
 }
 
-void check(bool optimize, int shard) {
+void check(Pipeline pipeline, int shard) {
   std::vector<std::string> failures;
   const std::vector<Program>& ps = programs();
   for (std::size_t k = 0; k < ps.size(); ++k) {
@@ -302,7 +302,7 @@ void check(bool optimize, int shard) {
     const Program& p = ps[k];
     sim::Simulation s;
     try {
-      s = build_sim(p.source, optimize);
+      s = build_sim(p.source, pipeline);
       s.run();
     } catch (const std::exception& e) {
       failures.push_back(p.cases[0].name + "..: " + e.what());
@@ -333,21 +333,21 @@ TEST_CASE("op matrix sim: the programs are those test_op_matrix_sim.py wrote") {
   CHECK(sim::cpu_run::crc32(all) == kOpMatrixCrc);
 }
 
-TEST_CASE("shard: op matrix unoptimized 0") { check(false, 0); }
-TEST_CASE("shard: op matrix unoptimized 1") { check(false, 1); }
-TEST_CASE("shard: op matrix unoptimized 2") { check(false, 2); }
-TEST_CASE("shard: op matrix unoptimized 3") { check(false, 3); }
-TEST_CASE("shard: op matrix unoptimized 4") { check(false, 4); }
-TEST_CASE("shard: op matrix unoptimized 5") { check(false, 5); }
-TEST_CASE("shard: op matrix unoptimized 6") { check(false, 6); }
-TEST_CASE("shard: op matrix unoptimized 7") { check(false, 7); }
-TEST_CASE("shard: op matrix optimized 0") { check(true, 0); }
-TEST_CASE("shard: op matrix optimized 1") { check(true, 1); }
-TEST_CASE("shard: op matrix optimized 2") { check(true, 2); }
-TEST_CASE("shard: op matrix optimized 3") { check(true, 3); }
-TEST_CASE("shard: op matrix optimized 4") { check(true, 4); }
-TEST_CASE("shard: op matrix optimized 5") { check(true, 5); }
-TEST_CASE("shard: op matrix optimized 6") { check(true, 6); }
-TEST_CASE("shard: op matrix optimized 7") { check(true, 7); }
+TEST_CASE("shard: op matrix unoptimized 0") { check(Pipeline::kUnoptimized, 0); }
+TEST_CASE("shard: op matrix unoptimized 1") { check(Pipeline::kUnoptimized, 1); }
+TEST_CASE("shard: op matrix unoptimized 2") { check(Pipeline::kUnoptimized, 2); }
+TEST_CASE("shard: op matrix unoptimized 3") { check(Pipeline::kUnoptimized, 3); }
+TEST_CASE("shard: op matrix unoptimized 4") { check(Pipeline::kUnoptimized, 4); }
+TEST_CASE("shard: op matrix unoptimized 5") { check(Pipeline::kUnoptimized, 5); }
+TEST_CASE("shard: op matrix unoptimized 6") { check(Pipeline::kUnoptimized, 6); }
+TEST_CASE("shard: op matrix unoptimized 7") { check(Pipeline::kUnoptimized, 7); }
+TEST_CASE("shard: op matrix optimized 0") { check(Pipeline::kOptimized, 0); }
+TEST_CASE("shard: op matrix optimized 1") { check(Pipeline::kOptimized, 1); }
+TEST_CASE("shard: op matrix optimized 2") { check(Pipeline::kOptimized, 2); }
+TEST_CASE("shard: op matrix optimized 3") { check(Pipeline::kOptimized, 3); }
+TEST_CASE("shard: op matrix optimized 4") { check(Pipeline::kOptimized, 4); }
+TEST_CASE("shard: op matrix optimized 5") { check(Pipeline::kOptimized, 5); }
+TEST_CASE("shard: op matrix optimized 6") { check(Pipeline::kOptimized, 6); }
+TEST_CASE("shard: op matrix optimized 7") { check(Pipeline::kOptimized, 7); }
 
 }  // namespace c6502::suite

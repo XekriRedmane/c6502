@@ -14,7 +14,7 @@ namespace c6502::suite {
 namespace {
 
 std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
+  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
 }
 
 }  // namespace
@@ -140,7 +140,7 @@ TEST_CASE("strength_reduction sim: a byte times every byte constant") {
   // generated on 27 Nov 2026.
   CHECK(src.size() == 24597);
   CHECK(sim::cpu_run::crc32(src) == 0xcd41f0f2u);
-  const sim::SimResult r = build_sim(src, true).run(200'000'000);
+  const sim::SimResult r = build_sim(src, Pipeline::kOptimized).run(200'000'000);
   CHECK_FALSE(r.timed_out);
   CHECK(r.return_int() == 0);
 }

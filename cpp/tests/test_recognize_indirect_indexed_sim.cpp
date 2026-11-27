@@ -208,7 +208,7 @@ void load(uint8_t *p, uint8_t i) {
 }
 int main(void) { load(data, 5); return 0; }
 )c";
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto out = s.run(5'000'000);
   CHECK_FALSE(out.timed_out);
   auto result_addr = s.symbol("result");
@@ -224,7 +224,7 @@ void store(uint8_t *p, uint8_t i, uint8_t v) {
 }
 int main(void) { store(dest, 3, 0xAB); return 0; }
 )c";
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto out = s.run(5'000'000);
   CHECK_FALSE(out.timed_out);
   auto dest_addr = s.symbol("dest");

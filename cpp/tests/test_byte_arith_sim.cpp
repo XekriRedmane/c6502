@@ -207,10 +207,10 @@ std::string program(const Case& c) {
   return s;
 }
 
-void check_cases(bool optimize) {
+void check_cases(Pipeline pipeline) {
   for (const Case& c : cases()) {
     INFO("case=" << c.name);
-    sim::Simulation s = build_sim(program(c), optimize);
+    sim::Simulation s = build_sim(program(c), pipeline);
     const sim::SimResult result = s.run(40'000'000);
     CHECK_FALSE(result.timed_out);
     const std::int64_t base = s.symbol("OUT");
@@ -251,8 +251,8 @@ TEST_CASE("byte_arith_sim: the generator writes the programs the Python one wrot
   CHECK(sim::cpu_run::crc32(all) == 0x3DD7359Du);
 }
 
-TEST_CASE("byte_arith_sim: each lowering matches the model, unoptimized") { check_cases(false); }
+TEST_CASE("byte_arith_sim: each lowering matches the model, unoptimized") { check_cases(Pipeline::kUnoptimized); }
 
-TEST_CASE("byte_arith_sim: each lowering matches the model, optimized") { check_cases(true); }
+TEST_CASE("byte_arith_sim: each lowering matches the model, optimized") { check_cases(Pipeline::kOptimized); }
 
 }  // namespace c6502::suite

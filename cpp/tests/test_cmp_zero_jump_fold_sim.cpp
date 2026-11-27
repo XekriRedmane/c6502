@@ -13,7 +13,7 @@ namespace c6502::suite {
 namespace {
 
 std::pair<std::int64_t, std::int64_t> both_paths(const std::string& src) {
-  return {run_c_program(src).return_int_signed(), build_sim(src, true).run().return_int_signed()};
+  return {run_c_program(src).return_int_signed(), build_sim(src, Pipeline::kOptimized).run().return_int_signed()};
 }
 
 }  // namespace
@@ -76,7 +76,7 @@ int main(void) {
     for (i = 0; i < 105; i = i + 1) sum = sum + 1;
     return sum;
 }
-)c", true).run(5'000'000);
+)c", Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   CHECK(r.return_int() == 105);
 }

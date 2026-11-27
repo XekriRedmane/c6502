@@ -109,13 +109,13 @@ int main(void) {
     return 0;
 }
 )c";
-  const std::string text = codegen(src, true);
+  const std::string text = codegen(src, Pipeline::kOptimized);
   const std::size_t at = text.find("\nf:");
   REQUIRE(at != std::string::npos);
   const std::string after = text.substr(at + 3);
   const std::string body = after.substr(0, after.find("RTS"));
   CHECK(contains(body, "BCC   .carry_inc@"));
-  sim::Simulation s = build_sim(src, true);
+  sim::Simulation s = build_sim(src, Pipeline::kOptimized);
   const sim::SimResult r = s.run();
   const std::int64_t base = s.symbol("r");
   for (std::uint64_t i = 0; i < 256; ++i) {

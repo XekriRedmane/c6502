@@ -22,7 +22,7 @@ void scan(void) {
     }
 }
 int main(void) { beam_y = 99; check(2); scan(); return top * 100 + out[3]; }
-)c", true).run().return_int() == 404);
+)c", Pipeline::kOptimized).run().return_int() == 404);
 }
 
 }  // namespace c6502::suite

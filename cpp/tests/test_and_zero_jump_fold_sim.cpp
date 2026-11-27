@@ -13,7 +13,7 @@ namespace {
 
 namespace sim_integration {
 auto run(const auto& src) {
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto r = s.run(200'000);
   CHECK_FALSE(r.timed_out);
   return r.return_int();
@@ -66,7 +66,7 @@ TEST_CASE("and_zero_jump_fold: store between extend and and") {
         void check(void) { int t = g; g = 0; if (t & 1) hits = 1; }
         int main(void) { g = 1; check(); return hits; }
         )c";
-  auto s = build_sim(src, false);
+  auto s = build_sim(src, Pipeline::kUnoptimized);
   CHECK(s.run(200'000).return_int() == 1);
   CHECK(run(src) == 1);
 }

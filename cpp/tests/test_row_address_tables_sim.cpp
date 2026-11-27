@@ -16,7 +16,7 @@
 namespace c6502::suite {
 namespace {
 
-std::string codegen_o(const std::string& src) { return codegen(src, true); }
+std::string codegen_o(const std::string& src) { return codegen(src, Pipeline::kOptimized); }
 
 auto cell(const auto& r, const auto& c) {
   return (r * 16 + c) & 0xFF;

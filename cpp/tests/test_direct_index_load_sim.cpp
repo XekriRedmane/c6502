@@ -19,7 +19,7 @@ void put(uint8_t value, uint8_t col) {
 }
 int main(void) { put(0x55, 17); return 0; }
 )c";
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto result = s.run(5'000'000);
   CHECK_FALSE(result.timed_out);
   CHECK(result.memory[0x4100 + 17] == 0x55);

@@ -12,7 +12,7 @@ void put(uint8_t value, uint8_t col) {
     buf[col] = value;
 }
 int main(void) { put(0x55, 17); return 0; }
-)c", true).run(5'000'000);
+)c", Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   CHECK(r.memory[0x4100 + 17] == 0x55);
 }
@@ -24,7 +24,7 @@ void put(uint8_t value, uint8_t col) {
     buf[200 + col] = value;
 }
 int main(void) { put(0x99, 50); return 0; }
-)c", true).run(5'000'000);
+)c", Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   // 0x4000 + 200 + 50 = 0x40FA.
   CHECK(r.memory[0x40FA] == 0x99);

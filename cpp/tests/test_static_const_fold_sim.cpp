@@ -9,7 +9,7 @@ namespace c6502::suite {
 namespace {
 
 sim::SimResult run_optimized(const char* src) {
-  const sim::SimResult r = build_sim(src, true).run(5'000'000);
+  const sim::SimResult r = build_sim(src, Pipeline::kOptimized).run(5'000'000);
   CHECK_FALSE(r.timed_out);
   return r;
 }

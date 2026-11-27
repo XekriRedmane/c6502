@@ -37,7 +37,7 @@ TEST_CASE("carry_recompute: page steps") {
     INFO("optimize=" << optimize);
     CHECK(build_sim(src, optimize).run().return_int() == want);
   }
-  const std::string asm_text = codegen(src, true);
+  const std::string asm_text = codegen(src, Pipeline::kOptimized);
   CHECK(contains(between(asm_text, "\nup:\n", "RTS"), "INC   p+1"));
   CHECK(contains(between(asm_text, "\ndown:\n", "RTS"), "DEC   p+1"));
 }

@@ -48,7 +48,7 @@ namespace unit_fallback {
 TEST_CASE("zp_local_allocation: unit fallback: runs") {
   for (const auto& src : {kFullPool, kFullPoolSlots}) {
     INFO("slots=" << (src == kFullPoolSlots));
-    CHECK(build_sim(src, true).run().return_int() == 16);
+    CHECK(build_sim(src, Pipeline::kOptimized).run().return_int() == 16);
   }
 }
 
@@ -62,7 +62,7 @@ TEST_CASE("zp_local_allocation: register parameters with a frame") {
   auto src =
       replace_all(kFullPool, "uint8_t f(uint8_t a, uint8_t b)", "uint8_t f(register uint8_t a, register uint8_t b)");
   CHECK(contains(src, "register uint8_t b"));
-  CHECK(build_sim(src, true).run().return_int() == 16);
+  CHECK(build_sim(src, Pipeline::kOptimized).run().return_int() == 16);
 }
 
 }  // namespace unit_fallback

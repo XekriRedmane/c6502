@@ -39,7 +39,7 @@ std::string state(const sim::SimResult& r) {
   return buf;
 }
 
-void check_returns(const std::vector<std::pair<std::string_view, std::int64_t>>& cases, bool optimize, int shard,
+void check_returns(const std::vector<std::pair<std::string_view, std::int64_t>>& cases, Pipeline pipeline, int shard,
                    int shards) {
   REQUIRE(!cases.empty());
   int skips = 0, ran = 0;
@@ -53,7 +53,7 @@ void check_returns(const std::vector<std::pair<std::string_view, std::int64_t>>&
     ++ran;
     try {
       const sim::SimResult r =
-          build_sim(read_repo_file("tests/" + std::string(path)), optimize).run(kMaxCycles);
+          build_sim(read_repo_file("tests/" + std::string(path)), pipeline).run(kMaxCycles);
       CHECK_MESSAGE(!r.timed_out, "the simulator timed out after " << r.cycles << " cycles");
       CHECK_MESSAGE(r.return_int_signed() == expected, state(r));
     } catch (const std::exception& e) {
@@ -80,13 +80,13 @@ void check_differential(int shard) {
     const std::string source = read_repo_file("tests/" + std::string(path));
     sim::SimResult unopt, opt;
     try {
-      unopt = build_sim(source, false).run(kMaxCycles);
+      unopt = build_sim(source, Pipeline::kUnoptimized).run(kMaxCycles);
     } catch (const std::exception& e) {
       FAIL_CHECK("unopt compile/sim error: " << e.what());
       continue;
     }
     try {
-      opt = build_sim(source, true).run(kMaxCycles);
+      opt = build_sim(source, Pipeline::kOptimized).run(kMaxCycles);
     } catch (const std::exception& e) {
       FAIL_CHECK("opt compile/sim error: " << e.what());
       continue;
@@ -105,10 +105,10 @@ void check_differential(int shard) {
 
 }  // namespace
 
-TEST_CASE("shard: sim asm 0") { check_returns(int_range_cases(), false, 0, kShards); }
-TEST_CASE("shard: sim asm 1") { check_returns(int_range_cases(), false, 1, kShards); }
-TEST_CASE("shard: sim asm 2") { check_returns(int_range_cases(), false, 2, kShards); }
-TEST_CASE("shard: sim asm 3") { check_returns(int_range_cases(), false, 3, kShards); }
+TEST_CASE("shard: sim asm 0") { check_returns(int_range_cases(), Pipeline::kUnoptimized, 0, kShards); }
+TEST_CASE("shard: sim asm 1") { check_returns(int_range_cases(), Pipeline::kUnoptimized, 1, kShards); }
+TEST_CASE("shard: sim asm 2") { check_returns(int_range_cases(), Pipeline::kUnoptimized, 2, kShards); }
+TEST_CASE("shard: sim asm 3") { check_returns(int_range_cases(), Pipeline::kUnoptimized, 3, kShards); }
 
 TEST_CASE("sim asm optimized: the programs of chapters 1 to 12 return their traced values under -O") {
   std::vector<std::pair<std::string_view, std::int64_t>> cases;
@@ -120,7 +120,7 @@ TEST_CASE("sim asm optimized: the programs of chapters 1 to 12 return their trac
       }
     }
   }
-  check_returns(cases, true, 0, 1);
+  check_returns(cases, Pipeline::kOptimized, 0, 1);
 }
 
 TEST_CASE("shard: sim differential 0") { check_differential(0); }

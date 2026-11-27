@@ -82,8 +82,8 @@ int main(void) {
 // 0x2F), so refresh_hit_entities must call draw_sprite_opaque
 // exactly 12 times. The optimized pipeline keeps the loop counter
 // in X, saved with STX and restored with LDX around the JSR.
-auto calls(const auto& optimize) {
-  auto s = build_sim(kProgram, optimize);
+auto calls(Pipeline pipeline) {
+  auto s = build_sim(kProgram, pipeline);
   auto result = s.run(500'000);
   CHECK_FALSE_MESSAGE(
       result.timed_out,
@@ -91,13 +91,13 @@ auto calls(const auto& optimize) {
   return result.return_int() & 0xFFFF;
 }
 
-TEST_CASE("refresh_hit_entities_sim: unoptimized produces 12 calls") { CHECK(calls(false) == 12); }
+TEST_CASE("refresh_hit_entities_sim: unoptimized produces 12 calls") { CHECK(calls(Pipeline::kUnoptimized) == 12); }
 
-TEST_CASE("refresh_hit_entities_sim: optimized produces 12 calls") { CHECK(calls(true) == 12); }
+TEST_CASE("refresh_hit_entities_sim: optimized produces 12 calls") { CHECK(calls(Pipeline::kOptimized) == 12); }
 
 TEST_CASE("refresh_hit_entities_sim: optimized is faster") {
-  auto unopt = build_sim(kProgram, false).run(500'000);
-  auto opt = build_sim(kProgram, true).run(500'000);
+  auto unopt = build_sim(kProgram, Pipeline::kUnoptimized).run(500'000);
+  auto opt = build_sim(kProgram, Pipeline::kOptimized).run(500'000);
   // Pre-existing baseline (loop-counter promotion + Y-pivot):
   // unopt ~25k cycles, opt ~4k cycles. Generous 6x threshold
   // to allow optimization regressions without flaking on minor

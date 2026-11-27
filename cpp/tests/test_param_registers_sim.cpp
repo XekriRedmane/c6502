@@ -121,7 +121,7 @@ TEST_CASE("param_registers sim: an argument for A from a frame slot") {
     return rom(a, b);
 }
 )c";
-  CHECK(contains(codegen(src, false), "PHA"));
+  CHECK(contains(codegen(src, Pipeline::kUnoptimized), "PHA"));
   check_runs(src, 10 + 2 * 11, kRomCode);
 }
 

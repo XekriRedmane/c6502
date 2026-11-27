@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "compile_case.h"
 #include "sim/harness.h"
 
 namespace c6502::suite {
@@ -26,6 +27,7 @@ struct SimOptions {
 // with the error's class and message when the program is rejected.
 sim::Simulation build_sim(const std::string& source, const SimOptions& options = {});
 sim::Simulation build_sim(const std::string& source, bool optimize);
+sim::Simulation build_sim(const std::string& source, Pipeline pipeline);
 
 sim::SimResult run_c_program(const std::string& source, bool optimize = false,
                              std::uint64_t max_cycles = sim::kDefaultMaxCycles);

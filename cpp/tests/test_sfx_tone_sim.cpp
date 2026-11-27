@@ -106,13 +106,13 @@ struct Run {
   std::vector<std::uint8_t> log;
 };
 
-Run run(bool optimize) {
-  sim::Simulation s = build_sim(kProgram, optimize);
+Run run(Pipeline pipeline) {
+  sim::Simulation s = build_sim(kProgram, pipeline);
   // Scenario 5 alone takes 255 inner iterations, and the whole program
   // takes well under 50,000 cycles, so a limit of 200,000 catches an
   // unintended infinite loop.
   Run out{s.run(200'000), {}};
-  INFO("optimize=" << optimize);
+  INFO("pipeline=" << pipeline);
   CHECK_FALSE(out.result.timed_out);
   const std::int64_t at = s.symbol("result_log");
   out.log.assign(out.result.memory.begin() + at, out.result.memory.begin() + at + kExpectedLog.size());
@@ -122,20 +122,20 @@ Run run(bool optimize) {
 }  // namespace
 
 TEST_CASE("sfx_tone_sim: the unoptimized program writes each sentinel") {
-  const Run r = run(false);
+  const Run r = run(Pipeline::kUnoptimized);
   CHECK((r.result.return_int() & 0xFFFF) == kExpectedRet);
   CHECK(r.log == kExpectedLog);
 }
 
 TEST_CASE("sfx_tone_sim: the optimized program writes each sentinel") {
-  const Run r = run(true);
+  const Run r = run(Pipeline::kOptimized);
   CHECK((r.result.return_int() & 0xFFFF) == kExpectedRet);
   CHECK(r.log == kExpectedLog);
 }
 
 TEST_CASE("sfx_tone_sim: both pipelines write the same sentinels and HARGS") {
-  const Run unopt = run(false);
-  const Run opt = run(true);
+  const Run unopt = run(Pipeline::kUnoptimized);
+  const Run opt = run(Pipeline::kOptimized);
   CHECK(unopt.log == opt.log);
   const auto hargs = [](const sim::SimResult& r) {
     return std::vector<std::uint8_t>(r.memory.begin() + r.hargs, r.memory.begin() + r.hargs + 2);
@@ -148,7 +148,7 @@ TEST_CASE("sfx_tone_sim: the optimizer keeps the volatile inner loop") {
   // one and takes about 8,000 cycles, while five bodies that return at
   // once and the sentinel writes would take about 500, so the bound is
   // an absolute one rather than a ratio.
-  const sim::SimResult r = build_sim(kProgram, true).run(200'000);
+  const sim::SimResult r = build_sim(kProgram, Pipeline::kOptimized).run(200'000);
   CHECK(r.cycles > 3'000);
 }
 

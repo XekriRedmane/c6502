@@ -34,7 +34,7 @@ constexpr std::int64_t kExpected = ((3 * 3 + 7) * 3 + 16) * 3 + 1;
 }  // namespace
 
 TEST_CASE("shared_tails sim: a tail is shared and the program runs") {
-  CHECK(contains(codegen(kSource, true), "@tail0:"));
+  CHECK(contains(codegen(kSource, Pipeline::kOptimized), "@tail0:"));
   for (const bool optimize : {false, true}) {
     INFO("optimize=" << optimize);
     CHECK(build_sim(kSource, optimize).run().return_int() == kExpected);

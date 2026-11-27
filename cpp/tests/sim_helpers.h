@@ -80,11 +80,11 @@ struct LoggedRun {
   Bytes log;
 };
 
-inline LoggedRun run_logged(const std::string& source, bool optimize, const std::string& log_symbol, std::int64_t size,
-                            std::uint64_t max_cycles = 2'000'000) {
-  sim::Simulation s = build_sim(source, optimize);
+inline LoggedRun run_logged(const std::string& source, Pipeline pipeline, const std::string& log_symbol,
+                            std::int64_t size, std::uint64_t max_cycles = 2'000'000) {
+  sim::Simulation s = build_sim(source, pipeline);
   LoggedRun out{s.run(max_cycles), {}};
-  CHECK_FALSE_MESSAGE(out.result.timed_out, "the run timed out with optimize=" << optimize);
+  CHECK_FALSE_MESSAGE(out.result.timed_out, "the " << pipeline << " run timed out");
   const std::int64_t at = s.symbol(log_symbol);
   out.log = slice(out.result.memory, at, at + size);
   return out;

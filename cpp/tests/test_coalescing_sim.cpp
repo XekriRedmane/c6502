@@ -21,7 +21,7 @@ int main(void) {
     return total;
 }
 )c";
-  auto s = build_sim(src, true);
+  auto s = build_sim(src, Pipeline::kOptimized);
   auto result = s.run(5'000'000);
   CHECK_FALSE(result.timed_out);
   CHECK((result.return_int() & 0xFFFF) == 10);

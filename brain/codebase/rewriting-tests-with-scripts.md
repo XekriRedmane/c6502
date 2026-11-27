@@ -10,4 +10,4 @@
 - Deleting a node by its AST span leaves behind the comment above it, since a comment isn't part of the node. In batch 3 of G1 (26 Nov 2026) the comment over `ALT_BOOL_WARNING` in test_c23_bool.py was left heading the next constant. A span that also takes the blank lines after the node removes the only separation when the line before the node isn't blank, which joined `]` to the next `def` in test_bcd_builtins.py.
 - pyflakes reports unused imports but not unused module-level functions, so a helper whose last caller moved to C++ stays behind silently (`_codegen` in test_recursion_saves.py). After deleting tests, list the top-level names and class attributes that nothing in the module refers to (a short AST walk over `ast.Name` and `ast.Attribute`), and compare the list with the module at the base commit.
 
-Related: [[codebase/surveying-test-dependencies]], [[codebase/git-bash-on-windows]], [[principles/make-checks-show-their-coverage]]
+Related: [[codebase/surveying-test-dependencies]], [[codebase/translating-python-tests]], [[codebase/git-bash-on-windows]], [[principles/make-checks-show-their-coverage]]

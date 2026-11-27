@@ -18,6 +18,7 @@
 - [[codebase/t3-restarts]]
 - [[codebase/tac-def-index-and-globals]]
 - [[codebase/tac-interpreter]]
+- [[codebase/translating-python-tests]]
 - [[codebase/type-checker-rechecks]]
 - [[codebase/user-docs]]
 - [[codebase/worktree-guard]]

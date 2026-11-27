@@ -20,6 +20,8 @@ Coverage:
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_direct_index_load_source.cpp.
 """
 from __future__ import annotations
 
@@ -27,46 +29,6 @@ import unittest
 
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-@needs_c6502cpp
-class TestDirectIndexLoadAsmShape(unittest.TestCase):
-    """Source-level checks: real C programs lowered through the
-    full pipeline produce the expected `LDX` / `LDY` form."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_indexed_load_uses_direct_ldx(self) -> None:
-        # IndexedLoad's lowering stages the index via A→X. Under
-        # -O, the loop counter `i` ends up either pinned to
-        # the X register directly (HwReg coloring) or living in ZP
-        # with a peephole-emitted direct `LDX $XX`. Either way the
-        # `arr[i]` access uses absolute,X addressing — `LDA arr,X`
-        # — without an `LDA <i>; TAX` pair.
-        src = (
-            "#include <stdint.h>\n"
-            "static const uint8_t arr[10] ="
-            " {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};\n"
-            "int main(void) {\n"
-            "    int s = 0;\n"
-            "    for (uint8_t i = 0; i < 10; i++) s += arr[i];\n"
-            "    return s;\n"
-            "}\n"
-        )
-        asm = self._compile(src)
-        # Direct absolute,X read, with the loop counter living in X
-        # (incremented in place via INX) — no `LDA <i>; TAX` setup
-        # pair feeding the indexed load. The read is the `ADC arr,X`
-        # of `s += arr[i]` (cmp_through_tmp_fold).
-        self.assertIn("ADC   arr,X", asm)
-        self.assertIn("INX", asm)
-        # The only register transfer into X is the return-value
-        # staging (`TYA; TAX` for the 2-byte int return's high byte),
-        # NOT an index setup. Assert no `LDA <slot>; TAX` index pair.
-        self.assertNotIn("TAX\n   LDA   arr,X", asm)
-        self.assertNotRegex(asm, r"LDA   __local[^\n]*\n   TAX")
 
 
 @needs_c6502cpp

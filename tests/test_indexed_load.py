@@ -13,6 +13,8 @@ Coverage:
     (uint16_t / long element types) read all bytes correctly.
   * The optimization fires only for static arrays, only when total
     size ≤ 256.
+
+The `-S` text is checked in cpp/tests/test_indexed_load.cpp.
 """
 from __future__ import annotations
 
@@ -24,65 +26,6 @@ from tests.cpp_build import needs_c6502cpp
 
 def _signed_int(v: int) -> int:
     return v - 0x10000 if v & 0x8000 else v
-
-
-@needs_c6502cpp
-class TestIndexedLoadAsmShape(unittest.TestCase):
-    """Source-level tests asserting the emitted asm uses absolute,X."""
-
-    def _compile(self, src: str) -> str:
-        from compile import _run_source
-        return _run_source("codegen", src, optimize=True)
-
-    def test_static_uint16_array_uses_absolute_x(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "static uint16_t arr[10] = {0,1,2,3,4,5,6,7,8,9};\n"
-            "int main(int i) { return arr[i]; }\n"
-        )
-        asm = self._compile(src)
-        # Should see `LDA arr,X` (low byte) and an absolute,X read of
-        # the high byte (`arr+1,X`). The 2-byte int return now rides
-        # in A (low) / X (high); the high byte is loaded with
-        # `LDY arr+1,X` (there's no `LDX abs,X`) and transferred to X.
-        self.assertIn("LDA   arr,X", asm)
-        self.assertIn("arr+1,X", asm)
-        # Should NOT have a DPTR setup for this access (the regular
-        # pointer-arithmetic path uses DPTR).
-        # Some other code may still use DPTR, so this is a softer
-        # check — the IndexedLoad path itself doesn't.
-
-    def test_uint8_array_uses_absolute_x(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "static uint8_t arr[100];\n"
-            "int main(int i) { return arr[i]; }\n"
-        )
-        asm = self._compile(src)
-        self.assertIn("LDA   arr,X", asm)
-
-    def test_array_too_large_falls_back(self) -> None:
-        # 200 uint16_t = 400 bytes, exceeds the 256-byte limit. Falls
-        # back to the general pointer-arithmetic path, no `arr,X`.
-        src = (
-            "#include <stdint.h>\n"
-            "static uint16_t arr[200];\n"
-            "int main(int i) { return arr[i]; }\n"
-        )
-        asm = self._compile(src)
-        self.assertNotIn(",X", asm)
-
-    def test_local_array_falls_back(self) -> None:
-        # Block-scope auto array — frame-allocated, not a static
-        # label. The fast path requires StaticAttr; this falls back
-        # to the general path.
-        src = (
-            "#include <stdint.h>\n"
-            "int main(int i) { uint16_t arr[10] = {0}; return arr[i]; }\n"
-        )
-        asm = self._compile(src)
-        # No absolute,X access on the local array.
-        self.assertNotIn("arr,X", asm)
 
 
 @needs_c6502cpp

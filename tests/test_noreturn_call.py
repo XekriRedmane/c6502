@@ -1,7 +1,10 @@
 """`[[noreturn]]` on a function (C23 §6.7.13.7): the parser records it
 on the declaration, the type checker on the function's `FunAttr` from
 any declaration, and under `-O` nothing runs after a call to
-the function (`cpp/src/passes/optimization/noreturn_call.h`)."""
+the function (`cpp/src/passes/optimization/noreturn_call.h`).
+
+These tests run programs in the simulator. The tests that read only
+the `-O` text are doctest cases in cpp/tests/test_noreturn_call.cpp."""
 
 from __future__ import annotations
 
@@ -9,7 +12,6 @@ import unittest
 
 from compile import _run_source
 from sim.harness import build_sim
-from tests.no_inlining import no_inlining
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -50,12 +52,6 @@ class TestRuns(unittest.TestCase):
                     list(sim.mpu.memory[base:base + 3]), [25, 0, 7],
                 )
 
-    def test_call_becomes_a_jump(self) -> None:
-        asm = _run_source("codegen", _PROGRAM, optimize=True)
-        check = asm.split("\ncheck:\n")[1].split("\nmain:\n")[0]
-        self.assertIn("JMP   stop", check)
-        self.assertNotIn("JSR   stop", check)
-
 
 # The call graph and a call that abandons its caller
 # (cpp/src/passes/call_edges.h).
@@ -82,64 +78,6 @@ def _soft_stack(text: str) -> bool:
     """True iff `text` reads or writes through SSP or FP."""
     return any(f"({r})" in text or f"   {r}" in text or f"{r}+" in text
                for r in ("SSP", "FP"))
-
-
-# A game's main loop, which `escape` abandons from two calls down.
-# `get_key` takes its argument in X, so it has to be zp_abi, and
-# `escape` returns its `bool` in the carry flag.
-_LOOP = """
-#include <stdint.h>
-#include <stdbool.h>
-volatile uint8_t key;
-uint8_t last;
-[[noreturn]] void command_loop(void);
-static bool escape(uint8_t k) { return k == 0x9B; }
-static uint8_t get_key(uint8_t n [[c6502::in_x]]) {
-    uint8_t k = key + n;
-    if (escape(k))
-        command_loop();
-    return k;
-}
-void command_loop(void) {
-    for (;;)
-        last = get_key(3);
-}
-"""
-
-
-@needs_c6502cpp
-@no_inlining()
-class TestCallGraph(unittest.TestCase):
-
-    def test_code(self) -> None:
-        # Before, the `register` parameter was an error, since
-        # `command_loop` was on a cycle and used the soft stack, and
-        # without it `get_key` tested the carry with `LDA #0; ROL A`.
-        asm = _codegen(_LOOP)
-        self.assertFalse(_soft_stack(asm), asm)
-        get_key = _body(asm, "get_key")
-        self.assertIn("JMP   command_loop", get_key)
-        self.assertIn("BCC", get_key)
-        self.assertNotIn("ROL", get_key)
-
-    def test_save_hardware_stack_on_the_call(self) -> None:
-        from errors import RecursionSaveError
-        src = ("[[noreturn]] void r(void);\n"
-               "void f(void) {\n"
-               "[[c6502::save_hardware_stack]] r();\n}\n"
-               "void r(void) { for (;;) f(); }\n")
-        with self.assertRaises(RecursionSaveError) as cm:
-            _codegen(src)
-        self.assertIn("nothing has to be saved", str(cm.exception))
-
-    def test_link_metadata(self) -> None:
-        # No `call` line for the call, and nothing is on a cycle.
-        asm = _codegen(_LOOP)
-        meta = [l for l in asm.splitlines() if l.startswith("; call ")
-                or l.startswith("; def ")]
-        self.assertIn("; call get_key -> escape", meta)
-        self.assertFalse(any("-> command_loop" in l for l in meta), meta)
-        self.assertFalse(any("in_cycle=true" in l for l in meta), meta)
 
 
 # A game that starts over from `reset_game` whenever `deep` ends a

@@ -6,6 +6,7 @@
 - [[codebase/claude-code-setup]]
 - [[codebase/comment-cleanup]]
 - [[codebase/compile-command]]
+- [[codebase/generated-files]]
 - [[codebase/git-bash-on-windows]]
 - [[codebase/long-runs-and-scratch-scripts]]
 - [[codebase/msbuild-stale-builds]]

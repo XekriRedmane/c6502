@@ -1,17 +1,22 @@
-// The instruction sizes of the simulator's in-process assembler
-// (sim/assembler.py), which `long_branches`, `short_jumps`,
-// `tail_merge`, `shared_tails`, `outline_runs`, and `rotate_loop_test`
-// read. Each size must equal the length of the bytes the Python
-// assembler emits for the instruction, and `asm_emit` writes the same
-// instructions. The prologue and epilogue sizes follow the naive
-// expansions of `passes.asm_to_asm2`, in which each `Mov` loads its own
-// Y.
+// The simulator's in-process assembler, ported from sim/assembler.py.
+// Each size must equal the length of the bytes emitted for the
+// instruction, since pass 1 lays the labels out by the sizes, and
+// `long_branches`, `short_jumps`, `tail_merge`, `shared_tails`,
+// `outline_runs`, and `rotate_loop_test` read the same sizes for the
+// text `asm_emit` writes. The prologue and epilogue follow the naive
+// expansions of `asm_to_asm2`, in which each `Mov` loads its own Y.
 #include "sim/assembler.h"
 
 #include <algorithm>
+#include <cctype>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 
+#include "binutils/opcodes.h"
 #include "errors.h"
+#include "pyrepr.h"
 
 namespace c6502::sim {
 
@@ -21,9 +26,94 @@ namespace ir = ::c6502::asm_ast;
 using ::c6502::asdl::as;
 using ::c6502::asdl::Int;
 using ::c6502::asdl::isa;
+using ::c6502::asdl::py_repr;
+using Mode = ::c6502::binutils::opcodes::Mode;
+using Bytes = std::vector<std::uint8_t>;
+using Symbols = std::map<std::string, std::int64_t>;
 
-[[noreturn]] void fail(const std::string& message) {
-  throw InternalError("AssemblerError: " + message);
+[[noreturn]] void fail(const std::string& message) { throw AssemblerError(message); }
+
+std::string repr(const ir::Type_operand& op) { return py_repr(op); }
+
+std::string str(Int v) { return pyrepr::integer(v); }
+
+// Python's `f"{v:#x}"`.
+std::string hex_alt(Int v) {
+  std::string digits = pyrepr::hex(v < 0 ? -v : v, 1);
+  std::transform(digits.begin(), digits.end(), digits.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return (v < 0 ? "-0x" : "0x") + digits;
+}
+
+std::int64_t to_i64(Int v) { return static_cast<std::int64_t>(static_cast<long long>(v)); }
+
+// A byte that Python's `bytes([...])` takes without a check of its own,
+// which raises ValueError outside 0..255.
+std::uint8_t byte(Int v) {
+  if (v < 0 || v > 0xFF) {
+    throw InternalError("ValueError: bytes must be in range(0, 256)");
+  }
+  return static_cast<std::uint8_t>(static_cast<int>(v));
+}
+
+// The opcode of `mnemonic` in `mode`. sim/assembler.py looks each up in
+// a table of the forms it emits, and a missing one is its KeyError.
+std::uint8_t op_code(std::string_view mnemonic, Mode mode) {
+  const std::optional<std::uint8_t> op = binutils::opcodes::opcode(mnemonic, mode);
+  if (!op) {
+    throw InternalError("KeyError: " + pyrepr::string(mnemonic));
+  }
+  return *op;
+}
+
+std::uint8_t implied(std::string_view mnemonic) { return op_code(mnemonic, Mode::kImp); }
+
+bool is_reg_a(const ir::Type_operand& op) {
+  const auto* r = as<ir::Reg>(op);
+  return r != nullptr && isa<ir::A>(r->reg);
+}
+bool is_reg_x(const ir::Type_operand& op) {
+  const auto* r = as<ir::Reg>(op);
+  return r != nullptr && isa<ir::X>(r->reg);
+}
+bool is_reg_y(const ir::Type_operand& op) {
+  const auto* r = as<ir::Reg>(op);
+  return r != nullptr && isa<ir::Y>(r->reg);
+}
+bool is_reg_xy(const ir::Type_operand& op) { return is_reg_x(op) || is_reg_y(op); }
+// The operands written with 6502 `(zp),Y` addressing and an `LDY #` in
+// front: Stack (through SSP), Frame (through FP), and Indirect (through
+// DPTR).
+bool is_indirect_y(const ir::Type_operand& op) {
+  return isa<ir::Stack, ir::Frame, ir::Indirect>(op);
+}
+bool is_memory(const ir::Type_operand& op) {
+  return isa<ir::Stack, ir::Frame, ir::Data, ir::Indirect, ir::IndirectY, ir::IndirectZp,
+             ir::IndirectZpY, ir::ZP>(op);
+}
+bool is_data_or_zp(const ir::Type_operand& op) { return isa<ir::Data, ir::ZP>(op); }
+bool is_imm_label(const ir::Type_operand& op) {
+  return isa<ir::ImmLabelLow, ir::ImmLabelHigh>(op);
+}
+bool is_imm_or_label(const ir::Type_operand& op) {
+  return isa<ir::Imm>(op) || is_imm_label(op);
+}
+bool is_x_indexed(const ir::Type_operand& op) {
+  const auto* d = as<ir::IndexedData>(op);
+  return d != nullptr && isa<ir::X>(d->index);
+}
+
+void reject_pseudo(const ir::Type_operand& op) {
+  if (const auto* p = as<ir::Pseudo>(op)) {
+    fail("Pseudo(" + pyrepr::string(p->name) +
+         ") reached assembler; replace_pseudoregisters must run first");
+  }
+}
+
+// A volatile move of a memory byte to itself is a load and a store,
+// which `asm_emit` keeps.
+bool is_volatile_self_mov(const ir::Mov& m) {
+  return m.is_volatile && m.src == m.dst && !isa<ir::Reg>(m.src);
 }
 
 // The sizes, with the set of names that resolve to zero page.
@@ -34,35 +124,6 @@ class Sizer {
   int instr_size(const ir::Type_instruction& instr) const;
 
  private:
-  bool is_reg_a(const ir::Type_operand& op) const {
-    const auto* r = as<ir::Reg>(op);
-    return r != nullptr && isa<ir::A>(r->reg);
-  }
-  bool is_reg_xy(const ir::Type_operand& op) const {
-    const auto* r = as<ir::Reg>(op);
-    return r != nullptr && isa<ir::X, ir::Y>(r->reg);
-  }
-  // The operands written with 6502 `(zp),Y` addressing and an `LDY #`
-  // in front: Stack (through SSP), Frame (through FP), and Indirect
-  // (through DPTR).
-  static bool is_indirect_y(const ir::Type_operand& op) {
-    return isa<ir::Stack, ir::Frame, ir::Indirect>(op);
-  }
-  static bool is_memory(const ir::Type_operand& op) {
-    return isa<ir::Stack, ir::Frame, ir::Data, ir::Indirect, ir::IndirectY,
-               ir::IndirectZp, ir::IndirectZpY, ir::ZP>(op);
-  }
-  static bool is_data_or_zp(const ir::Type_operand& op) {
-    return isa<ir::Data, ir::ZP>(op);
-  }
-  static bool is_imm_or_label(const ir::Type_operand& op) {
-    return isa<ir::Imm, ir::ImmLabelLow, ir::ImmLabelHigh>(op);
-  }
-  static bool is_x_indexed(const ir::Type_operand& op) {
-    const auto* d = as<ir::IndexedData>(op);
-    return d != nullptr && isa<ir::X>(d->index);
-  }
-
   // Returns whether a `Data` operand's address is in zero page. The
   // only `Data` names that can be are the zero-page symbols, and since
   // only the name's category is known, the offset is capped at $FB,
@@ -80,13 +141,6 @@ class Sizer {
       return 0 <= zp->address + zp->offset && zp->address + zp->offset <= 0xFF;
     }
     return data_fits_zp(std::get<ir::Data>(op));
-  }
-
-  static void reject_pseudo(const ir::Type_operand& op) {
-    if (const auto* p = as<ir::Pseudo>(op)) {
-      fail("Pseudo('" + p->name + "') reached assembler; "
-           "replace_pseudoregisters must run first");
-    }
   }
 
   int mov_size(const ir::Type_operand& src, const ir::Type_operand& dst) const;
@@ -174,7 +228,7 @@ int Sizer::mov_size(const ir::Type_operand& src, const ir::Type_operand& dst) co
   if (is_memory(src) && is_memory(dst)) {
     return load_mem_to_a_size(src) + store_a_to_mem_size(dst);
   }
-  fail("unsupported Mov");
+  fail("unsupported Mov: " + repr(src) + " -> " + repr(dst));
 }
 
 int Sizer::load_mem_to_a_size(const ir::Type_operand& src) const {
@@ -193,7 +247,7 @@ int Sizer::load_mem_to_a_size(const ir::Type_operand& src) const {
   if (isa<ir::IndirectZp>(src)) {
     return 4;
   }
-  fail("can't load into A");
+  fail("can't load " + repr(src) + " into A");
 }
 
 int Sizer::store_a_to_mem_size(const ir::Type_operand& dst) const {
@@ -209,7 +263,7 @@ int Sizer::store_a_to_mem_size(const ir::Type_operand& dst) const {
   if (isa<ir::IndirectZp>(dst)) {
     return 4;
   }
-  fail("can't store A");
+  fail("can't store A into " + repr(dst));
 }
 
 // ADC, SBC, AND, ORA, and EOR, which all take A as their implied
@@ -234,14 +288,14 @@ int Sizer::accum_arith_size(const ir::Type_operand& src) const {
   if (isa<ir::IndirectZpY>(src)) {
     return 2;
   }
-  fail("unsupported accum-arith src");
+  fail("unsupported accum-arith src: " + repr(src));
 }
 
 int Sizer::compare_size(const ir::Type_operand& left,
                         const ir::Type_operand& right) const {
   const auto* left_reg = as<ir::Reg>(left);
   if (left_reg == nullptr) {
-    fail("Compare left must be a register");
+    fail("Compare left must be a register; got " + repr(left));
   }
   const bool left_a = isa<ir::A>(left_reg->reg);
   if (is_imm_or_label(right)) {
@@ -253,34 +307,39 @@ int Sizer::compare_size(const ir::Type_operand& left,
   // CPX and CPY have no absolute indexed or indirect-Y forms.
   if (isa<ir::IndexedData>(right)) {
     if (!left_a) {
-      fail("Compare can't use an IndexedData right");
+      fail("Compare with left=" + repr(left) +
+           " can't use an IndexedData right (CPX/CPY have no absolute,X / absolute,Y "
+           "addressing modes)");
     }
     return 3;
   }
   if (is_indirect_y(right)) {
     if (!left_a) {
-      fail("Compare requires Imm/Data/ZP right");
+      fail("Compare with left=" + repr(left) +
+           " requires Imm/Data/ZP right (no indirect-Y for CPX/CPY)");
     }
     return 4;
   }
   if (isa<ir::IndirectY>(right)) {
     if (!left_a) {
-      fail("Compare can't use an IndirectY right");
+      fail("Compare with left=" + repr(left) +
+           " can't use an IndirectY right (no indirect-Y for CPX/CPY)");
     }
     return 2;
   }
   if (isa<ir::IndirectZpY, ir::IndirectZp>(right)) {
     if (!left_a) {
-      fail("Compare can't use an indirect right");
+      fail("Compare with left=" + repr(left) +
+           " can't use an indirect right (no indirect-Y for CPX/CPY)");
     }
     return isa<ir::IndirectZpY>(right) ? 2 : 4;
   }
-  fail("unsupported Compare right");
+  fail("unsupported Compare right: " + repr(right));
 }
 
 int Sizer::bit_test_size(const ir::Type_operand& src) const {
   if (!is_data_or_zp(src)) {
-    fail("BitTest src must be Data / ZP");
+    fail("BitTest src must be Data / ZP (NMOS 6502 has no `BIT #imm`); got " + repr(src));
   }
   return abs_fits_zp(src) ? 2 : 3;
 }
@@ -298,7 +357,7 @@ int Sizer::inc_dec_size(const ir::Type_operand& dst) const {
   if (is_x_indexed(dst)) {
     return 3;
   }
-  fail("Inc/Dec dst unsupported");
+  fail("Inc/Dec dst unsupported: " + repr(dst));
 }
 
 // A shift of A is one byte, of a `Data` / `ZP` byte two or three, of an
@@ -317,7 +376,7 @@ int Sizer::shift_size(const ir::Type_operand& dst) const {
   if (isa<ir::Stack, ir::Frame>(dst)) {
     return load_mem_to_a_size(dst) + 1 + store_a_to_mem_size(dst);
   }
-  fail("Shift dst unsupported");
+  fail("Shift dst unsupported: " + repr(dst));
 }
 
 // A `Data` source is `LDA #lo`, a store, `LDA #hi`, and a store. A
@@ -332,7 +391,7 @@ int Sizer::load_address_size(const ir::Type_operand& src,
   if (isa<ir::Frame>(src)) {
     return 1 + 2 + 2 + store + 2 + 2 + store;
   }
-  fail("LoadAddress src must be Data or Frame");
+  fail("LoadAddress src must be Data or Frame; got " + repr(src));
 }
 
 // `SED`, `CLC` or `SEC`, an LDA / ADC (SBC) / STA per byte, and `CLD`,
@@ -397,14 +456,15 @@ int ret_size(const ir::Ret& r) {
   return size + 1;  // RTS
 }
 
+// `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS`, before the table.
+constexpr int kJumpTableCode = 11;
+
 int Sizer::instr_size(const ir::Type_instruction& instr) const {
   const ir::Type_operand a = ir::Reg{.reg = ir::A{}};
   switch (ir::kind(instr)) {
     case ir::Kind_instruction::Mov: {
       const auto& m = std::get<ir::Mov>(instr);
-      // A volatile move of a memory byte to itself is a load and a
-      // store, which `asm_emit` keeps.
-      if (m.is_volatile && m.src == m.dst && !isa<ir::Reg>(m.src)) {
+      if (is_volatile_self_mov(m)) {
         return mov_size(m.src, a) + mov_size(a, m.dst);
       }
       return mov_size(m.src, m.dst);
@@ -450,9 +510,8 @@ int Sizer::instr_size(const ir::Type_instruction& instr) const {
     case ir::Kind_instruction::Jump:
       return 3;  // JSR abs, JMP abs
     case ir::Kind_instruction::JumpTable:
-      // `ASL; TAY; LDA t+1,Y; PHA; LDA t,Y; PHA; RTS` and a word per
-      // target.
-      return 11 + 2 * static_cast<int>(std::get<ir::JumpTable>(instr).targets.size());
+      // The dispatch and a word per target.
+      return kJumpTableCode + 2 * static_cast<int>(std::get<ir::JumpTable>(instr).targets.size());
     case ir::Kind_instruction::Branch:
       return 2;  // Bxx rel
     case ir::Kind_instruction::Label:
@@ -477,11 +536,1031 @@ int Sizer::instr_size(const ir::Type_instruction& instr) const {
   throw InternalError("TypeError: unexpected instruction");
 }
 
+std::int64_t init_size(const ir::Type_static_init& item) {
+  switch (ir::kind(item)) {
+    case ir::Kind_static_init::CharInit:
+    case ir::Kind_static_init::AddressByteInit:
+      return 1;
+    case ir::Kind_static_init::IntInit:
+    case ir::Kind_static_init::AddressInit:
+      return 2;
+    case ir::Kind_static_init::LongInit:
+    case ir::Kind_static_init::FloatInit:
+      return 4;
+    case ir::Kind_static_init::LongLongInit:
+    case ir::Kind_static_init::DoubleInit:
+      return 8;
+    case ir::Kind_static_init::StringInit:
+    case ir::Kind_static_init::ZeroInit:
+      break;
+  }
+  const Int n = isa<ir::StringInit>(item) ? std::get<ir::StringInit>(item).bytes
+                                         : std::get<ir::ZeroInit>(item).bytes;
+  return to_i64(n);
+}
+
+// The zero-page addresses of the runtime's pointers in the program's
+// layout.
+struct Runtime {
+  std::int64_t ssp;
+  std::int64_t fp;
+  std::int64_t dptr;
+};
+
+// The bytes of each instruction and static item, with every symbol
+// resolved.
+class Emitter {
+ public:
+  Emitter(const Runtime& runtime, const Symbols& symbols)
+      : rt_(runtime), syms_(symbols) {}
+
+  void instr(const ir::Type_instruction& instr, std::int64_t addr, Bytes& out) const;
+  void init(const ir::Type_static_init& item, Bytes& out) const;
+
+ private:
+  std::int64_t lookup(const std::string& name, const char* what = "undefined symbol ") const {
+    const auto it = syms_.find(name);
+    if (it == syms_.end()) {
+      fail(what + pyrepr::string(name));
+    }
+    return it->second;
+  }
+  // The address of a symbol plus an offset, wrapped to 16 bits.
+  std::int64_t address(const std::string& name, Int offset) const {
+    return to_i64((Int(lookup(name)) + offset) & Int(0xFFFF));
+  }
+
+  static std::uint8_t imm_byte(Int v, const char* label = "immediate") {
+    if (v < 0 || v > 0xFF) {
+      fail(std::string(label) + " " + str(v) + " out of range 0..255");
+    }
+    return static_cast<std::uint8_t>(static_cast<int>(v));
+  }
+  static void abs_word(Int v, Bytes& out) {
+    if (v < 0 || v > 0xFFFF) {
+      fail("address " + str(v) + " out of range 0..65535");
+    }
+    const int w = static_cast<int>(v);
+    out.push_back(static_cast<std::uint8_t>(w & 0xFF));
+    out.push_back(static_cast<std::uint8_t>(w >> 8));
+  }
+
+  std::int64_t resolve_indexed(const ir::IndexedData& op) const {
+    // An empty name is a 16-bit address in `offset`, from the
+    // IndexedStore lowering's abs,X form of a folded numeric address.
+    if (op.name.empty()) {
+      return to_i64(op.offset & Int(0xFFFF));
+    }
+    return address(op.name, op.offset);
+  }
+  std::int64_t resolve_abs(const ir::Type_operand& op) const;
+  std::int64_t resolve_imm_label(const ir::Type_operand& op) const;
+  std::int64_t indirect_zp(const ir::Type_operand& op) const;
+
+  static void ldy_imm(Int off, Bytes& out) {
+    out.push_back(op_code("LDY", Mode::kImm));
+    out.push_back(imm_byte(off, "frame offset"));
+  }
+  static void lda_imm(Int v, Bytes& out) {
+    out.push_back(op_code("LDA", Mode::kImm));
+    out.push_back(imm_byte(v));
+  }
+  // `LDY #off; <op> (zp),Y` for a Stack, Frame, or Indirect operand.
+  void indy(std::string_view mn, const ir::Type_operand& op, Bytes& out) const;
+  // `<op> (DPTR),Y`, with Y loaded already, for an IndirectY operand.
+  void indy_no_y_setup(std::string_view mn, Bytes& out) const {
+    out.push_back(op_code(mn, Mode::kIndy));
+    out.push_back(byte(rt_.dptr));
+  }
+  static void indy_zp(std::string_view mn, Int zp, Int off, Bytes& out) {
+    ldy_imm(off, out);
+    out.push_back(op_code(mn, Mode::kIndy));
+    out.push_back(imm_byte(zp, "zp address"));
+  }
+  static void indy_zp_no_y_setup(std::string_view mn, Int zp, Bytes& out) {
+    out.push_back(op_code(mn, Mode::kIndy));
+    out.push_back(imm_byte(zp, "zp address"));
+  }
+  static void absolute(std::string_view mn, Int addr, Bytes& out) {
+    const std::uint8_t op = op_code(mn, Mode::kAbs);
+    Bytes word;
+    abs_word(addr, word);
+    out.push_back(op);
+    out.insert(out.end(), word.begin(), word.end());
+  }
+  static void abs_indexed(std::string_view mn, Int addr, const ir::Type_reg& index, Bytes& out) {
+    Bytes word;
+    abs_word(addr, word);
+    out.push_back(op_code(mn, isa<ir::X>(index) ? Mode::kAbsx : Mode::kAbsy));
+    out.insert(out.end(), word.begin(), word.end());
+  }
+  static void zp(std::string_view mn, Int zp, Bytes& out) {
+    out.push_back(op_code(mn, Mode::kZp));
+    out.push_back(imm_byte(zp, "zp address"));
+  }
+  // Zero-page addressing for an address below $100, as dasm picks it,
+  // and absolute addressing otherwise.
+  static void zp_or_abs(std::string_view mn, Int addr, Bytes& out) {
+    if (0 <= addr && addr <= 0xFF && binutils::opcodes::opcode(mn, Mode::kZp)) {
+      zp(mn, addr, out);
+    } else {
+      absolute(mn, addr, out);
+    }
+  }
+
+  void mov(const ir::Type_operand& src, const ir::Type_operand& dst, Bytes& out) const;
+  void load_mem_to_a(const ir::Type_operand& op, Bytes& out) const;
+  void store_a_to_mem(const ir::Type_operand& op, Bytes& out) const;
+  void accum_arith(std::string_view mn, const ir::Type_operand& src, Bytes& out) const;
+  void compare(const ir::Type_operand& left, const ir::Type_operand& right, Bytes& out) const;
+  void bit_test(const ir::Type_operand& src, Bytes& out) const;
+  void inc_dec(const ir::Type_operand& op, bool inc, Bytes& out) const;
+  void shift(std::string_view mn, const ir::Type_operand& dst, Bytes& out) const;
+  void jump_table(std::int64_t addr, const ir::JumpTable& jt, Bytes& out) const;
+  void branch(const ir::Type_condition& cond, const std::string& target, std::int64_t addr,
+              Bytes& out) const;
+  void ssp_sub(Int amt, Bytes& out) const;
+  void prologue(const ir::FunctionPrologue& p, Bytes& out) const;
+  void ret(const ir::Ret& r, Bytes& out) const;
+  void decimal_arith(const ir::DecimalArith& d, Bytes& out) const;
+  void load_address(const ir::Type_operand& src, const ir::Type_operand& dst, Bytes& out) const;
+
+  Runtime rt_;
+  const Symbols& syms_;
+};
+
+std::int64_t Emitter::resolve_abs(const ir::Type_operand& op) const {
+  if (const auto* d = as<ir::Data>(op)) {
+    return address(d->name, d->offset);
+  }
+  if (const auto* z = as<ir::ZP>(op)) {
+    const Int addr = z->address + z->offset;
+    if (addr < 0 || addr > 0xFFFF) {
+      fail("ZP address " + hex_alt(addr) + " out of range");
+    }
+    return to_i64(addr);
+  }
+  throw InternalError("TypeError: _resolve_abs_addr only handles Data / ZP, got " + repr(op));
+}
+
+std::int64_t Emitter::resolve_imm_label(const ir::Type_operand& op) const {
+  if (const auto* lo = as<ir::ImmLabelLow>(op)) {
+    return address(lo->name, lo->offset) & 0xFF;
+  }
+  const auto& hi = std::get<ir::ImmLabelHigh>(op);
+  return address(hi.name, hi.offset) >> 8;
+}
+
+std::int64_t Emitter::indirect_zp(const ir::Type_operand& op) const {
+  if (isa<ir::Stack>(op)) return rt_.ssp;
+  if (isa<ir::Frame>(op)) return rt_.fp;
+  return rt_.dptr;
+}
+
+void Emitter::indy(std::string_view mn, const ir::Type_operand& op, Bytes& out) const {
+  Int off = 0;
+  if (const auto* s = as<ir::Stack>(op)) off = s->offset;
+  if (const auto* f = as<ir::Frame>(op)) off = f->offset;
+  if (const auto* i = as<ir::Indirect>(op)) off = i->offset;
+  ldy_imm(off, out);
+  out.push_back(op_code(mn, Mode::kIndy));
+  out.push_back(byte(indirect_zp(op)));
+}
+
+// sim/assembler.py's `_emit_mov`.
+void Emitter::mov(const ir::Type_operand& src, const ir::Type_operand& dst, Bytes& out) const {
+  reject_pseudo(src);
+  reject_pseudo(dst);
+  if (src == dst) {
+    return;
+  }
+  const auto* src_reg = as<ir::Reg>(src);
+  const auto* dst_reg = as<ir::Reg>(dst);
+  if (src_reg != nullptr && dst_reg != nullptr) {
+    const ir::Type_reg& s = src_reg->reg;
+    const ir::Type_reg& d = dst_reg->reg;
+    if (isa<ir::X>(s) && isa<ir::A>(d)) {
+      out.push_back(implied("TXA"));
+    } else if (isa<ir::Y>(s) && isa<ir::A>(d)) {
+      out.push_back(implied("TYA"));
+    } else if (isa<ir::A>(s) && isa<ir::X>(d)) {
+      out.push_back(implied("TAX"));
+    } else if (isa<ir::A>(s) && isa<ir::Y>(d)) {
+      out.push_back(implied("TAY"));
+    } else if (isa<ir::X>(s) && isa<ir::Y>(d)) {
+      out.push_back(implied("TXA"));
+      out.push_back(implied("TAY"));
+    } else if (isa<ir::Y>(s) && isa<ir::X>(d)) {
+      out.push_back(implied("TYA"));
+      out.push_back(implied("TAX"));
+    } else {
+      fail("unsupported Mov reg->reg: " + repr(src) + " -> " + repr(dst));
+    }
+    return;
+  }
+  const char* load_mn = nullptr;
+  if (dst_reg != nullptr) {
+    load_mn = isa<ir::A>(dst_reg->reg) ? "LDA" : isa<ir::X>(dst_reg->reg) ? "LDX" : "LDY";
+  }
+  if (const auto* imm = as<ir::Imm>(src); imm != nullptr && dst_reg != nullptr) {
+    const std::uint8_t v = imm_byte(imm->value);
+    out.push_back(op_code(load_mn, Mode::kImm));
+    out.push_back(v);
+    return;
+  }
+  if (is_imm_label(src) && dst_reg != nullptr) {
+    out.push_back(op_code(load_mn, Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(resolve_imm_label(src)));
+    return;
+  }
+  if (const auto* imm = as<ir::Imm>(src); imm != nullptr && is_memory(dst)) {
+    lda_imm(imm->value, out);
+    store_a_to_mem(dst, out);
+    return;
+  }
+  if (is_imm_label(src) && is_memory(dst)) {
+    out.push_back(op_code("LDA", Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(resolve_imm_label(src)));
+    store_a_to_mem(dst, out);
+    return;
+  }
+  if (is_memory(src) && is_reg_a(dst)) {
+    load_mem_to_a(src, out);
+    return;
+  }
+  const auto* src_indexed = as<ir::IndexedData>(src);
+  if (src_indexed != nullptr && is_reg_a(dst)) {
+    abs_indexed("LDA", resolve_indexed(*src_indexed), src_indexed->index, out);
+    return;
+  }
+  if (src_indexed != nullptr && is_memory(dst)) {
+    abs_indexed("LDA", resolve_indexed(*src_indexed), src_indexed->index, out);
+    store_a_to_mem(dst, out);
+    return;
+  }
+  if (const auto* d = as<ir::IndexedData>(dst); d != nullptr && is_reg_a(src)) {
+    abs_indexed("STA", resolve_indexed(*d), d->index, out);
+    return;
+  }
+  // `LDX abs,Y` and `LDY abs,X`. `LDX abs,X` and `LDY abs,Y` don't
+  // exist.
+  if (src_indexed != nullptr && dst_reg != nullptr) {
+    if (isa<ir::X>(dst_reg->reg) && isa<ir::Y>(src_indexed->index)) {
+      abs_indexed("LDX", resolve_indexed(*src_indexed), src_indexed->index, out);
+      return;
+    }
+    if (isa<ir::Y>(dst_reg->reg) && isa<ir::X>(src_indexed->index)) {
+      abs_indexed("LDY", resolve_indexed(*src_indexed), src_indexed->index, out);
+      return;
+    }
+  }
+  if (is_data_or_zp(src) && dst_reg != nullptr && isa<ir::X, ir::Y>(dst_reg->reg)) {
+    zp_or_abs(load_mn, resolve_abs(src), out);
+    return;
+  }
+  if (is_reg_xy(src) && is_data_or_zp(dst)) {
+    zp_or_abs(is_reg_x(src) ? "STX" : "STY", resolve_abs(dst), out);
+    return;
+  }
+  if (is_reg_xy(src) && is_indirect_y(dst)) {
+    out.push_back(implied(is_reg_x(src) ? "TXA" : "TYA"));
+    indy("STA", dst, out);
+    return;
+  }
+  if (is_reg_a(src) && is_memory(dst)) {
+    store_a_to_mem(dst, out);
+    return;
+  }
+  if (is_memory(src) && is_memory(dst)) {
+    load_mem_to_a(src, out);
+    store_a_to_mem(dst, out);
+    return;
+  }
+  fail("unsupported Mov: " + repr(src) + " -> " + repr(dst));
+}
+
+void Emitter::load_mem_to_a(const ir::Type_operand& op, Bytes& out) const {
+  if (is_data_or_zp(op)) {
+    zp_or_abs("LDA", resolve_abs(op), out);
+  } else if (is_indirect_y(op)) {
+    indy("LDA", op, out);
+  } else if (isa<ir::IndirectY>(op)) {
+    indy_no_y_setup("LDA", out);
+  } else if (const auto* zy = as<ir::IndirectZpY>(op)) {
+    indy_zp_no_y_setup("LDA", zy->address, out);
+  } else if (const auto* z = as<ir::IndirectZp>(op)) {
+    indy_zp("LDA", z->address, z->offset, out);
+  } else {
+    fail("can't load " + repr(op) + " into A");
+  }
+}
+
+void Emitter::store_a_to_mem(const ir::Type_operand& op, Bytes& out) const {
+  if (is_data_or_zp(op)) {
+    zp_or_abs("STA", resolve_abs(op), out);
+  } else if (is_indirect_y(op)) {
+    indy("STA", op, out);
+  } else if (isa<ir::IndirectY>(op)) {
+    indy_no_y_setup("STA", out);
+  } else if (const auto* zy = as<ir::IndirectZpY>(op)) {
+    indy_zp_no_y_setup("STA", zy->address, out);
+  } else if (const auto* z = as<ir::IndirectZp>(op)) {
+    indy_zp("STA", z->address, z->offset, out);
+  } else {
+    fail("can't store A into " + repr(op));
+  }
+}
+
+void Emitter::accum_arith(std::string_view mn, const ir::Type_operand& src, Bytes& out) const {
+  reject_pseudo(src);
+  if (const auto* imm = as<ir::Imm>(src)) {
+    out.push_back(op_code(mn, Mode::kImm));
+    out.push_back(imm_byte(imm->value));
+  } else if (is_imm_label(src)) {
+    out.push_back(op_code(mn, Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(resolve_imm_label(src)));
+  } else if (is_data_or_zp(src)) {
+    zp_or_abs(mn, resolve_abs(src), out);
+  } else if (is_indirect_y(src)) {
+    indy(mn, src, out);
+  } else if (const auto* d = as<ir::IndexedData>(src)) {
+    abs_indexed(mn, resolve_indexed(*d), d->index, out);
+  } else if (const auto* z = as<ir::IndirectZp>(src)) {
+    indy_zp(mn, z->address, z->offset, out);
+  } else if (const auto* zy = as<ir::IndirectZpY>(src)) {
+    indy_zp_no_y_setup(mn, zy->address, out);
+  } else {
+    fail("unsupported " + std::string(mn) + " src: " + repr(src));
+  }
+}
+
+// sim/assembler.py's `_emit_compare`. Pass 1's sizes reject every right
+// operand that CPX and CPY can't take, with their own messages, before
+// this runs.
+void Emitter::compare(const ir::Type_operand& left, const ir::Type_operand& right,
+                      Bytes& out) const {
+  reject_pseudo(left);
+  reject_pseudo(right);
+  const auto* left_reg = as<ir::Reg>(left);
+  if (left_reg == nullptr) {
+    fail("Compare left must be a register; got " + repr(left));
+  }
+  const bool cmp = isa<ir::A>(left_reg->reg);
+  const char* mn = cmp ? "CMP" : isa<ir::X>(left_reg->reg) ? "CPX" : "CPY";
+  if (const auto* imm = as<ir::Imm>(right)) {
+    out.push_back(op_code(mn, Mode::kImm));
+    out.push_back(imm_byte(imm->value));
+  } else if (is_imm_label(right)) {
+    out.push_back(op_code(mn, Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(resolve_imm_label(right)));
+  } else if (is_data_or_zp(right)) {
+    zp_or_abs(mn, resolve_abs(right), out);
+  } else if (const auto* d = as<ir::IndexedData>(right)) {
+    if (!cmp) {
+      fail("Compare with left=" + repr(left) +
+           " can't use an IndexedData right (CPX/CPY have no absolute,X / absolute,Y "
+           "addressing modes)");
+    }
+    abs_indexed(mn, resolve_indexed(*d), d->index, out);
+  } else if (is_indirect_y(right)) {
+    if (!cmp) {
+      fail("Compare with left=" + repr(left) + " requires Imm/Data/ZP right; got " +
+           repr(right));
+    }
+    indy(mn, right, out);
+  } else if (isa<ir::IndirectY>(right)) {
+    if (!cmp) {
+      fail("Compare with left=" + repr(left) + " can't use IndirectY right");
+    }
+    indy_no_y_setup(mn, out);
+  } else if (isa<ir::IndirectZpY, ir::IndirectZp>(right)) {
+    if (!cmp) {
+      fail("Compare with left=" + repr(left) + " can't use an indirect right");
+    }
+    if (const auto* zy = as<ir::IndirectZpY>(right)) {
+      indy_zp_no_y_setup(mn, zy->address, out);
+    } else {
+      const auto& z = std::get<ir::IndirectZp>(right);
+      indy_zp(mn, z.address, z.offset, out);
+    }
+  } else {
+    fail("unsupported Compare right: " + repr(right));
+  }
+}
+
+void Emitter::bit_test(const ir::Type_operand& src, Bytes& out) const {
+  reject_pseudo(src);
+  if (!is_data_or_zp(src)) {
+    fail("BitTest src must be Data / ZP; got " + repr(src));
+  }
+  zp_or_abs("BIT", resolve_abs(src), out);
+}
+
+void Emitter::inc_dec(const ir::Type_operand& op, bool inc, Bytes& out) const {
+  if (is_reg_x(op)) {
+    out.push_back(implied(inc ? "INX" : "DEX"));
+    return;
+  }
+  if (is_reg_y(op)) {
+    out.push_back(implied(inc ? "INY" : "DEY"));
+    return;
+  }
+  const char* mn = inc ? "INC" : "DEC";
+  if (is_data_or_zp(op)) {
+    zp_or_abs(mn, resolve_abs(op), out);
+  } else if (is_x_indexed(op)) {
+    const auto& d = std::get<ir::IndexedData>(op);
+    abs_indexed(mn, resolve_indexed(d), d.index, out);
+  } else {
+    fail(std::string(inc ? "Inc" : "Dec") +
+         " dst must be Reg(X), Reg(Y), Data, ZP, or IndexedData indexed by X; got " + repr(op));
+  }
+}
+
+// A shift of a soft-stack byte goes through A, since the 6502 has no
+// `(zp),Y` form of the shifts.
+void Emitter::shift(std::string_view mn, const ir::Type_operand& dst, Bytes& out) const {
+  if (is_reg_a(dst)) {
+    out.push_back(op_code(mn, Mode::kAcc));
+  } else if (is_data_or_zp(dst)) {
+    zp_or_abs(mn, resolve_abs(dst), out);
+  } else if (is_x_indexed(dst)) {
+    const auto& d = std::get<ir::IndexedData>(dst);
+    abs_indexed(mn, resolve_indexed(d), d.index, out);
+  } else if (isa<ir::Stack, ir::Frame>(dst)) {
+    indy("LDA", dst, out);
+    out.push_back(op_code(mn, Mode::kAcc));
+    indy("STA", dst, out);
+  } else {
+    fail(std::string(mn) +
+         " dst must be Reg(A), Data, ZP, IndexedData indexed by X, Stack, or Frame; got " +
+         repr(dst));
+  }
+}
+
+// The dispatch that `jump_table` in asm_emit.cpp writes, and the table
+// right after it. Pass 1 doesn't see the table's label, which is inside
+// the instruction, so its address comes from `addr`.
+void Emitter::jump_table(std::int64_t addr, const ir::JumpTable& jt, Bytes& out) const {
+  const std::int64_t start = addr + kJumpTableCode;
+  if (const auto it = syms_.find(jt.table); it != syms_.end() && it->second != start) {
+    fail("jump table " + pyrepr::string(jt.table) + " isn't where expected");
+  }
+  const Int at = Int(start) - jt.base * 2;
+  const ir::Type_reg reg = jt.index == "X" ? ir::Type_reg{ir::X{}} : ir::Type_reg{ir::Y{}};
+  out.push_back(op_code("ASL", Mode::kAcc));
+  out.push_back(implied("TA" + jt.index));
+  abs_indexed("LDA", at + 1, reg, out);
+  out.push_back(implied("PHA"));
+  abs_indexed("LDA", at, reg, out);
+  out.push_back(implied("PHA"));
+  out.push_back(implied("RTS"));
+  for (const std::string& t : jt.targets) {
+    abs_word((Int(lookup(t)) - 1) & Int(0xFFFF), out);
+  }
+}
+
+void Emitter::branch(const ir::Type_condition& cond, const std::string& target,
+                     std::int64_t addr, Bytes& out) const {
+  const std::int64_t to = lookup(target, "undefined branch target ");
+  static constexpr const char* kMnemonics[] = {"BCC", "BCS", "BEQ", "BMI",
+                                               "BNE", "BPL", "BVC", "BVS"};
+  const std::uint8_t op = op_code(kMnemonics[cond.index()], Mode::kRel);
+  // The 6502 adds the displacement to the address after the branch.
+  const std::int64_t disp = to - (addr + 2);
+  if (disp < -128 || disp > 127) {
+    fail("branch to " + pyrepr::string(target) + " out of range: disp=" + std::to_string(disp));
+  }
+  out.push_back(op);
+  out.push_back(static_cast<std::uint8_t>(disp & 0xFF));
+}
+
+// `SSP -= amt`.
+void Emitter::ssp_sub(Int amt, Bytes& out) const {
+  if (amt < 0 || amt > 0xFFFF) {
+    fail("AllocateStack amt " + str(amt) + " out of range");
+  }
+  if (amt == 0) {
+    return;
+  }
+  const int n = static_cast<int>(amt);
+  out.push_back(implied("SEC"));
+  zp("LDA", rt_.ssp, out);
+  out.push_back(op_code("SBC", Mode::kImm));
+  out.push_back(static_cast<std::uint8_t>(n & 0xFF));
+  zp("STA", rt_.ssp, out);
+  zp("LDA", rt_.ssp + 1, out);
+  out.push_back(op_code("SBC", Mode::kImm));
+  out.push_back(static_cast<std::uint8_t>(n >> 8));
+  zp("STA", rt_.ssp + 1, out);
+}
+
+// The naive form of `asm_to_asm2`'s prologue (`save_fp_into_slot`), in
+// which each store of the caller's FP loads its own Y.
+void Emitter::prologue(const ir::FunctionPrologue& p, Bytes& out) const {
+  if (p.arg_bytes + p.local_bytes == 0) {
+    return;
+  }
+  if (p.local_bytes < 0 || p.local_bytes > 253) {
+    fail("local_bytes " + str(p.local_bytes) + " out of range 0..253");
+  }
+  const std::uint8_t ldy = op_code("LDY", Mode::kImm);
+  const std::uint8_t sta_indy = op_code("STA", Mode::kIndy);
+  ssp_sub(p.local_bytes + 2, out);
+  // The caller's FP goes in the slot at SSP+M+1 / SSP+M+2.
+  zp("LDA", rt_.fp, out);
+  out.insert(out.end(), {ldy, byte(p.local_bytes + 1), sta_indy, byte(rt_.ssp)});
+  zp("LDA", rt_.fp + 1, out);
+  out.insert(out.end(), {ldy, byte(p.local_bytes + 2), sta_indy, byte(rt_.ssp)});
+  // FP = SSP.
+  zp("LDA", rt_.ssp, out);
+  zp("STA", rt_.fp, out);
+  zp("LDA", rt_.ssp + 1, out);
+  zp("STA", rt_.fp + 1, out);
+  // The callee-saved zero-page bytes go in the frame at FP+1..FP+S.
+  for (std::size_t i = 0; i < p.callee_saved_addrs.size(); ++i) {
+    const Int addr = p.callee_saved_addrs[i];
+    if (addr < 0 || addr > 0xFF) {
+      fail("callee-saved address " + hex_alt(addr) + " out of range 0..0xFF");
+    }
+    zp("LDA", addr, out);
+    out.insert(out.end(),
+               {ldy, byte(static_cast<long long>(i) + 1), sta_indy, byte(rt_.fp)});
+  }
+}
+
+// The naive form of `asm_to_asm2`'s `ret` and `restore_fp_from_slot`.
+void Emitter::ret(const ir::Ret& r, Bytes& out) const {
+  if (r.arg_bytes + r.local_bytes == 0) {
+    out.push_back(implied("RTS"));
+    return;
+  }
+  if (r.local_bytes < 0 || r.local_bytes > 253) {
+    fail("local_bytes " + str(r.local_bytes) + " out of range 0..253");
+  }
+  const std::uint8_t ldy = op_code("LDY", Mode::kImm);
+  const std::uint8_t lda_indy = op_code("LDA", Mode::kIndy);
+  const Int rewind = r.arg_bytes + r.local_bytes + 2;
+  // The return bytes wait on the hardware stack through the whole
+  // epilogue, since the callee-saved restore and the teardown use A and
+  // X: the low byte (A) and then the high byte (X, through A), or A
+  // alone.
+  if (r.save_x) {
+    out.insert(out.end(), {implied("PHA"), implied("TXA"), implied("PHA")});
+  } else if (r.save_a) {
+    out.push_back(implied("PHA"));
+  }
+  // A carry-flag return waits there too, across the teardown's `CLC;
+  // ADC`.
+  if (r.save_c) {
+    out.push_back(implied("PHP"));
+  }
+  // The callee-saved bytes come back while FP still points at them.
+  for (std::size_t i = 0; i < r.callee_saved_addrs.size(); ++i) {
+    const Int addr = r.callee_saved_addrs[i];
+    if (addr < 0 || addr > 0xFF) {
+      fail("callee-saved address " + hex_alt(addr) + " out of range 0..0xFF");
+    }
+    out.insert(out.end(), {ldy, byte(static_cast<long long>(i) + 1), lda_indy, byte(rt_.fp)});
+    zp("STA", addr, out);
+  }
+  // SSP = FP + rewind.
+  if (rewind == 0) {
+    zp("LDA", rt_.fp, out);
+    zp("STA", rt_.ssp, out);
+    zp("LDA", rt_.fp + 1, out);
+    zp("STA", rt_.ssp + 1, out);
+  } else {
+    const int w = static_cast<int>(rewind & Int(0xFFFF));
+    out.push_back(implied("CLC"));
+    zp("LDA", rt_.fp, out);
+    out.push_back(op_code("ADC", Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(w & 0xFF));
+    zp("STA", rt_.ssp, out);
+    zp("LDA", rt_.fp + 1, out);
+    out.push_back(op_code("ADC", Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(w >> 8));
+    zp("STA", rt_.ssp + 1, out);
+  }
+  // The caller's FP comes back from its slot, the low byte through X so
+  // that it outlasts the high byte's read and store.
+  out.insert(out.end(), {ldy, byte(r.local_bytes + 1), lda_indy, byte(rt_.fp), implied("TAX")});
+  out.insert(out.end(), {ldy, byte(r.local_bytes + 2), lda_indy, byte(rt_.fp)});
+  zp("STA", rt_.fp + 1, out);
+  out.push_back(implied("TXA"));
+  zp("STA", rt_.fp, out);
+  if (r.save_c) {
+    out.push_back(implied("PLP"));
+  }
+  if (r.save_x) {
+    out.insert(out.end(), {implied("PLA"), implied("TAX"), implied("PLA")});
+  } else if (r.save_a) {
+    out.push_back(implied("PLA"));
+  }
+  out.push_back(implied("RTS"));
+}
+
+void Emitter::decimal_arith(const ir::DecimalArith& d, Bytes& out) const {
+  const ir::Type_operand a = ir::Reg{.reg = ir::A{}};
+  out.push_back(implied("SED"));
+  out.push_back(implied(d.subtract ? "SEC" : "CLC"));
+  const char* mn = d.subtract ? "SBC" : "ADC";
+  const std::size_t k = std::min({d.left.size(), d.right.size(), d.dst.size()});
+  for (std::size_t i = 0; i < k; ++i) {
+    mov(d.left[i], a, out);
+    accum_arith(mn, d.right[i], out);
+    mov(a, d.dst[i], out);
+  }
+  out.push_back(implied("CLD"));
+}
+
+// `op` with `k` added to its offset, for the high byte of a 2-byte
+// operand.
+ir::Type_operand shift_offset(const ir::Type_operand& op, Int k) {
+  if (const auto* f = as<ir::Frame>(op)) return ir::Frame{.offset = f->offset + k};
+  if (const auto* s = as<ir::Stack>(op)) return ir::Stack{.offset = s->offset + k};
+  if (const auto* d = as<ir::Data>(op)) return ir::Data{.name = d->name, .offset = d->offset + k};
+  if (const auto* i = as<ir::Indirect>(op)) return ir::Indirect{.offset = i->offset + k};
+  if (const auto* z = as<ir::ZP>(op)) return ir::ZP{.address = z->address, .offset = z->offset + k};
+  throw InternalError("TypeError: can't shift offset on operand " + repr(op));
+}
+
+void Emitter::load_address(const ir::Type_operand& src, const ir::Type_operand& dst,
+                           Bytes& out) const {
+  reject_pseudo(src);
+  reject_pseudo(dst);
+  if (!is_memory(dst)) {
+    fail("LoadAddress dst must be memory; got " + repr(dst));
+  }
+  if (const auto* d = as<ir::Data>(src)) {
+    const std::int64_t addr = address(d->name, d->offset);
+    lda_imm(addr & 0xFF, out);
+    store_a_to_mem(dst, out);
+    lda_imm(addr >> 8, out);
+    store_a_to_mem(shift_offset(dst, 1), out);
+    return;
+  }
+  if (const auto* f = as<ir::Frame>(src)) {
+    if (f->offset < 0 || f->offset > 0xFF) {
+      fail("LoadAddress Frame offset " + str(f->offset) + " oor");
+    }
+    out.push_back(implied("CLC"));
+    zp("LDA", rt_.fp, out);
+    out.push_back(op_code("ADC", Mode::kImm));
+    out.push_back(static_cast<std::uint8_t>(static_cast<int>(f->offset)));
+    store_a_to_mem(dst, out);
+    zp("LDA", rt_.fp + 1, out);
+    out.push_back(op_code("ADC", Mode::kImm));
+    out.push_back(0);
+    store_a_to_mem(shift_offset(dst, 1), out);
+    return;
+  }
+  fail("LoadAddress src must be Data or Frame; got " + repr(src));
+}
+
+void check_dst_a(const ir::Type_operand& op, const char* name) {
+  if (!is_reg_a(op)) {
+    fail(std::string(name) + " dst must be Reg(A); got " + repr(op));
+  }
+}
+
+// sim/assembler.py's `_emit_instr`.
+void Emitter::instr(const ir::Type_instruction& instr, std::int64_t addr, Bytes& out) const {
+  const ir::Type_operand a = ir::Reg{.reg = ir::A{}};
+  switch (ir::kind(instr)) {
+    case ir::Kind_instruction::Mov: {
+      const auto& m = std::get<ir::Mov>(instr);
+      if (is_volatile_self_mov(m)) {
+        mov(m.src, a, out);
+        mov(a, m.dst, out);
+      } else {
+        mov(m.src, m.dst, out);
+      }
+      return;
+    }
+    case ir::Kind_instruction::Add: {
+      const auto& x = std::get<ir::Add>(instr);
+      check_dst_a(x.dst, "Add");
+      accum_arith("ADC", x.src, out);
+      return;
+    }
+    case ir::Kind_instruction::Sub: {
+      const auto& x = std::get<ir::Sub>(instr);
+      check_dst_a(x.dst, "Sub");
+      accum_arith("SBC", x.src, out);
+      return;
+    }
+    case ir::Kind_instruction::And: {
+      const auto& x = std::get<ir::And>(instr);
+      check_dst_a(x.dst, "And");
+      accum_arith("AND", x.src, out);
+      return;
+    }
+    case ir::Kind_instruction::Or: {
+      const auto& x = std::get<ir::Or>(instr);
+      check_dst_a(x.dst, "Or");
+      accum_arith("ORA", x.src, out);
+      return;
+    }
+    case ir::Kind_instruction::Xor: {
+      const auto& x = std::get<ir::Xor>(instr);
+      check_dst_a(x.dst, "Xor");
+      if (is_reg_a(x.src1)) {
+        accum_arith("EOR", x.src2, out);
+      } else if (is_reg_a(x.src2)) {
+        accum_arith("EOR", x.src1, out);
+      } else {
+        fail("Xor srcs must include Reg(A); got " + repr(x.src1) + ", " + repr(x.src2));
+      }
+      return;
+    }
+    case ir::Kind_instruction::Compare: {
+      const auto& c = std::get<ir::Compare>(instr);
+      compare(c.left, c.right, out);
+      return;
+    }
+    case ir::Kind_instruction::BitTest:
+      bit_test(std::get<ir::BitTest>(instr).src, out);
+      return;
+    case ir::Kind_instruction::ClearCarry:
+      out.push_back(implied("CLC"));
+      return;
+    case ir::Kind_instruction::SetCarry:
+      out.push_back(implied("SEC"));
+      return;
+    case ir::Kind_instruction::SetDecimal:
+      out.push_back(implied("SED"));
+      return;
+    case ir::Kind_instruction::ClearDecimal:
+      out.push_back(implied("CLD"));
+      return;
+    case ir::Kind_instruction::Inc:
+      inc_dec(std::get<ir::Inc>(instr).dst, true, out);
+      return;
+    case ir::Kind_instruction::Dec:
+      inc_dec(std::get<ir::Dec>(instr).dst, false, out);
+      return;
+    case ir::Kind_instruction::Push: {
+      const auto& src = std::get<ir::Push>(instr).src;
+      if (!is_reg_a(src)) {
+        fail("Push src must be Reg(A); got " + repr(src));
+      }
+      out.push_back(implied("PHA"));
+      return;
+    }
+    case ir::Kind_instruction::Pop: {
+      const auto& dst = std::get<ir::Pop>(instr).dst;
+      if (!is_reg_a(dst)) {
+        fail("Pop dst must be Reg(A); got " + repr(dst));
+      }
+      out.push_back(implied("PLA"));
+      return;
+    }
+    case ir::Kind_instruction::ArithmeticShiftLeft:
+      shift("ASL", std::get<ir::ArithmeticShiftLeft>(instr).dst, out);
+      return;
+    case ir::Kind_instruction::LogicalShiftRight:
+      shift("LSR", std::get<ir::LogicalShiftRight>(instr).dst, out);
+      return;
+    case ir::Kind_instruction::RotateLeft:
+      shift("ROL", std::get<ir::RotateLeft>(instr).dst, out);
+      return;
+    case ir::Kind_instruction::RotateRight:
+      shift("ROR", std::get<ir::RotateRight>(instr).dst, out);
+      return;
+    case ir::Kind_instruction::Call: {
+      const std::int64_t to = lookup(std::get<ir::Call>(instr).name);
+      out.push_back(op_code("JSR", Mode::kAbs));
+      abs_word(to, out);
+      return;
+    }
+    case ir::Kind_instruction::Jump: {
+      const std::int64_t to = lookup(std::get<ir::Jump>(instr).target);
+      out.push_back(op_code("JMP", Mode::kAbs));
+      abs_word(to, out);
+      return;
+    }
+    case ir::Kind_instruction::JumpTable:
+      jump_table(addr, std::get<ir::JumpTable>(instr), out);
+      return;
+    case ir::Kind_instruction::Branch: {
+      const auto& b = std::get<ir::Branch>(instr);
+      branch(b.cond, b.target, addr, out);
+      return;
+    }
+    case ir::Kind_instruction::Label:
+      return;
+    case ir::Kind_instruction::AllocateStack:
+      ssp_sub(std::get<ir::AllocateStack>(instr).bytes, out);
+      return;
+    case ir::Kind_instruction::FunctionPrologue:
+      prologue(std::get<ir::FunctionPrologue>(instr), out);
+      return;
+    case ir::Kind_instruction::Ret:
+      ret(std::get<ir::Ret>(instr), out);
+      return;
+    case ir::Kind_instruction::Return:
+      out.push_back(implied("RTS"));
+      return;
+    case ir::Kind_instruction::LoadAddress: {
+      const auto& la = std::get<ir::LoadAddress>(instr);
+      load_address(la.src, la.dst, out);
+      return;
+    }
+    case ir::Kind_instruction::DecimalArith:
+      decimal_arith(std::get<ir::DecimalArith>(instr), out);
+      return;
+    case ir::Kind_instruction::Phi:
+      throw InternalError("TypeError: sim.assembler: Phi node leaked past SSA destruction");
+  }
+  throw InternalError("TypeError: unexpected instruction");
+}
+
+// The bytes of a static item, low byte first.
+void Emitter::init(const ir::Type_static_init& item, Bytes& out) const {
+  const auto little_endian = [&out](Int v, int n) {
+    for (int i = 0; i < n; ++i) {
+      out.push_back(static_cast<std::uint8_t>(static_cast<int>((v >> (8 * i)) & Int(0xFF))));
+    }
+  };
+  switch (ir::kind(item)) {
+    case ir::Kind_static_init::CharInit: {
+      const Int v = std::get<ir::CharInit>(item).value;
+      if (v < -128 || v > 0xFF) {
+        fail("CharInit " + str(v) + " out of range");
+      }
+      little_endian(v, 1);
+      return;
+    }
+    case ir::Kind_static_init::IntInit: {
+      const Int v = std::get<ir::IntInit>(item).value;
+      if (v < -32768 || v > 0xFFFF) {
+        fail("IntInit " + str(v) + " out of range");
+      }
+      little_endian(v, 2);
+      return;
+    }
+    case ir::Kind_static_init::LongInit:
+      little_endian(std::get<ir::LongInit>(item).value, 4);
+      return;
+    case ir::Kind_static_init::LongLongInit:
+      little_endian(std::get<ir::LongLongInit>(item).value, 8);
+      return;
+    case ir::Kind_static_init::FloatInit:
+      little_endian(std::get<ir::FloatInit>(item).bits, 4);
+      return;
+    case ir::Kind_static_init::DoubleInit:
+      little_endian(std::get<ir::DoubleInit>(item).bits, 8);
+      return;
+    case ir::Kind_static_init::AddressInit: {
+      const auto& x = std::get<ir::AddressInit>(item);
+      little_endian(address(x.name, x.offset), 2);
+      return;
+    }
+    case ir::Kind_static_init::AddressByteInit: {
+      const auto& x = std::get<ir::AddressByteInit>(item);
+      const std::int64_t addr = address(x.name, x.offset);
+      out.push_back(static_cast<std::uint8_t>(x.high ? addr >> 8 : addr & 0xFF));
+      return;
+    }
+    case ir::Kind_static_init::StringInit: {
+      const auto& s = std::get<ir::StringInit>(item);
+      const std::vector<std::uint32_t> chars = pyrepr::code_points(s.str);
+      const Int len = static_cast<long long>(chars.size());
+      if (s.bytes < len) {
+        fail("StringInit bytes=" + str(s.bytes) + " < len(str)=" + str(len));
+      }
+      for (const std::uint32_t c : chars) {
+        out.push_back(static_cast<std::uint8_t>(c & 0xFF));
+      }
+      out.insert(out.end(), static_cast<std::size_t>(to_i64(s.bytes - len)), 0);
+      return;
+    }
+    case ir::Kind_static_init::ZeroInit: {
+      const Int n = std::get<ir::ZeroInit>(item).bytes;
+      if (n <= 0) {
+        fail("ZeroInit byte count " + str(n) + " not positive");
+      }
+      out.insert(out.end(), static_cast<std::size_t>(to_i64(n)), 0);
+      return;
+    }
+  }
+}
+
+// Copies `bytes` into the image at `addr`. sim/assembler.py's slice
+// assignment grows its bytearray for bytes past $FFFF, and writes from
+// the end of it for a negative address, so here they are an error.
+void lay_down(std::vector<std::uint8_t>& image, std::int64_t addr, const Bytes& bytes,
+              std::int64_t code_end) {
+  if (bytes.empty()) {
+    return;
+  }
+  if (addr < 0) {
+    fail("the program's bytes start at -$" + pyrepr::hex(-addr, 4) + ", below $0000");
+  }
+  if (addr + static_cast<std::int64_t>(bytes.size()) > 0x10000) {
+    fail("the program's bytes end at $" + pyrepr::hex(code_end, 4) + ", past $FFFF");
+  }
+  std::copy(bytes.begin(), bytes.end(), image.begin() + addr);
+}
+
 }  // namespace
 
 int instruction_size(const ir::Type_instruction& instr,
                      const passes::NameSet* zp_names) {
-  return Sizer(zp_names).instr_size(instr);
+  try {
+    return Sizer(zp_names).instr_size(instr);
+  } catch (const AssemblerError& e) {
+    throw InternalError(std::string("AssemblerError: ") + e.what());
+  }
+}
+
+// sim/assembler.py's `assemble`.
+AssembledProgram assemble(const ir::Program& program, std::int64_t origin,
+                          const std::map<std::string, std::int64_t>& extra_symbols) {
+  Symbols symbols = {{"SSP", 0x00}, {"FP", 0x02}, {"HARGS", 0x04}, {"DPTR", 0x24}};
+  for (const auto& [name, addr] : extra_symbols) {
+    symbols[name] = addr;
+  }
+  const Runtime runtime{symbols.at("SSP"), symbols.at("FP"), symbols.at("DPTR")};
+  // The names in zero page before pass 1, so that both passes size a
+  // `Data` operand alike. Every label pass 1 adds is at `origin` or
+  // above.
+  passes::NameSet zp_names;
+  for (const auto& [name, addr] : symbols) {
+    if (0 <= addr && addr <= 0xFF) {
+      zp_names.insert(name);
+    }
+  }
+  const Sizer sizer(&zp_names);
+
+  const auto define = [&symbols](const std::string& name, std::int64_t addr, const char* what) {
+    if (!symbols.emplace(name, addr).second) {
+      fail(what + pyrepr::string(name));
+    }
+  };
+  std::int64_t addr = origin;
+  for (const ir::Type_top_level& tl : program.top_level) {
+    if (const auto* fn = as<ir::Function>(tl)) {
+      define(fn->name, addr, "duplicate symbol ");
+      for (const ir::Type_instruction& instr : fn->instructions) {
+        if (const auto* label = as<ir::Label>(instr)) {
+          define(label->name, addr, "duplicate label ");
+        } else {
+          addr += sizer.instr_size(instr);
+        }
+      }
+    } else {
+      const auto& sv = std::get<ir::StaticVariable>(tl);
+      define(sv.name, addr, "duplicate symbol ");
+      for (const ir::Type_static_init& item : sv.init) {
+        addr += init_size(item);
+      }
+    }
+  }
+  const std::int64_t code_end = addr;
+
+  AssembledProgram out;
+  out.image.assign(0x10000, 0);
+  const Emitter emitter(runtime, symbols);
+  addr = origin;
+  Bytes bytes;
+  for (const ir::Type_top_level& tl : program.top_level) {
+    if (const auto* fn = as<ir::Function>(tl)) {
+      for (const ir::Type_instruction& instr : fn->instructions) {
+        if (isa<ir::Label>(instr)) {
+          continue;
+        }
+        bytes.clear();
+        emitter.instr(instr, addr, bytes);
+        const int expected = sizer.instr_size(instr);
+        if (static_cast<int>(bytes.size()) != expected) {
+          throw InternalError("AssemblerError: size mismatch for " + py_repr(instr) +
+                              ": pass1=" + std::to_string(expected) +
+                              ", pass2=" + std::to_string(bytes.size()));
+        }
+        lay_down(out.image, addr, bytes, code_end);
+        addr += static_cast<std::int64_t>(bytes.size());
+      }
+    } else {
+      for (const ir::Type_static_init& item : std::get<ir::StaticVariable>(tl).init) {
+        bytes.clear();
+        emitter.init(item, bytes);
+        if (static_cast<std::int64_t>(bytes.size()) != init_size(item)) {
+          throw InternalError("AssemblerError: size mismatch for static_init " + py_repr(item));
+        }
+        lay_down(out.image, addr, bytes, code_end);
+        addr += static_cast<std::int64_t>(bytes.size());
+      }
+    }
+  }
+  if (addr != code_end) {
+    throw InternalError("sim::assemble: pass 2 ended at another address than pass 1");
+  }
+  out.symbols = std::move(symbols);
+  out.origin = origin;
+  out.code_end = code_end;
+  return out;
 }
 
 }  // namespace c6502::sim

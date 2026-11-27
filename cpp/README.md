@@ -281,7 +281,11 @@ cpp/
                       wrote from Python 3.11 in step 6 and which are
                       edited by hand since step 8
     preprocessor_cases.*  the check of a recorded call of `preprocess`
-    sim/assembler.*   instruction_size, from sim/assembler.py
+    sim/assembler.*   the simulator's assembler, from sim/assembler.py:
+                      `assemble`, which lays an asm program down in a 64K
+                      image in two passes, and `instruction_size`, the
+                      sizes its first pass lays the labels out by, which
+                      the passes that measure branches read (step 9, G4)
     sim/cpu.*         the simulator's 6502, which executes as py65 1.2.0
                       does, with its trap table and callbacks (step 9, G3)
     sim/cpu_run.*     the backend mode `cpu-run`, which runs it for

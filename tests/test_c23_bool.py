@@ -22,94 +22,16 @@ Coverage:
 
 c6502 has no `_Generic`, so the type of `true` is checked through
 `sizeof` and the type checker's `data_type` instead.
+
+The tests of the warning, of <stdbool.h>, and of the program on the TAC
+interpreter are doctest cases in cpp/tests/test_c23_bool.cpp.
 """
 from __future__ import annotations
 
-import io
 import unittest
-from unittest.mock import patch
 
-import diagnostics
-from compile import _run_source, main as compile_main
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
-
-# The warning at each `_Bool` (`kAltBoolWarning` in cpp/src/preprocessor.cpp).
-ALT_BOOL_WARNING = (
-    "`_Bool` is deprecated: C23 makes it an obsolescent spelling "
-    "of the keyword `bool` (C23 §6.4.1). Use `bool` instead."
-)
-
-
-def _compile(src: str, *flags: str) -> tuple[int, str]:
-    """compile.py's exit status and stderr for `src` on stdin."""
-    err = io.StringIO()
-    with patch("sys.stdin", io.StringIO(src)), patch("sys.stderr", err), \
-            patch("sys.stdout", io.StringIO()):
-        rc = compile_main(["compile.py", "-", "-S", *flags])
-    return rc, err.getvalue()
-
-
-class TestAltBoolWarning(unittest.TestCase):
-    def test_compile_warns_and_succeeds(self) -> None:
-        for flags in ((), ("-O",)):
-            with self.subTest(flags=flags):
-                rc, err = _compile(
-                    "int x;\n_Bool f(int v) { return v; }\n", *flags,
-                )
-                self.assertEqual(rc, 0)
-                self.assertEqual(
-                    err, f"<stdin>: warning: line 2: {ALT_BOOL_WARNING}\n",
-                )
-
-    def test_warning_text(self) -> None:
-        # The warning names the line of the `_Bool`, and a `_Bool` that a
-        # macro expands to warns at the line of the macro's use.
-        rc, err = _compile("#define B _Bool\n\nB b;\n")
-        self.assertEqual(rc, 0)
-        self.assertEqual(
-            err, f"<stdin>: warning: line 3: {ALT_BOOL_WARNING}\n",
-        )
-
-    def test_warning_comes_before_an_error(self) -> None:
-        rc, err = _compile("_Bool a;\nint true;\n")
-        self.assertEqual(rc, 1)
-        lines = err.splitlines()
-        self.assertEqual(lines[0],
-                         f"<stdin>: warning: line 1: {ALT_BOOL_WARNING}")
-        self.assertTrue(lines[1].startswith("<stdin>: error: "), err)
-
-
-class TestStdbool(unittest.TestCase):
-    def test_includes_without_a_warning(self) -> None:
-        # The tokens `compile.py --lex` prints are those of the
-        # preprocessor's output.
-        with diagnostics.collecting() as found:
-            text = _run_source(
-                "lex",
-                "#include <stdbool.h>\n"
-                "#if __bool_true_false_are_defined != 1\n"
-                "#error\n"
-                "#endif\n"
-                "#if defined(bool) || defined(true) || defined(false)\n"
-                "#error\n"
-                "#endif\n"
-                "bool b = true; int n = __bool_true_false_are_defined;\n",
-            )
-        self.assertEqual(found, [])
-        values = [line.split("\t")[2] for line in text.splitlines()]
-        self.assertEqual(
-            " ".join(values), "bool b = true ; int n = 1 ;",
-        )
-
-    def test_compiles_without_a_warning(self) -> None:
-        rc, err = _compile(
-            "#include <stdbool.h>\n"
-            "bool odd(int x) { return x & 1; }\n"
-            "int main(void) { return odd(3) == true; }\n",
-        )
-        self.assertEqual((rc, err), (0, ""))
 
 
 _PROGRAM = """\
@@ -154,9 +76,6 @@ _EXPECTED = 649
 
 @needs_c6502cpp
 class TestPrograms(unittest.TestCase):
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_PROGRAM), _EXPECTED)
-
     def test_asm_sim(self) -> None:
         for optimize in (False, True):
             with self.subTest(optimize=optimize):

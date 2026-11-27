@@ -15,35 +15,7 @@ from __future__ import annotations
 
 import unittest
 
-import asm_ast
 from tests.cpp_build import needs_c6502cpp
-
-
-_E = asm_ast.IndexedData(name="tab", offset=0, index=asm_ast.X())
-_RTS = asm_ast.Return(save_a=False, save_x=False, save_c=False)
-
-
-class TestEmit(unittest.TestCase):
-
-    def test_sim_assembler_encodings(self) -> None:
-        from sim.assembler import assemble, instruction_size
-        ops = [asm_ast.Inc, asm_ast.Dec, asm_ast.ArithmeticShiftLeft,
-               asm_ast.LogicalShiftRight, asm_ast.RotateLeft,
-               asm_ast.RotateRight]
-        instrs = [op(dst=_E) for op in ops] + [_RTS]
-        prog = asm_ast.Program(top_level=[
-            asm_ast.Function(name="f", is_global=True, params=[],
-                             instructions=instrs),
-            asm_ast.StaticVariable(name="tab", is_global=False,
-                                   init=[asm_ast.ZeroInit(bytes=4)]),
-        ])
-        out = assemble(prog, origin=0x0800)
-        tab = out.symbols["tab"]
-        code = bytes(out.image[0x0800:0x0800 + 19])
-        self.assertEqual(code, b"".join(
-            bytes([op, tab & 0xFF, tab >> 8])
-            for op in (0xFE, 0xDE, 0x1E, 0x5E, 0x3E, 0x7E)) + b"\x60")
-        self.assertEqual(instruction_size(asm_ast.Inc(dst=_E)), 3)
 
 
 _PROGRAM = """

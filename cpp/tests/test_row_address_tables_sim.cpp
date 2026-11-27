@@ -8,10 +8,10 @@
 #include <tuple>
 #include <vector>
 
-#include "batch1_case.h"
 #include "compile_case.h"
 #include "doctest.h"
 #include "sim_case.h"
+#include "sim_helpers.h"
 
 namespace c6502::suite {
 namespace {
@@ -137,7 +137,7 @@ TEST_CASE("row_address_tables: shared low bytes") {
   check(src, 300 + 3, "B");
   auto text = codegen_o(src);
   CHECK(!contains(text, "M@lo"));
-  auto tables = after(text, "\nB@lo:\n");
+  auto tables = second_field(text, "\nB@lo:\n");
   CHECK(contains(tables, R"c(
 B@hi:
 )c"));

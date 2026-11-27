@@ -16,11 +16,10 @@ using Bytes = std::vector<std::uint8_t>;
 template <typename... Parts>
 std::string cat(const Parts&... parts) {
   std::ostringstream out;
+  out << std::boolalpha;
   auto put = [&out](const auto& part) {
     if constexpr (std::is_same_v<std::decay_t<decltype(part)>, std::uint8_t>) {
       out << static_cast<int>(part);
-    } else if constexpr (std::is_same_v<std::decay_t<decltype(part)>, bool>) {
-      out << (part ? "True" : "False");
     } else {
       out << part;
     }
@@ -40,7 +39,7 @@ inline std::string replace_all(std::string text, const std::string& from, const 
   return out;
 }
 
-inline std::string after(const std::string& text, const std::string& sep) {
+inline std::string second_field(const std::string& text, const std::string& sep) {
   const std::size_t at = text.find(sep);
   REQUIRE_MESSAGE(at != std::string::npos, "no " << sep << " in the text");
   const std::size_t from = at + sep.size();
@@ -49,7 +48,7 @@ inline std::string after(const std::string& text, const std::string& sep) {
 }
 
 inline std::string between(const std::string& text, const std::string& start, const std::string& end) {
-  const std::string piece = after(text, start);
+  const std::string piece = second_field(text, start);
   return piece.substr(0, piece.find(end));
 }
 

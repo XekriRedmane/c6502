@@ -6,12 +6,12 @@
 #include <utility>
 #include <vector>
 
-#include "batch1_case.h"
 #include "binutils/elf.h"
 #include "compile_case.h"
 #include "doctest.h"
 #include "passes/asm_context.h"
 #include "sim_case.h"
+#include "sim_helpers.h"
 
 namespace c6502::suite {
 namespace {

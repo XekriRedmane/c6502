@@ -43,9 +43,7 @@ int decode_4_and_4(std::span<const std::uint8_t> nib, std::size_t i) {
   return ((nib[i] << 1) | 1) & nib[i + 1];
 }
 
-// The byte an unformatted position reads as. Only bits 13 to 19 of the
-// product reach the result, so the product's wrap at 2^64 leaves it as
-// Python's unbounded one gives it.
+// The byte an unformatted position reads as.
 std::uint8_t noise(std::uint64_t pos) {
   const auto n = static_cast<std::uint8_t>(0x80 | (((pos * 2654435761ULL) >> 13) & 0x7F));
   return n == 0xD5 || n == 0xAA ? n ^ 1 : n;

@@ -1,7 +1,6 @@
 // A stand-in Apple II for Electronic Arts' Ali Baba and the Forty
 // Thieves, for running the original game and examples/ali_baba on the
-// same machine and comparing what each does, ported from
-// sim/ali_baba.py.
+// same machine and comparing what each does.
 //
 // The machine has 48K of RAM, a keyboard, a speaker, the display
 // switches, the paddle buttons, a Disk II controller in slot 6
@@ -192,8 +191,7 @@ struct DiskSwap {
 // none for an unformatted disk.
 using DiskImages = std::vector<std::pair<std::string, std::optional<std::vector<std::uint8_t>>>>;
 
-// Why `run` returned. `kUnimplemented` is a call of COUT1, which has no
-// stand-in.
+// `kUnimplemented` is a call of COUT1, which has no stand-in.
 enum class End { kCycles, kStop, kBrk, kReturned, kUnimplemented };
 std::string end_name(End end);
 
@@ -232,8 +230,7 @@ class Machine {
   bool display_set = false;
   // Marks every address an instruction was fetched from, for `coverage`.
   std::vector<std::uint8_t> seen = std::vector<std::uint8_t>(0x10000);
-  // Called after each event is recorded, for the comparison with the
-  // Python machine (sim/game_run.h).
+  // Called after each event is recorded.
   std::function<void(const Cpu&)> on_event;
   // The instructions `run` has executed, not counting the delay loops
   // it takes in one step.

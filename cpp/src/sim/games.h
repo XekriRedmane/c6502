@@ -1,9 +1,7 @@
 // The scripts the three games are played with and the machines they
-// are played on, as tests/test_zork_interpreter.py, test_lode_runner.py,
-// and test_ali_baba.py set them up, for the doctest cases and for
-// `c6502cpp game-run` (sim/game_run.h). The games' files come from the
-// reverse-engineering projects, which aren't part of this repository,
-// through ZORK_DSK, LODE_RUNNER_DIR, and ALI_BABA_DIR.
+// are played on. The games' files come from the reverse-engineering
+// projects, which aren't part of this repository, through ZORK_DSK,
+// LODE_RUNNER_DIR, and ALI_BABA_DIR.
 #pragma once
 
 #include <cstdint>
@@ -34,8 +32,6 @@ std::optional<std::string> env(const char* name);
 // naming the path when it can't be read.
 Bytes read_bytes(const std::string& path);
 std::string read_text(const std::string& path);
-
-// ---- Zork ----
 
 // A session: the lines GETLN1 reads, and the keys RDKEY returns.
 struct ZorkSession {
@@ -71,8 +67,6 @@ Bytes zork_main(const Bytes& dsk);
 // and an empty save disk in drive 2.
 std::unique_ptr<ZorkRun> zork_original(const Bytes& dsk, const ZorkSession& session);
 std::unique_ptr<ZorkRun> zork_program(std::string_view exe, const Bytes& dsk, const ZorkSession& session);
-
-// ---- Lode Runner ----
 
 // The disk a script plays on (`lode_runner_disk`).
 enum class LodeRunnerDisk { kMaster, kGame, kEditor };
@@ -110,8 +104,6 @@ Bytes lode_runner_disk(const Bytes& master, LodeRunnerDisk disk);
 // Returns a predicate that is true once GAME_MODE is `after`, having
 // been `before`.
 std::function<bool(const lode_runner::Machine&)> mode_change(std::uint8_t before, std::uint8_t after);
-
-// ---- Ali Baba ----
 
 inline constexpr std::string_view kAliBabaDisk = "Ali Baba and the Forty Thieves (4am and san inc crack).dsk";
 

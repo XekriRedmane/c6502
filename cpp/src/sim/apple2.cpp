@@ -24,8 +24,6 @@ constexpr int kSkew[16] = {0x0, 0xD, 0xB, 0x9, 0x7, 0x5, 0x3, 0x1, 0xE, 0xC, 0xA
 
 using Row = std::vector<std::uint8_t>;
 
-// Python's `row[i:j]` and `row[i:j] = bytes`, which clamp the bounds to
-// the row and can change its length.
 Row slice(const Row& row, std::size_t i, std::size_t j) {
   i = std::min(i, row.size());
   j = std::clamp(j, i, row.size());

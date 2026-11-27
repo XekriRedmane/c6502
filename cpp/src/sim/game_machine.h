@@ -1,8 +1,3 @@
-// What the machines of Lode Runner (sim/lode_runner.h) and Ali Baba
-// (sim/ali_baba.h) share: the decoding of an instruction's access to
-// the soft switches at $C000-$C0FF before it runs, the CRC-32 of a
-// hi-res page, a linked program's symbols, and the names of the
-// routines that program counters fall in.
 #pragma once
 
 #include <cstdint>
@@ -24,16 +19,14 @@ struct SwitchAccess {
   std::uint16_t address;
   std::uint8_t access;
   // The register a store writes, X for STX, Y for STY, and A for every
-  // other instruction, which Ali Baba's Disk II reads only for a write.
+  // other instruction.
   std::uint8_t value;
 };
 
 // Returns the soft switch that the instruction at PC reads or writes,
 // or none. Only the absolute, absolute indexed, and (zero page)
 // indirect modes can reach one, and JMP and JSR don't access their
-// operand. The address is computed from memory as the instruction
-// would compute it, except that an indexed address isn't wrapped at
-// $FFFF, as the Python machines' decoding left it.
+// operand.
 std::optional<SwitchAccess> soft_switch_access(const Cpu& cpu);
 
 // The CRC-32 of the bytes from `start` up to `end`, computed again only
@@ -65,9 +58,6 @@ std::string routine_at(const std::map<std::int64_t, std::string>& routines, std:
 // that the subroutine's RTS goes to `back` + 1.
 void push_return(Cpu& cpu, std::uint16_t back);
 
-// Python's `str.isspace`, `str.split()`, `str.strip()`, and
-// `str.splitlines()` for ASCII text, which the readers of the
-// reverse-engineering projects' main.asm and main.sym use.
 bool is_space(char c);
 std::vector<std::string> split_words(std::string_view text);
 std::string strip(std::string_view text);

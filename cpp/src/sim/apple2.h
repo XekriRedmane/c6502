@@ -1,8 +1,7 @@
 // A stand-in Apple II for running Zork I's interpreter (the original,
-// read from the game's disk image, and examples/zork) in the simulator,
-// ported from sim/apple2.py. It has the Monitor's text routines, its
-// keyboard and line input, a printer, and DOS 3.3's RWTS, each a hook
-// at the routine's address.
+// read from the game's disk image, and examples/zork) in the simulator.
+// It has the Monitor's text routines, its keyboard and line input, a
+// printer, and DOS 3.3's RWTS, each a hook at the routine's address.
 //
 // The hooks keep a 40-by-24 text screen as the ROM would. COUT1 writes
 // a character at the cursor, inside the text window that WNDLFT,
@@ -15,9 +14,8 @@
 // drive.
 //
 // Every hook call is appended to `calls`, with the character it was
-// given, if any, and the cursor and INVFLG it saw, so that two programs
-// meant to behave the same can be compared call for call. The hooks
-// take no cycles.
+// given, if any, and the cursor and INVFLG it saw. The hooks take no
+// cycles.
 #pragma once
 
 #include <cstdint>
@@ -87,7 +85,6 @@ struct SectorWrite {
   bool operator==(const SectorWrite&) const = default;
 };
 
-// Why `run` returned.
 enum class Stop { kBrk, kHalt, kInputUsedUp };
 std::string_view stop_name(Stop stop);
 
@@ -103,16 +100,13 @@ class Apple2 {
   std::deque<std::uint8_t> keys;
   std::deque<std::string> lines;
   std::map<DiskKey, std::vector<std::uint8_t>> disks;
-  // Each row stays as long as sim/apple2.py's bytearray would make it,
-  // which a scroll or a clear of a window past column 40 lengthens.
   std::vector<std::vector<std::uint8_t>> screen =
       std::vector<std::vector<std::uint8_t>>(24, std::vector<std::uint8_t>(40, 0xA0));
   std::vector<std::uint8_t> printer;
   std::vector<Call> calls;
   std::vector<SectorWrite> written;
   std::optional<Stop> stop_reason;
-  // Called after each call is appended to `calls`, for the comparison
-  // with the Python machine (sim/game_run.h).
+  // Called after each call is appended to `calls`.
   std::function<void(const Cpu&)> on_call;
   // The instructions `run` has executed.
   std::uint64_t instructions = 0;

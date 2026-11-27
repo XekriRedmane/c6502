@@ -408,9 +408,6 @@ std::uint16_t Machine::caller() const {
 Machine::Hook Machine::rom_hook(std::uint16_t addr, RomRoutine routine) {
   return [this, addr, routine]() -> std::optional<End> {
     const std::uint16_t from = caller();
-    // COUT only jumps through CSW to the HRCG, which the C program calls
-    // directly, so it isn't an event. What the HRCG draws, and the
-    // Monitor routines it calls, are.
     if (!kept(from) && addr != kCout) {
       const std::uint16_t arg = reads_a(addr) ? cpu.a : addr == kPread ? cpu.x : 0;
       record((kRomEvent + addr) << 1, from, arg);
@@ -436,7 +433,6 @@ Machine::Hook Machine::disk_entry(std::uint16_t entry) {
     if (kept(from)) return std::nullopt;
     const std::vector<std::uint8_t>& mem = cpu.memory;
     const unsigned ret = (mem[0x100 + ((cpu.sp + 1) & 0xFF)] | mem[0x100 + ((cpu.sp + 2) & 0xFF)] << 8) + 1;
-    // A return to $10000 never comes, since PC wraps to $0000.
     if (ret > 0xFFFF) return std::nullopt;
     const auto at = static_cast<std::uint16_t>(ret);
     std::optional<unsigned> iob;
@@ -681,7 +677,6 @@ End Machine::run(std::uint64_t max_cycles, const std::function<bool(const Machin
   while (cpu.cycles < max_cycles) {
     const std::uint16_t pc = cpu.pc;
     if (const auto it = hooks.find(pc); it != hooks.end()) {
-      // A copy, since a hook can replace or remove its own entry.
       const Hook hook = it->second;
       if (const std::optional<End> why = hook()) return *why;
       if (cpu.pc != pc) {

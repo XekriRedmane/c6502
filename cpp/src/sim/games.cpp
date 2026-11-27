@@ -27,8 +27,6 @@ std::string read_text(const std::string& path) {
   return std::string(bytes.begin(), bytes.end());
 }
 
-// ---- Zork ----
-
 const std::vector<ZorkSession>& zork_sessions() {
   static const std::vector<ZorkSession> sessions = {
       // The first session walks into the cellar, saves, fights the
@@ -118,8 +116,6 @@ std::unique_ptr<ZorkRun> zork_program(std::string_view exe, const Bytes& dsk, co
   return run;
 }
 
-// ---- Lode Runner ----
-
 const std::vector<LodeRunnerScript>& lode_runner_scripts() {
   // The keys are (n, key) pairs that press `key` just before the
   // program's KBD read number n. The read numbers were found by running
@@ -202,8 +198,6 @@ std::function<bool(const lode_runner::Machine&)> mode_change(std::uint8_t before
     return *seen && mode == after;
   };
 }
-
-// ---- Ali Baba ----
 
 const std::vector<AliBabaScript>& ali_baba_scripts() {
   // The keys are (n, key) pairs that press `key` just before the

@@ -1,6 +1,5 @@
 // A Disk II controller and its drives, emulated at the level of the
-// nibbles on the disk, for programs that drive the disk themselves,
-// ported from sim/disk2.py.
+// nibbles on the disk, for programs that drive the disk themselves.
 //
 // A .dsk image (DOS 3.3 sector order) becomes a track of nibbles for
 // each of its 35 tracks, in the format DOS 3.3's INIT writes. Each track
@@ -46,9 +45,7 @@
 // reads. DOS writes its sync bytes 40 cycles apart, as 10-bit bytes,
 // and a disk that turned with time would put them a quarter of a nibble
 // further along than a reader that takes 8 bits per nibble expects
-// them. It also makes what the kept disk code reads independent of the
-// cycle at which the program calls it, which differs between two
-// programs being compared.
+// them.
 //
 // In write mode (Q7 on), a write to Q6 on loads the latch, and the next
 // access to Q6 off writes the latch's nibble under the head and moves

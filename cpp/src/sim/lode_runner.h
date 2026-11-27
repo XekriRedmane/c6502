@@ -1,6 +1,6 @@
 // A stand-in Apple II for Broderbund's Lode Runner, for running the
 // original game and examples/lode_runner on the same machine and
-// comparing what each does, ported from sim/lode_runner.py.
+// comparing what each does.
 //
 // The game talks to the machine only through the soft switches and
 // DOS's RWTS, so those are what the machine records. The soft switches
@@ -99,7 +99,6 @@ struct KeyPress {
   std::uint8_t key;
 };
 
-// Why `run` returned.
 enum class End { kCycles, kStop, kBrk, kReturned };
 
 class Machine {
@@ -117,8 +116,7 @@ class Machine {
   bool mixed = false;
   bool page2 = false;
   bool hires = false;
-  // Called after each event is recorded, for the comparison with the
-  // Python machine (sim/game_run.h).
+  // Called after each event is recorded.
   std::function<void(const Cpu&)> on_event;
   // The instructions `run` has executed.
   std::uint64_t instructions = 0;

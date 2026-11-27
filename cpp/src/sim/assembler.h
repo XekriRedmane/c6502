@@ -55,4 +55,8 @@ struct AssembledProgram {
 AssembledProgram assemble(const asm_ast::Program& program, std::int64_t origin = 0x0800,
                           const std::map<std::string, std::int64_t>& extra_symbols = {});
 
+// `c6502cpp check-sim-assembler <capture file>...` (assembler_check.cpp).
+// It is temporary, and goes with `cpu-run` in group R of step 9.
+int check_sim_assembler(const std::vector<std::string>& args);
+
 }  // namespace c6502::sim

@@ -286,6 +286,9 @@ cpp/
                       image in two passes, and `instruction_size`, the
                       sizes its first pass lays the labels out by, which
                       the passes that measure branches read (step 9, G4)
+    sim/assembler_check.cpp  `c6502cpp check-sim-assembler`, the comparison
+                      of `assemble` with sim/assembler.py, which is
+                      temporary and goes with `cpu-run` in group R
     sim/cpu.*         the simulator's 6502, which executes as py65 1.2.0
                       does, with its trap table and callbacks (step 9, G3)
     sim/cpu_run.*     the backend mode `cpu-run`, which runs it for

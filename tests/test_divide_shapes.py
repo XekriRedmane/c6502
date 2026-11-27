@@ -10,13 +10,14 @@ out as the 6502 code a person writes, as Zork's `divu16`
 - `memory_value_propagation` reads a local array through `name,Y`
   when the pointer holds the array's address.
 - `asm_liveness.sets_flags` and `asm_aliasing.may_alias` for the
-  stores and indexed accesses those leave."""
+  stores and indexed accesses those leave.
+
+The `-S` text is checked in cpp/tests/test_divide_shapes.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
-from compile import _run_source
 from sim.harness import build_sim
 from tests.no_inlining import no_inlining
 from tests.cpp_build import needs_c6502cpp
@@ -84,13 +85,6 @@ def _expected_divide() -> int:
     return n
 
 
-def _function(src: str, name: str) -> str:
-    asm = _run_source("codegen", src, optimize=True)
-    start = asm.index(f"\n{name}:")
-    end = asm.index("\n   RTS", start)
-    return asm[start:end]
-
-
 @needs_c6502cpp
 @no_inlining()
 class TestDivideLoop(unittest.TestCase):
@@ -101,20 +95,6 @@ class TestDivideLoop(unittest.TestCase):
                 r = build_sim(_DIVIDE, optimize=optimize).run()
                 self.assertEqual(r.return_int(), _expected_divide())
 
-    def test_one_subtract(self):
-        # The compare branches on the subtract's carry, with no second
-        # subtract for it.
-        body = _function(_DIVIDE, "divide")
-        self.assertEqual(body.count("SBC   __zpabi_divide__divisor_0"), 1)
-
-    def test_bits_rotated_in(self):
-        # The quotient takes `fits` through C, and the remainder takes
-        # the quotient's top bit straight from the quotient's last ROL.
-        body = _function(_DIVIDE, "divide")
-        self.assertNotIn("ORA", body)
-        self.assertEqual(body.count("LSR"), 2)  # one in the loop, one after
-        self.assertGreaterEqual(body.count("ROL"), 3)
-
 
 @needs_c6502cpp
 class TestLocalArrayIndexed(unittest.TestCase):
@@ -124,11 +104,6 @@ class TestLocalArrayIndexed(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 r = build_sim(_DIGITS, optimize=optimize).run()
                 self.assertEqual(r.return_int(), 41)
-
-    def test_no_pointer_to_the_array(self):
-        body = _function(_DIGITS, "digits")
-        self.assertNotIn("#<__local_digits__d", body)
-        self.assertIn("__local_digits__d,Y", body)
 
 
 if __name__ == "__main__":

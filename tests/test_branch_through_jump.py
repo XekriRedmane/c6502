@@ -3,7 +3,9 @@ that holds only a `JMP` goes straight to that `JMP`'s target.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_branch_through_jump.cpp."""
 from __future__ import annotations
 
 import unittest
@@ -21,13 +23,6 @@ class TestGotoBackwards(unittest.TestCase):
             return 0;
         }
     """
-
-    def test_optimized_is_straight_line(self) -> None:
-        from compile import _run_source
-        asm = _run_source("codegen", self._SRC, optimize=True)
-        body = asm[asm.index("main:"):]
-        self.assertNotIn("JMP", body)
-        self.assertRegex(body, r"LDX\s+#\$00\s+LDA\s+#\$05\s+RTS")
 
     def test_runs(self) -> None:
         for optimize in (False, True):

@@ -1,13 +1,14 @@
 """Tests for C23's typeof operators, `typeof` and `typeof_unqual`
 (§6.7.3.6), which the parser puts in place as the type they name.
-Most cases are the standard's own examples."""
+Most cases are the standard's own examples.
+
+The TAC interpreter's results are checked in cpp/tests/test_typeof.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
 from sim.harness import build_sim
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -36,9 +37,6 @@ class TestPrograms(unittest.TestCase):
     """The operand isn't evaluated (C23 §6.7.3.6p4), so `x++` and the
     call of `bump` don't happen. EXAMPLE 4's nested typeof is a cast
     to `int`."""
-
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_PROGRAM), 0)
 
     def test_asm_sim(self) -> None:
         for optimize in (False, True):

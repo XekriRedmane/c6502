@@ -4,8 +4,9 @@ docs/builtins.md) and the runtime helper behind it, `bin16_to_bcd`
 
 The helper's 6502 code is run on py65 for every 16-bit input and
 compared with its Python hook in the simulator, and every input is run
-through the builtin in both pipelines too. The optimizer is checked
-for the constants it folds, on the TAC that `compile.py --tac` prints.
+through the builtin in both pipelines too. The tests of the TAC the
+builtin lowers to and of the constants it folds are doctest cases in
+cpp/tests/test_bin_to_bcd.cpp.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
@@ -19,10 +20,7 @@ from __future__ import annotations
 import unittest
 
 import builtin_functions as bf
-import tac_ast
 from sim.harness import build_sim
-from tests.test_bcd_builtins import _codegen
-from tests.test_sim_chapters import _run_program as _run_tac
 from tests.cpp_build import needs_c6502cpp
 
 
@@ -113,22 +111,6 @@ class TestHelper(unittest.TestCase):
                          {712 + 15 * crosses})
 
 
-def _tac(src: str, optimize: bool) -> tac_ast.Program:
-    """The TAC that `compile.py --tac` prints for `src`, read back into
-    `tac_ast` objects. Its `pretty` text is the constructors' calls with
-    their fields as keywords, so Python can evaluate it."""
-    from compile import _run_source
-    return eval(_run_source("tac", src, optimize=optimize),
-                vars(tac_ast))
-
-
-def _unaries(prog: tac_ast.Program, fn: str) -> list:
-    for tl in prog.top_level:
-        if isinstance(tl, tac_ast.Function) and tl.name == fn:
-            return [i for i in tl.instructions if isinstance(i, tac_ast.Unary)]
-    raise KeyError(fn)
-
-
 _SUM = """
 #include <stdint.h>
 uint16_t v[4] = {0, 9, 65535, 31415};
@@ -146,51 +128,6 @@ def _sum_expected() -> int:
     for i, x in enumerate((0, 9, 65535, 31415)):
         s ^= (bf.bin_to_bcd(x) + i) & 0xFFFFFFFF
     return (s ^ (s >> 16)) & 0xFFFF
-
-
-@needs_c6502cpp
-class TestTac(unittest.TestCase):
-    def test_lowers_to_a_unary(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint16_t a;"
-            "uint32_t f(void) { return __c6502_bin_to_bcd(a); }"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                ops = [type(u.op) for u in _unaries(_tac(src, optimize), "f")]
-                self.assertEqual(ops, [tac_ast.BinToBcd])
-                self.assertIn("JSR   bin16_to_bcd", _codegen(src, optimize))
-
-    def test_constants_fold_in_both_pipelines(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "uint32_t f(void) { return __c6502_bin_to_bcd(54321); }"
-        )
-        for optimize in (False, True):
-            with self.subTest(optimize=optimize):
-                self.assertEqual(_unaries(_tac(src, optimize), "f"), [])
-                asm = _codegen(src, optimize)
-                self.assertNotIn("bin16_to_bcd", asm)
-                self.assertIn("#$21", asm)
-
-    def test_propagated_constant_folds(self) -> None:
-        src = (
-            "#include <stdint.h>\n"
-            "uint32_t f(void) { uint16_t x = 999; x++;"
-            " return __c6502_bin_to_bcd(x); }"
-        )
-        self.assertEqual(_unaries(_tac(src, optimize=True), "f"), [])
-        self.assertNotIn("bin16_to_bcd", _codegen(src, optimize=True))
-
-    def test_unused_result_goes(self) -> None:
-        src = (
-            "#include <stdint.h>\nuint16_t a;"
-            "void f(void) { (void)__c6502_bin_to_bcd(a); }"
-        )
-        self.assertEqual(_unaries(_tac(src, optimize=True), "f"), [])
-
-    def test_tac_sim(self) -> None:
-        self.assertEqual(_run_tac(_SUM) & 0xFFFF, _sum_expected())
 
 
 _BATCH = 8192

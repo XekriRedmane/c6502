@@ -77,7 +77,7 @@ parsed by any tool.
   prologue / epilogue when arg bytes fit in a private ZP slice.
 - `sim_findings.md` — bugs and gaps found by running the 6502
   simulator across the chapter corpus. Each one is cross-referenced
-  from `tests/test_sim_asm.py`'s `SKIPS` table.
+  from `sim_skips()` in cpp/tests/sim_chapters.cpp.
 
 ## Reference grammars
 

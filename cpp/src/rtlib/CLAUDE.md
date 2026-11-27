@@ -35,13 +35,15 @@ and that the footprints are Python's, so a change to a helper fails
 that test until the capture is written again with `c6502cpp
 helper-dump`, after the change has been checked in the simulator.
 
-The simulator still runs in Python. `sim.runtime.build_runtime`
-assembles every helper at `$E000`, reading them through
-`cpp_backend.helper_program` (`c6502cpp helper-dump`), and a helper
-with no 6502 code (the 64-bit and floating-point ones, `icall`) runs
-as a Python hook there. `tests/test_runtime_helpers.py` tests the
-helpers through the harness, `tests/test_runtime_library.py` through
-linked C, and `tests/test_bin_to_bcd.py` runs `bin16_to_bcd` on py65
-against its hook for all 65536 inputs.
+The simulator's runtime (cpp/src/sim/runtime.h) assembles every
+helper at `$E000` with `sim::assemble`, lays `icall` (`JMP (DPTR)`)
+after them, and runs a helper with no 6502 code (the 64-bit and
+floating-point ones) as a hook at a trap address after that. Its
+Python copy, sim/runtime.py, reads the helpers through
+`cpp_backend.helper_program` (`c6502cpp helper-dump`) for the games and
+the fuzzers' runner. cpp/tests/test_runtime_helpers_sim.cpp tests the
+helpers through the harness, cpp/tests/test_runtime_library_sim.cpp
+through linked C, and cpp/tests/test_bin_to_bcd_sim.cpp runs
+`bin16_to_bcd` on the C++ CPU for all 65536 inputs, with its cycles.
 
 `docs/linker_scripts.md` says where a linker script puts the helpers.

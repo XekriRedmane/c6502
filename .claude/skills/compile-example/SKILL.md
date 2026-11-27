@@ -51,7 +51,7 @@ optimized pipelines produce identical observable state for this
 example. This surfaces optimizer bugs that gold-file diffs (purely
 structural) miss.
 
-The mechanism is the matching `tests/test_<base>_sim.py` harness —
+The mechanism is the matching `cpp/tests/test_<base>_sim.cpp` test —
 it inlines the example source with a `main()` driver that exercises
 the function under a battery of scenarios and records observable
 state into a `result_log` array, then asserts (a) unopt matches
@@ -61,11 +61,11 @@ matches unopt byte-for-byte.
 Run:
 
 ```sh
-uv run python -m unittest tests.test_<base>_sim
+cpp/build/bin/c6502_tests -tc="<base>_sim*"
 ```
 
 - If it doesn't exist: write one before running. Model it after
-  `tests/test_floor_enemy_advance_sim.py` — see step 6 of "On
+  `cpp/tests/test_floor_enemy_advance_sim.cpp` — see step 6 of "On
   compiler-bug failure" below for the exact shape (inline source +
   `main()` driver + flat `result_log` + three tests: unopt vs.
   hand-computed expected, opt vs. expected, opt vs. unopt byte-
@@ -97,10 +97,15 @@ runtime-hook cycles.
 
 From the project root:
 
+`run_bucketed` is in the Python harness alone, which stays until
+step 9's G6 of the port. Write the program of the test (the example's
+source and its `main()` driver) to a scratch file, `prog.c` here, and
+run from the project root:
+
 ```sh
 uv run python -c "
-from tests.test_<base>_sim import _PROGRAM
 from sim.harness import build_sim
+_PROGRAM = open('prog.c').read()
 for opt in (False, True):
     sim = build_sim(_PROGRAM, optimize=opt)
     res, by_fn = sim.run_bucketed(max_cycles=5_000_000)
@@ -160,9 +165,9 @@ old file in place. Then:
    `cmake -S cpp -B cpp/build` again before it is compiled. Confirm
    the test fails before the fix by putting the fix in and taking it
    out of the source only, never with `git stash`. If the offending
-   shape is only producible end-to-end, fall back to a test in
-   `tests/test_<pass>.py` that runs `_run_source("codegen", src,
-   optimize=True)` on the small repro.
+   shape is only producible end-to-end, fall back to a case in
+   `cpp/tests/test_<pass>.cpp` that compiles the small repro with
+   `suite::codegen(src, true)` (cpp/tests/compile_case.h).
 
 4. **Fix the pass.** Tighten the eligibility filter (or whatever
    the root cause is). Avoid working around the bug downstream;
@@ -171,13 +176,11 @@ old file in place. Then:
 5. **Re-run the unit test.** Rebuild (`cmake --build cpp/build
    --config Release --parallel`, with Visual Studio's cmake on the
    PATH), run `cpp/build/bin/c6502_tests -tc="<pass>*"`, and check
-   that the case count includes the new case. It must now pass. Then
-   run `uv run python -m unittest tests.test_<pass>` to catch
-   regressions.
+   that the case count includes the new case. It must now pass.
 
 6. **Write a sim differential test for the example.** Add
-   `tests/test_<example>_sim.py` modeled after
-   `tests/test_floor_enemy_advance_sim.py`:
+   `cpp/tests/test_<example>_sim.cpp` modeled after
+   `cpp/tests/test_floor_enemy_advance_sim.cpp`:
    - Inline the example source plus a `main()` that drives the
      function under a battery of scenarios and records observable
      state into a flat `result_log` array.
@@ -186,11 +189,9 @@ old file in place. Then:
      not).
    - Three tests: unoptimized matches expected, optimized matches
      expected, optimized matches unoptimized byte-for-byte.
-   - Use `sim.harness.build_sim(_PROGRAM, optimize=...)` to drive
-     each variant; cap `max_cycles` generously and assert no
-     timeout.
-   - Decorate each class with `@needs_c6502cpp` from
-     `tests/cpp_build.py`, as the model does.
+   - Use `suite::build_sim(program, optimize)` (cpp/tests/sim_case.h)
+     to drive each variant; cap `max_cycles` generously and check
+     that the run doesn't time out.
 
 7. **Run the sim differential test.** Both pipelines must produce
    identical observable state. If the optimized variant diverges

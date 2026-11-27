@@ -101,7 +101,7 @@ the function's own zero-page slots whose address the unit never takes
 write to the register stops the walk, `INX` included, which
 `kills_x` doesn't count since it reads X too. Missing that turned
 `LDA m; CLC; ADC #2; TAX` into `INX; INX` after an `INX` in
-`tests/test_beam_target_tick_diff.py`'s program.
+the program of cpp/tests/test_beam_target_tick_diff_sim.cpp.
 
 ### A step on either side of a transfer
 

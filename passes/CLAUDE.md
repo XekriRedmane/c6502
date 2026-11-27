@@ -14,10 +14,8 @@ tests, and the fuzzers to C++.
   compile's layout error as its `RuntimeLayoutError`
   (`_ERROR_MODULES`). `helper_footprints` gives each runtime helper's
   HARGS footprint, which it reads from `c6502cpp helper-footprints`
-  (cpp_backend.py), and tests/test_runtime_library.py checks a linked
-  program's HARGS size against it.
-  tests/test_runtime_layout.py and tests/test_linker.py read
-  `CLASSIC` and `RuntimeLayout`. The module also keeps
+  (cpp_backend.py). Since step 9's G4 moved the tests that read it to
+  C++, nothing in Python calls it. The module also keeps
   `choose_layout`, `hargs_need`, and `check_hargs`, which nothing in
   Python calls now. The compiler runs their C++ ports
   (cpp/src/passes/runtime_layout.h and zp_globals.h).

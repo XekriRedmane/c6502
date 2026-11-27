@@ -1,11 +1,13 @@
 # Findings from the asm-level simulator
 
-The 6502 simulator (`sim/` + `tests/test_sim_*.py`) drives compiled C
-through `tac_to_asm`, an in-process assembler, and py65's MPU until
-the boot stub's BRK fires. Running it across the chapter corpus
-surfaced the bugs and gaps below. Each one is also documented inline
-in `tests/test_sim_asm.py`'s `SKIPS` table with a category string;
-this file fleshes out the *why* and a sketch of the fix.
+The 6502 simulator drives compiled C through `tac_to_asm`, an
+in-process assembler, and a 6502 CPU until the boot stub's BRK fires.
+It was py65 under sim/ when these were found, and it is
+cpp/src/sim/harness.h since step 9 of the port. Running it across the
+chapter corpus surfaced the bugs and gaps below. Each one is also
+listed in `sim_skips()` in cpp/tests/sim_chapters.cpp, which was
+`tests/test_sim_asm.py`'s `SKIPS` table, with a category string, and
+this file gives the reason and a sketch of the fix.
 
 The findings date from the Python compiler, and the modules and
 functions they name are that compiler's. Each of those modules is

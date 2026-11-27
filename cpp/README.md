@@ -293,9 +293,26 @@ cpp/
                       does, with its trap table and callbacks (step 9, G3)
     sim/cpu_run.*     the backend mode `cpu-run`, which runs it for
                       sim/lockstep.py's comparison with py65
+    sim/runtime.*     the simulator's runtime, from sim/runtime.py: the
+                      boot stub, the helpers at $E000, `icall`, and the
+                      hooks of the helpers with no 6502 code, which
+                      compute with fp_arith (step 9, G4)
+    sim/harness.*     the simulator's harness, from sim/harness.py and
+                      sim/linked.py: `build_sim` of an asm program,
+                      `build_linked_sim` of an executable, `Simulation`,
+                      and `SimResult` (step 9, G4)
     main.cpp          the c6502cpp CLI
   tests/              doctest unit tests, test_<module>.cpp
     compile_case.*    the library of the tests of whole compiles (step 9)
+    sim_case.*        the library's runs of a source in the simulator
+    sim_chapters.*    the tables of the simulator's runs of the corpus:
+                      each chapter program's traced return, the skips,
+                      and the known optimizer divergences
+    test_sim_records.cpp  the comparison of the C++ harness with the
+                      Python one's recorded runs, which is temporary and
+                      goes with the Python harness in group R
+    frozen/sim/       the Python models' expected values for the tests
+                      ported in step 9's G4 (bitint_sim.txt)
     frozen/py_random.txt   CPython 3.11's results of random.Random
     frozen/cpu/       py65's single steps and decimal-mode results,
                       which tools/py65_cpu_vectors.py wrote, for
@@ -1877,9 +1894,10 @@ targets outside the function live in `cfg.extra`. SSA construction and
 destruction, which rewrite blocks in place, use `OwnedCfg`, whose
 blocks own their instructions ("The asm SSA round trip").
 
-`sim/assembler.py` stays in Python with the simulator, but
-`instruction_size` is the compiler's, since six passes size code with
-it. It throws `InternalError` with Python's message (`AssemblerError:
+`sim/assembler.py` stays in Python for the fuzzers' runner until
+step 9's G6, and src/sim/assembler.h's `assemble` is its port, which
+the C++ simulator assembles with. `instruction_size` is the compiler's
+too, since six passes size code with it. It throws `InternalError` with Python's message (`AssemblerError:
 ...`) for an instruction the assembler can't encode.
 
 ## Checking the helpers
@@ -3456,10 +3474,31 @@ tests/link_helpers.py did for the Python tests:
 - `compile_main`, `nm_main`, and `objdump_main` run the three command
   lines in process with a given stdin, and `TempDir` and `ChangeDir`
   give them a directory.
-- `compile_object`, `link` (with sim/linked.py's `--defsym` pairs for
-  the simulator's helpers), `linked_text`, `listing`, and `symbols` are
-  tests/link_helpers.py's.
+- `compile_object`, `link` (with the `--defsym` pairs of the
+  simulator's helpers, `sim::defsym_args`), `linked_text`, `listing`,
+  and `symbols` are tests/link_helpers.py's.
 - `function_body` returns one function's lines of the `-S` text.
+- tests/sim_case.h's `build_sim` compiles a source as sim/harness.py's
+  `compile_to_asm` did and loads it in the simulator ("The simulator's
+  harness"), and `run_c_program` and `build_linked_sim` are the
+  harness's.
+
+Step 9's group G4 moved the tests that run the simulator. The cases
+of `tests/test_<m>.py` that run it are in `tests/test_<m>_sim.cpp`, or
+in `tests/test_<m>.cpp` for a module whose name ends in `_sim`. A
+Python test split into shards with `setattr` is one case per shard,
+named `shard: <name>`. CMakeLists.txt reads those names from the test
+files when CMake runs and gives each shard a ctest entry of its own,
+and the `c6502_tests` entry runs every other case, so `ctest -j`
+spreads the slow runs over the cores as pytest-xdist did. A new shard
+needs CMake run again. Where a Python test computed its expected
+values with builtin_functions.py's BCD functions or with
+bit_precise.py, which the compiler folds constants with the C++ forms
+of, the values are frozen from the Python models, as constants in the
+case or in tests/frozen/sim/. Where a Python test generated its
+programs, the C++ case writes the same ones, with py_random on the
+same seeds, and checks a CRC-32 of the sources against the Python
+generator's.
 
 The tests find the checkout through `C6502_SOURCE_ROOT`, which
 CMakeLists.txt defines. src/py_random.h is CPython 3.11's
@@ -3497,6 +3536,53 @@ The CPU is checked against py65 in two ways while py65 is installed.
   of the Python harness on py65 and then on the C++ CPU, through the
   backend mode `cpu-run` (src/sim/cpu_run.h), and compares a digest of
   the state and the writes after each instruction.
+
+## The simulator's harness
+
+src/sim/harness.h and src/sim/runtime.h are the simulator that the C++
+tests run programs on (step 9, G4), ported from sim/harness.py,
+sim/linked.py, and sim/runtime.py, which stay in Python for the games
+and the fuzzers until G5 and G6.
+
+- `build_sim` assembles a finished asm program at $0800 with
+  src/sim/assembler.h's `assemble`, which lays every function and
+  static down in source order as sim/assembler.py does, with the
+  runtime for the layout that the program's SSP, FP, HARGS, and DPTR
+  give. `build_linked_sim` loads an executable at its segments' load
+  addresses instead, and checks that the helpers it gives absolute
+  addresses are at the runtime's.
+- The runtime is the boot stub at $0600 (`LDA #$FF; STA SSP; LDA #$7F;
+  STA SSP+1; [JSR __zp_init;] JSR main; BRK`), the helpers with 6502
+  code assembled at $E000 from src/rtlib/helpers.h, `icall` (`JMP
+  (DPTR)`) after them, and a trap address for each helper with no 6502
+  code, 16 bytes apart from the next multiple of 16. The addresses are
+  the same for every layout, and `defsym_args` gives them as `--defsym`
+  arguments.
+- `Simulation::run` runs the CPU from the boot stub until the byte at
+  PC is $00 or the cycles reach the limit (10,000,000 by default). A
+  trap runs its hook on memory and returns as RTS does, in no cycles.
+  `SimResult` holds the registers, the cycles, memory, and
+  `timed_out`, and its accessors read a return of one or two bytes
+  from A and X and one of four or eight bytes from the program's HARGS.
+- The hooks (the 64-bit helpers, the conversions, `fadd` to `ddiv`,
+  and the orderings) compute with src/fp_arith.h, as the TAC
+  interpreter and constant folding do (decision 1 of step 9). A
+  division by zero of a 64-bit helper fails with sim/runtime.py's
+  `RuntimeError`, and a conversion of a NaN or an infinity to an
+  integer with the TAC interpreter's `ValueError` or `OverflowError`,
+  each as a `HookError` that carries the Python class's name.
+
+The harness was checked against the Python one in three ways while
+Python was installed. `c6502cpp check-sim-assembler` compared
+`assemble` with sim/assembler.py on every program of the chapter corpus
+and the examples in both pipelines, image and symbols. A copy of
+sim/harness.py that wasn't committed recorded each `Simulation.run`
+of the Python suite, and the case in tests/test_sim_records.cpp, with
+`C6502_SIM_RECORDS` naming the records, built each program again and
+ran it from the same state, comparing the image, the symbols, the
+registers, the cycles, and the memory, first with hooks copied from
+the Python ones and then with the hooks on fp_arith. And the ported
+tests check each assertion of the Python tests.
 
 ## Status
 

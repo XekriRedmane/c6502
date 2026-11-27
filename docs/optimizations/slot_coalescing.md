@@ -154,7 +154,8 @@ slot may write the same byte. The linker allocates the slots again
 for the whole program, so two that are apart in this unit can share
 a byte there, and only one function's own slots are certainly apart.
 So the local can't be live across a store into another function's
-slot either. In `tests/test_slot_coalescing.py`, `div`'s argument had
+slot either. In cpp/tests/test_slot_coalescing_sim.cpp, `div`'s
+argument had
 overwritten a local kept in `mul`'s slot, which in that unit was the
 same byte.
 

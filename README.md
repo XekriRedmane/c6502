@@ -487,7 +487,7 @@ it.
 
 ```sh
 uv run python -m unittest                          # every test
-uv run python -m unittest tests.test_sim_smoke     # one module
+uv run python -m unittest tests.test_ir_dump       # one module
 C6502_CHECK_IR=1 uv run python -m unittest         # check the IR after every pass
 C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
 ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ tests and the next two

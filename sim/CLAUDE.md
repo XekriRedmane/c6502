@@ -1,9 +1,22 @@
 # sim/CLAUDE.md
 
-In-process 6502 simulator. Compiles C with the C++ compiler, assembles
-the result with a runtime stub, and executes on a py65 6502 MPU until
-the boot stub's BRK fires. It stays in Python until step 9 of the port
-(docs/cpp_port.md).
+In-process 6502 simulator in Python. Compiles C with the C++ compiler,
+assembles the result with a runtime stub, and executes on a py65 6502
+MPU until the boot stub's BRK fires.
+
+Step 9 of the port (docs/cpp_port.md) moved the simulator to C++. Its
+group G3 wrote the CPU (cpp/src/sim/cpu.h) and G4 the assembler, the
+runtime, and the harness (cpp/src/sim/assembler.h, runtime.h, and
+harness.h, which cpp/README.md, "The simulator's harness", describes),
+which the C++ tests run programs on. G4 checked the C++ harness against
+this one on every run of the Python suite. What is here stays for the
+games' machines, which G5 ports (apple2.py, lode_runner.py,
+ali_baba.py, disk2.py, runtime.py, and linked.py), and for the fuzzers'
+runner, which G6 ports (assembler.py and harness.py). The C++ hooks
+compute with fp_arith, and the hooks of runtime.py differ from them for
+a float that overflows a single, a zero divisor, a NaN operand, and the
+conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
+"The Python hooks").
 
 ## Module roster
 
@@ -15,7 +28,10 @@ the boot stub's BRK fires. It stays in Python until step 9 of the port
   mirror the naive lowering in cpp/src/passes/asm_to_asm2.cpp, so the
   assembler stays byte-aligned with what emission (cpp/src/asm_emit.h)
   produces. `instruction_size` has a C++ copy in cpp/src/sim/assembler.h,
-  which the long-branch pass (cpp/src/passes/long_branches.h) uses. A
+  which the long-branch pass (cpp/src/passes/long_branches.h) uses,
+  and `assemble` has one there too, which the C++ harness uses. A
+  program whose bytes would lie past $FFFF or below $0000 is an
+  `AssemblerError`. A
   packed BCD `DecimalArith` assembles as `expand_decimal_arith`
   (cpp/src/passes/asm_to_asm2.h) writes it, `SED`, `CLC` or `SEC`, an `LDA` / `ADC` (`SBC`) / `STA`
   per byte, and `CLD`. py65 runs `ADC` and `SBC` in decimal mode as
@@ -104,7 +120,8 @@ the boot stub's BRK fires. It stays in Python until step 9 of the port
 
 - See `docs/sim_findings.md` for known divergences between the
   Python-trap runtime and the 6502-asm runtime.
-- The simulator is what `tests/test_sim_*` harnesses drive.
+- The games' tests (tests/test_zork_interpreter.py, test_lode_runner.py,
+  and test_ali_baba.py) and fuzz/runner.py drive it.
 - `build_sim(optimize=False)` runs the same passes as `compile.py
   -S`, including the peephole fixedpoint, so unoptimized sim
   tests execute the code the CLI emits.

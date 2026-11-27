@@ -101,8 +101,10 @@ example. The compiler folds constants, and the simulator and the TAC
 interpreter compute, with the same model of the CPU, copied from
 py65's `opADC` and `opSBC` (`adc_byte` and `sbc_byte` in
 cpp/src/builtin_functions.h, with a Python copy in
-builtin_functions.py). `tests/test_bcd_builtins.py` checks the Python
-copy against py65 for every pair of bytes and both carries. For the accumulator and
+builtin_functions.py). cpp/tests/test_bcd_builtins.cpp checks the C++
+model against the simulator's CPU, and the CPU against py65's results
+frozen in cpp/tests/frozen/cpu/decimal.txt, for every pair of bytes and
+both carries. For the accumulator and
 the carry, py65 gives what the NMOS algorithm in Appendix A of
 6502.org's "Decimal Mode" tutorial gives. That comes from comparing
 the two algorithms, and it hasn't been checked on an NMOS 6502. The

@@ -152,8 +152,8 @@ pattern, and promotes only the first one it finds.
   leaves one `INC` on it, and the reads through `(msg),Y` after
   the step went to the old page. Ali Baba's `map_value_to_string`
   and, once next_string was inlined, `display_message_loop` were
-  compiled that way (tests/test_loop_counter_to_x.py,
-  `TestPointerHighByteSim`).
+  compiled that way (cpp/tests/test_loop_counter_to_x_sim.cpp, from
+  tests/test_loop_counter_to_x.py's `TestPointerHighByteSim`).
 - For a `DEC` step, the next instruction after any labels is a `BEQ`,
   `BNE`, `BMI`, or `BPL` whose target, after following jumps, is one
   of the `LDX M` reloads. That reload is the loop top. None of the

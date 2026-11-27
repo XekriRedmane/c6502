@@ -236,8 +236,31 @@ void run_lode_runner(const Options& o, std::ostream& out) {
       << m.hires << " instructions " << m.instructions << " why " << lode_runner_end(end) << '\n';
 }
 
+// Writes each script's coverage of the original, and the routines of
+// the C program's spans that no script reaches.
+void ali_baba_coverage(games::AliBabaFiles& files, std::ostream& out) {
+  const std::vector<ali_baba::Span> spans(ali_baba::kCodeSpans.begin(), ali_baba::kCodeSpans.end());
+  std::vector<std::uint8_t> seen(0x10000);
+  for (const games::AliBabaScript& script : games::ali_baba_scripts()) {
+    const std::unique_ptr<ali_baba::Machine> machine = files.run_original(script);
+    const ali_baba::Coverage cov = ali_baba::coverage(machine->seen, files.labels, &spans);
+    out << script.name << ": " << machine->events.size() << " events, " << cov.summary()
+        << " in the C program's spans\n";
+    for (std::size_t i = 0; i < seen.size(); ++i) seen[i] |= machine->seen[i];
+  }
+  const ali_baba::Coverage cov = ali_baba::coverage(seen, files.labels, &spans);
+  out << "all: " << cov.summary() << "; not reached:\n  ";
+  const std::vector<std::string> missed = cov.missed();
+  for (std::size_t i = 0; i < missed.size(); ++i) out << (i == 0 ? "" : " ") << missed[i];
+  out << '\n';
+}
+
 void run_ali_baba(const Options& o, std::ostream& out) {
   games::AliBabaFiles files(required_env("ALI_BABA_DIR"));
+  if (o.script == "coverage" && !o.exe) {
+    ali_baba_coverage(files, out);
+    return;
+  }
   const games::AliBabaScript& script = games::ali_baba_script(o.script);
   std::unique_ptr<ali_baba::Machine> machine;
   std::function<bool(const ali_baba::Machine&)> stop;

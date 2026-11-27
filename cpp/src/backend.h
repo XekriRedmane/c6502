@@ -28,9 +28,8 @@ namespace c6502::backend {
 // src/passes/ir_check.h for the request, and `link_metadata`, for the
 // unoptimized text of `-c`. A failed IR check throws `InternalError`,
 // which ends the process with status 3, as any other internal error
-// does. The runtime helpers' HARGS footprints come
-// from the copy of rtlib/helpers.py compiled into the program
-// (src/rtlib/helpers.h).
+// does. The runtime helpers' HARGS footprints come from the helpers
+// built into the program (src/rtlib/helpers.h).
 //
 // The modes `source` and `source-text` run the front end
 // (`passes::front_end`, compile.py's `_compile_c` through

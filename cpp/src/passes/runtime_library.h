@@ -1,7 +1,7 @@
 // The runtime library: the 6502 helpers that compiled code calls to
 // multiply, divide, and shift by a variable count, which the linker
 // adds to a program as a C toolchain links routines from libgcc. The
-// helpers are the functions of the table src/rtlib/helpers.h reads.
+// helpers are the functions of src/rtlib/helpers.h.
 #pragma once
 
 #include <string>

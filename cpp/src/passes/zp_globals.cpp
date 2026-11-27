@@ -119,7 +119,7 @@ const HelperFootprints& helper_footprints() {
       }
     }
     HelperFootprints out;
-    // tools/rtlib_table.py refuses helpers that call each other in a
+    // `rtlib::check_acyclic` refuses helpers that call each other in a
     // cycle, so the recursion ends.
     const std::function<asdl::Int(const std::string&)> size =
         [&](const std::string& name) -> asdl::Int {

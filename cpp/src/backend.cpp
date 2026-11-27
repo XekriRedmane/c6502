@@ -164,8 +164,8 @@ Compiled compile_one(const std::string& source, const passes::FrontEndOptions& f
       tables.symbols = std::move(checked.symbols);
       tables.types = std::move(checked.types);
     }
-    // The footprints come from the helpers' table compiled into the
-    // program (src/rtlib/helpers.h), so the request doesn't carry them.
+    // The footprints come from the helpers built into the program
+    // (src/rtlib/helpers.h), so the request doesn't carry them.
     tables.footprints = passes::helper_footprints();
     out.result = passes::codegen(tables, options);
   } catch (const CompileError& e) {

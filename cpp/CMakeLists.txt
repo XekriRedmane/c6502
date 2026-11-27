@@ -70,6 +70,7 @@ file(GLOB C6502_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/src/passes/optimization/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/passes/optimization_asm/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/passes/optimization_ast/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtlib/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/sim/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/generated/*.cpp")
 list(REMOVE_ITEM C6502_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")

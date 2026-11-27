@@ -13,6 +13,9 @@ Coverage:
   - Mismatched annotation rejected (zp_abi function with a call
     in body — already covered by abi_selection unit tests, here
     via the full pipeline).
+
+The tests that only read compile.py's output are doctest cases in
+cpp/tests/test_leaf_zp_abi.cpp.
 """
 from __future__ import annotations
 
@@ -47,32 +50,6 @@ class TestLeafZpAbi(unittest.TestCase):
         self.assertFalse(result.timed_out, "simulator timed out")
         return _signed_int(result.return_int())
 
-    def test_zp_abi_leaf_emits_no_prologue(self) -> None:
-        # add() is a ZP-ABI leaf — no calls, address not taken, 4
-        # param bytes (well under the 64-byte ZP window). No
-        # FunctionPrologue / Ret in its asm; only a bare RTS at
-        # exit (plus the arithmetic).
-        src = (
-            "[[c6502::zp_abi]] int add(int a, int b) { "
-            "    return a + b; "
-            "} "
-            "int main(void) { return add(3, 4); }"
-        )
-        out = self._codegen(src)
-        # `add:` SUBROUTINE block. Find it and check its prologue/
-        # epilogue presence.
-        add_idx = out.index("add:")
-        # Find where `main:` starts (or end of file) to bound add's
-        # body.
-        main_idx = out.index("main:")
-        add_body = out[add_idx:main_idx]
-        # No FunctionPrologue artifacts: no SBC against SSP, no
-        # SSP/FP setup.
-        self.assertNotIn("STA   SSP", add_body)
-        self.assertNotIn("STA   FP", add_body)
-        # The body must end in an RTS (the bare RTS atom).
-        self.assertIn("RTS", add_body)
-
     def test_zp_abi_leaf_correct_return_value(self) -> None:
         # Run the same program in the sim. Expect 3 + 4 = 7.
         src = (
@@ -82,33 +59,6 @@ class TestLeafZpAbi(unittest.TestCase):
             "int main(void) { return add(3, 4); }"
         )
         self.assertEqual(self._sim_return_int(src), 7)
-
-    def test_zp_abi_caller_no_allocate_stack_pre_call(self) -> None:
-        # Caller (main) loads `a` into A and X and stores `b` into
-        # its ZP slot, rather than AllocateStack(4) + Stack writes.
-        src = (
-            "[[c6502::zp_abi]] int add(int a, int b) { "
-            "    return a + b; "
-            "} "
-            "int main(void) { return add(3, 4); }"
-        )
-        out = self._codegen(src)
-        # Find main's body bounded by the next function-name label
-        # or end-of-output.
-        main_idx = out.index("main:")
-        main_body = out[main_idx:]
-        # `add`'s declaration names no register, so its first
-        # parameter, `a`, arrives in A (low byte) and X (high byte).
-        # The caller writes `b` to `add`'s slot symbols directly (no
-        # SBC-against-SSP). dasm resolves the symbols via the EQU
-        # directives the emit stage prepended. 2-byte int params ->
-        # per-byte slot symbols suffixed _0/_1.
-        self.assertIn("LDA   #$03", main_body)
-        self.assertIn("LDX   #$00", main_body)
-        self.assertNotIn("__zpabi_add__a", main_body)
-        self.assertIn("STA   __zpabi_add__b_0", main_body)
-        self.assertIn("STA   __zpabi_add__b_1", main_body)
-        self.assertNotIn("SSP", main_body)
 
     def test_caller_with_locals_calls_zp_abi_correctly(self) -> None:
         # Caller has its own body locals (x and y) AND calls a
@@ -141,43 +91,6 @@ class TestLeafZpAbi(unittest.TestCase):
             "int main(void) { return wrap(3); }"
         )
         self.assertEqual(self._sim_return_int(src), 4)
-
-    def test_zp_abi_recursion_rejected(self) -> None:
-        # End-to-end via compile_main: a zp_abi function on a call-
-        # graph cycle is rejected.
-        src = (
-            "[[c6502::zp_abi]] int rec(int x) { "
-            "  return x ? rec(x - 1) : 0; "
-            "} "
-            "int main(void) { return rec(3); }"
-        )
-        # `main()` reports the AbiSelectionError on stderr and
-        # returns 1. Verify the message names the offending function.
-        with patch("sys.stdin", io.StringIO(src)),              patch("sys.stdout", new_callable=io.StringIO),              patch("sys.stderr", new_callable=io.StringIO) as err:
-            rc = compile_main([
-                "compile.py", "-", "-S", "-O",
-            ])
-        self.assertEqual(rc, 1)
-        self.assertIn("rec", err.getvalue())
-
-    def test_extern_zp_abi_call_site_uses_zp(self) -> None:
-        # Extern declaration with `[[c6502::zp_abi]]`: call
-        # sites should emit direct ZP writes (no AllocateStack / no
-        # `(SSP),Y` arg writes) — the annotation propagates from
-        # the declaration to the call site.
-        # `base` arrives in A and X, so `x` arrives in its slot.
-        src = (
-            "[[c6502::zp_abi]] extern int helper(int base, int x); "
-            "int main(void) { return helper(1, 7); }"
-        )
-        asm = self._codegen(src)
-        # Symbolic slot write: `STA __zpabi_helper__x_0` for the
-        # param's low byte; no `(SSP),Y` arg write that the soft-
-        # stack ABI would emit. The emit prepends an EQU directive
-        # so dasm encodes the store as 2-byte ZP addressing.
-        self.assertIn("STA   __zpabi_helper__x_0", asm)
-        self.assertIn("__zpabi_helper__x_0\tEQU\t$80", asm)
-        self.assertNotIn("STA   (SSP)", asm)
 
     def test_eligible_non_leaf_emits_no_prologue(self) -> None:
         # An eligible function (no recursion, no indirect calls,

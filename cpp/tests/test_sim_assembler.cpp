@@ -59,8 +59,8 @@ TEST_CASE("sim assembler: test_element_rmw.py::TestEmit::test_sim_assembler_enco
   const AssembledProgram out = assemble(prog, 0x0800);
   const std::int64_t tab = out.symbols.at("tab");
   std::vector<std::uint8_t> want;
-  for (const std::uint8_t op : {0xFE, 0xDE, 0x1E, 0x5E, 0x3E, 0x7E}) {
-    want.push_back(op);
+  for (const int op : {0xFE, 0xDE, 0x1E, 0x5E, 0x3E, 0x7E}) {
+    want.push_back(static_cast<std::uint8_t>(op));
     want.push_back(static_cast<std::uint8_t>(tab & 0xFF));
     want.push_back(static_cast<std::uint8_t>(tab >> 8));
   }

@@ -129,7 +129,7 @@ int main(void) { return poll_key(); }
     for (const auto& key : {0xC1, 0x41}) {
       INFO("optimize=" << optimize << " key=" << key);
       auto s = build_sim(src, optimize);
-      s.cpu.memory[0xC000] = key;
+      s.cpu.memory[0xC000] = static_cast<std::uint8_t>(key);
       s.cpu.memory[0xC010] = 0x55;
       auto result = s.run();
       CHECK(result.return_int() == key);
@@ -150,7 +150,7 @@ TEST_CASE("address_attr: wait through pointer") {
     for (const auto& [key, waits] : std::vector<std::tuple<int, bool>>{{0x00, true}, {0xC1, false}}) {
       INFO("optimize=" << optimize << " key=" << key);
       auto s = build_sim(src, optimize);
-      s.cpu.memory[0xC000] = key;
+      s.cpu.memory[0xC000] = static_cast<std::uint8_t>(key);
       auto result = s.run(20'000);
       CHECK(result.timed_out == waits);
       if (!waits) {

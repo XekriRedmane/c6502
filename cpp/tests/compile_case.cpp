@@ -19,6 +19,7 @@
 #include "passes/ir_check.h"
 #include "passes/text_stages.h"
 #include "passes/zp_globals.h"
+#include "sim/harness.h"
 #include "tac_sim.h"
 #include "tac_sim_modes.h"
 
@@ -258,31 +259,7 @@ std::string read_file(const std::string& path) {
   return s.str();
 }
 
-std::vector<std::string> sim_defsym_args() {
-  static const char* const kHelpers[][2] = {
-      {"asl16", "E338"},   {"asl32", "E377"},     {"asl64", "E440"},     {"asl8", "E30F"},
-      {"asr16", "E34C"},   {"asr32", "E397"},     {"asr64", "E450"},     {"asr8", "E31C"},
-      {"bin16_to_bcd", "E3DA"}, {"d2f", "E600"},  {"d2i", "E590"},       {"d2l", "E5B0"},
-      {"d2ll", "E5D0"},    {"d2u", "E5A0"},       {"d2ul", "E5C0"},      {"d2ull", "E5E0"},
-      {"dadd", "E650"},    {"ddiv", "E680"},      {"dle", "E6C0"},       {"dlt", "E6B0"},
-      {"dmul", "E670"},    {"dsub", "E660"},      {"f2d", "E5F0"},       {"f2i", "E530"},
-      {"f2l", "E550"},     {"f2ll", "E570"},      {"f2u", "E540"},       {"f2ul", "E560"},
-      {"f2ull", "E580"},   {"fadd", "E610"},      {"fdiv", "E640"},      {"fle", "E6A0"},
-      {"flt", "E690"},     {"fmul", "E630"},      {"fsub", "E620"},      {"i2d", "E4D0"},
-      {"i2f", "E470"},     {"icall", "E408"},     {"l2d", "E4F0"},       {"l2f", "E490"},
-      {"ll2d", "E510"},    {"ll2f", "E4B0"},      {"lsr16", "E363"},     {"lsr32", "E3BA"},
-      {"lsr64", "E460"},   {"lsr8", "E32B"},      {"mul16", "E01F"},     {"mul32", "E052"},
-      {"mul64", "E410"},   {"mul8", "E000"},      {"sdivmod16", "E142"}, {"sdivmod32", "E227"},
-      {"sdivmod64", "E430"}, {"sdivmod8", "E0CB"}, {"u2d", "E4E0"},      {"u2f", "E480"},
-      {"udivmod16", "E111"}, {"udivmod32", "E1CA"}, {"udivmod64", "E420"}, {"udivmod8", "E0AD"},
-      {"ul2d", "E500"},    {"ul2f", "E4A0"},      {"ull2d", "E520"},     {"ull2f", "E4C0"},
-  };
-  std::vector<std::string> out;
-  for (const auto& [name, addr] : kHelpers) {
-    out.push_back(std::string("--defsym=") + name + "=0x" + addr);
-  }
-  return out;
-}
+std::vector<std::string> sim_defsym_args() { return sim::defsym_args(); }
 
 long long compile_object(const std::string& source, const std::string& out_path, bool optimize,
                          const std::vector<std::string>& extra) {

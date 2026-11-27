@@ -118,7 +118,23 @@ target_include_directories(c6502_tests PRIVATE
 target_compile_definitions(c6502_tests PRIVATE C6502_SOURCE_ROOT="${C6502_ROOT}")
 
 enable_testing()
-add_test(NAME c6502_tests COMMAND c6502_tests)
+# The slow simulator cases are named "shard: <name>", and each runs as
+# a ctest entry of its own, so that `ctest -j` spreads them over the
+# cores, as pytest-xdist spread the Python tests' shards. The names are
+# read from the test files when CMake runs, so a new shard needs CMake
+# run again.
+add_test(NAME c6502_tests COMMAND c6502_tests "-tce=shard: *")
+foreach(test_source ${C6502_TEST_SOURCES})
+  file(STRINGS "${test_source}" shard_lines REGEX "TEST_CASE\\(\"shard: [^\"]*\"")
+  # A line with a semicolon comes back as several items of the list.
+  foreach(shard_line ${shard_lines})
+    if(shard_line MATCHES "TEST_CASE\\(\"shard: ([^\"]*)\"")
+      set(shard "${CMAKE_MATCH_1}")
+      string(REGEX REPLACE "[^A-Za-z0-9]+" "_" shard_name "${shard}")
+      add_test(NAME "shard_${shard_name}" COMMAND c6502_tests "-tc=shard: ${shard}")
+    endif()
+  endforeach()
+endforeach()
 # The checks after Python (README.md): the golden files, whose last line
 # counts the jobs that differ, and the frozen captures.
 add_test(NAME check_golden COMMAND c6502cpp check-golden --root "${C6502_ROOT}" -j 12

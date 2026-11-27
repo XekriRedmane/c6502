@@ -23,119 +23,15 @@ Coverage:
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
 (docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_pointer_member_access.cpp.
 """
 from __future__ import annotations
 
-import io
 import unittest
-from unittest.mock import patch
 
-from compile import main as compile_main
 from sim.harness import build_sim
 from tests.cpp_build import needs_c6502cpp
-
-
-def _asm(src: str) -> str:
-    """`compile.py - -S -O` of `src`."""
-    out = io.StringIO()
-    with patch("sys.stdin", io.StringIO(src)), patch("sys.stdout", out), \
-            patch("sys.stderr", io.StringIO()):
-        rc = compile_main(["compile.py", "-", "-S", "-O", "-o", "-"])
-    assert rc == 0
-    return out.getvalue()
-
-
-def _function(text: str, name: str) -> str:
-    """The lines of function `name` in the asm `text`."""
-    lines = text.splitlines()
-    start = lines.index(f"{name}:")
-    end = start + 1
-    while end < len(lines) and not (
-            lines[end] and not lines[end][0].isspace()
-            and lines[end].endswith(":") and not lines[end].startswith(".")):
-        end += 1
-    return "\n".join(lines[start:end])
-
-
-_STRUCT = """
-#include <stdint.h>
-struct s { uint8_t a[13]; uint16_t g; uint8_t *buf; };
-struct node { struct node *next; uint16_t v; };
-extern struct s *P [[c6502::zeropage(0xF4)]];
-extern struct node *N [[c6502::zeropage(0xF6)]];
-"""
-
-
-@needs_c6502cpp
-class TestShapes(unittest.TestCase):
-    def test_member_store_through_zero_page_pointer(self) -> None:
-        text = _function(_asm(_STRUCT + "void f(uint16_t v) { P->g = v; }"),
-                         "f")
-        self.assertNotIn("DPTR", text)
-        self.assertEqual(text.count("STA   (P),Y"), 2)
-
-    def test_member_through_pointer_parameter(self) -> None:
-        text = _asm(_STRUCT + """
-            void put(struct s *r) { r->g = 0x1234; }
-            uint16_t get(struct s *r) { return r->g; }""")
-        self.assertNotIn("DPTR", _function(text, "put"))
-        self.assertNotIn("DPTR", _function(text, "get"))
-
-    def test_self_referential_member_keeps_the_copy(self) -> None:
-        text = _function(
-            _asm(_STRUCT + "void f(struct node *q) { N->next = q; }"), "f")
-        self.assertIn("STA   (DPTR),Y", text)
-
-    def test_pointer_member_add(self) -> None:
-        text = _function(_asm(_STRUCT + "void f(void) { P->buf += 0x100; }"),
-                         "f")
-        self.assertEqual(text.count("LDA   (P),Y"), 1)
-        self.assertEqual(text.count("STA   (P),Y"), 1)
-        self.assertIn("LDY   #$10", text)
-
-    def test_compound_assignment_calls_first(self) -> None:
-        text = _function(_asm("""
-            #include <stdint.h>
-            struct mob { uint8_t pad[11]; uint8_t level; };
-            extern struct mob *E [[c6502::zeropage(0xF8)]];
-            uint8_t h(uint8_t x);
-            void f(uint8_t x) { E->level |= h(x); }"""), "f")
-        self.assertEqual(
-            [line.split()[0] for line in text.splitlines()[2:] if line],
-            ["JSR", "LDY", "ORA", "STA", "RTS"])
-
-    def test_choice_of_member_is_an_offset(self) -> None:
-        text = _function(_asm("""
-            #include <stdint.h>
-            struct mob { uint8_t pad[7]; uint8_t sword, armor, dagger; };
-            extern struct mob *E [[c6502::zeropage(0xF8)]];
-            void f(uint8_t n, uint8_t v) {
-                uint8_t *w = n < 3 ? &E->sword : &E->dagger;
-                *w = v;
-            }"""), "f")
-        self.assertIn("LDY   #$07", text)
-        self.assertIn("LDY   #$09", text)
-        self.assertIn("STA   (E),Y", text)
-        self.assertNotIn("ADC", text)
-
-    def test_index_minus_one_multiplies_the_byte(self) -> None:
-        text = _function(_asm("""
-            #include <stdint.h>
-            struct o { uint8_t b[9]; };
-            struct o *option(struct o *p, uint8_t n) { return &p[n - 1]; }
-            """), "option")
-        self.assertNotIn("SBC   #$01", text)
-        self.assertIn("SBC   #$09", text)
-
-    def test_member_compare_reads_through_the_pointer(self) -> None:
-        text = _function(_asm("""
-            #include <stdint.h>
-            struct mob { uint8_t b[13]; uint16_t gold; };
-            extern struct mob *E [[c6502::zeropage(0xF8)]];
-            extern uint16_t W [[c6502::address(0x5A02)]];
-            uint8_t c(void) { return W <= E->gold; }"""), "c")
-        self.assertNotIn("STA", text)
-        self.assertEqual(text.count("LDA   (E),Y"), 2)
 
 
 _RUN = """

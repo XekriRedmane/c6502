@@ -1,7 +1,7 @@
-// The `-S -O` text of tests/test_three_way_compare.py's shapes, in which
-// a 2-byte unsigned ordering compare and an equality compare of the same
-// values split into compares of the high bytes and then the low ones.
-// The simulator runs stay in Python.
+// The `-S -O` text of tests/test_three_way_compare.py's shapes, in
+// which a 2-byte unsigned ordering compare and an equality compare of
+// the same values split into compares of the high bytes and then the
+// low ones. The simulator's runs are in test_three_way_compare_sim.cpp.
 #include <string>
 #include <vector>
 

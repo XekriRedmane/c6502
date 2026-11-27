@@ -1,5 +1,5 @@
-// The `-S -O` text of tests/test_jump_table.py's switches. Their
-// simulator runs stay in Python.
+// The `-S -O` text of tests/test_jump_table.py's switches. The
+// simulator's runs are in test_jump_table_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

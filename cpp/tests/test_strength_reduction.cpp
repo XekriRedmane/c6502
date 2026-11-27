@@ -1,6 +1,6 @@
 // A byte times a constant of three signed powers of two is shifts and
-// adds, from tests/test_strength_reduction.py. The simulator runs stay
-// in Python.
+// adds, from tests/test_strength_reduction.py. The simulator's runs are
+// in test_strength_reduction_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

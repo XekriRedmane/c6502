@@ -1,6 +1,6 @@
 // The tests of tests/test_volatile_named.py that read the `-S` text of
 // reads and writes of a named `volatile` object, each of which stays.
-// The simulator runs and the simulator's assembler test stay in Python.
+// The simulator's runs are in test_volatile_named_sim.cpp.
 #include <regex>
 #include <string>
 

@@ -1,6 +1,6 @@
-// The `-S -O` text of tests/test_inline_shift_direct.py's shifts by one,
-// which shift a byte in memory where the value is shifted in place. The
-// simulator runs stay in Python.
+// The `-S -O` text of tests/test_inline_shift_direct.py's shifts by
+// one, which shift a byte in memory where the value is shifted in
+// place. The simulator's runs are in test_inline_shift_direct_sim.cpp.
 #include <sstream>
 #include <string>
 #include <vector>

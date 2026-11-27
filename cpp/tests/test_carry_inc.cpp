@@ -1,6 +1,5 @@
 // The tests of tests/test_carry_inc.py that call the pass on asm,
-// ported. The tests of move coalescing and the simulator stay in
-// Python.
+// ported. The simulator's runs are in test_carry_inc_sim.cpp.
 #include <string>
 #include <string_view>
 

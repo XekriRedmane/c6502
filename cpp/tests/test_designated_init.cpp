@@ -1,6 +1,6 @@
 // tests/test_designated_init.py's program on the TAC interpreter. It
 // returns 0 when every byte of every designated object is right. The
-// simulator runs stay in Python.
+// simulator's runs are in test_designated_init_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

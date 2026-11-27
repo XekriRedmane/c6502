@@ -1,5 +1,6 @@
 // The `-S -O` text of tests/test_redundant_load_after_rmw.py's signed
-// countdown loop. Its simulator run stays in Python.
+// countdown loop. The simulator's runs are in
+// test_redundant_load_after_rmw_sim.cpp.
 #include <string>
 #include <vector>
 

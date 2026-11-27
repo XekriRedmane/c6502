@@ -1,5 +1,5 @@
 // tests/test_typeof.py's program of C23's typeof operators on the TAC
-// interpreter. The simulator runs stay in Python.
+// interpreter. The simulator's runs are in test_typeof_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

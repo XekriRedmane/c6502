@@ -1,5 +1,5 @@
 // The tests of tests/test_cmp_zero_jump_fold.py that read the `-S -O`
-// text. The simulator runs stay in Python.
+// text. The simulator's runs are in test_cmp_zero_jump_fold_sim.cpp.
 #include <stdexcept>
 #include <string>
 #include <variant>

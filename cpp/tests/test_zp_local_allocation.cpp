@@ -1,6 +1,6 @@
 // The tests of tests/test_zp_local_allocation.py that read the `-S -O`
 // text of a unit compiled on its own with its pool of zero page full.
-// The simulator runs stay in Python.
+// The simulator's runs are in test_zp_local_allocation_sim.cpp.
 #include <map>
 #include <string>
 

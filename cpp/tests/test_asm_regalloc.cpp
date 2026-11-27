@@ -1,5 +1,6 @@
 // The `-S -O` text of a program with two live locals, from
-// tests/test_asm_regalloc.py. Its simulator runs stay in Python.
+// tests/test_asm_regalloc.py. The simulator's runs are in
+// test_asm_regalloc_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

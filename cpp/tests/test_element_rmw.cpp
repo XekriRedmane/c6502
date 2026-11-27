@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_element_rmw.py's program, whose
 // read-modify-writes of an element indexed by X are `INC t,X` and the
-// rest. The runs and the simulator's assembler test stay in Python.
+// rest. The simulator's runs are in test_element_rmw_sim.cpp.
 #include <stdexcept>
 #include <string>
 #include <vector>

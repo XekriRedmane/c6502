@@ -1,5 +1,5 @@
 // The `-S -O` text of tests/test_sink_increment.py's post-decrement
-// test. The simulator runs stay in Python.
+// test. The simulator's runs are in test_sink_increment_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

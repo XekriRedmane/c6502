@@ -1,5 +1,5 @@
-// The asm tests of tests/test_loop_counter_to_x.py, ported. The tests
-// that compile and run C stay in Python.
+// The asm tests of tests/test_loop_counter_to_x.py, ported. The
+// simulator's runs are in test_loop_counter_to_x_sim.cpp.
 #include <algorithm>
 #include <string>
 #include <vector>

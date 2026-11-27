@@ -1,5 +1,5 @@
-// tests/test_enum.py's programs on the TAC interpreter. The simulator
-// runs stay in Python.
+// tests/test_enum.py's programs on the TAC interpreter. The simulator's
+// runs are in test_enum_sim.cpp.
 #include <string>
 #include <vector>
 

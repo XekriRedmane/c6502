@@ -69,8 +69,7 @@ struct Program {
 };
 
 // Programs whose `main` returns a 16-bit value, which the TAC
-// interpreter runs. tests/test_bcd_builtins.py runs them in the
-// simulator too.
+// interpreter and the simulator run.
 const std::vector<Program>& programs() {
   static const std::vector<Program> table = {
       {"byte_add",

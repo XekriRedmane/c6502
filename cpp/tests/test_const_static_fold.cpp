@@ -1,7 +1,8 @@
 // The tests of tests/test_const_static_fold.py that read the `-S` text:
 // under `-O`, a `static` const scalar with a constant initializer whose
 // address isn't taken is read as immediates of its bytes, and its
-// storage goes. The simulator runs stay in Python.
+// storage goes. The simulator's runs are in
+// test_const_static_fold_sim.cpp.
 #include <stdexcept>
 #include <string>
 

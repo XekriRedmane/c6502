@@ -1,6 +1,5 @@
 // The unit tests of tests/test_constant_store_order.py, ported. The
-// tests there that compile and run C need the whole compiler and stay in
-// Python.
+// simulator's runs are in test_constant_store_order_sim.cpp.
 #include <string>
 #include <vector>
 

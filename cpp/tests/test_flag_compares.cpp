@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_flag_compares.py's compares, which
-// branch on flags another instruction set or fold into fewer tests. Its
-// simulator run stays in Python.
+// branch on flags another instruction set or fold into fewer tests. The
+// simulator's runs are in test_flag_compares_sim.cpp.
 #include <algorithm>
 #include <string>
 #include <vector>

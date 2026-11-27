@@ -1,5 +1,6 @@
 // The `-S -O` text of tests/test_truncate_extend_fold.py's byte loops
-// against `sizeof`. Their simulator runs stay in Python.
+// against `sizeof`. The simulator's runs are in
+// test_truncate_extend_fold_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

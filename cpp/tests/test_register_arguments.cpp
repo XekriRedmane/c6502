@@ -1,5 +1,6 @@
-// The `-S -O` text of tests/test_register_arguments.py's functions whose
-// arguments arrive in A and X. Its simulator run stays in Python.
+// The `-S -O` text of tests/test_register_arguments.py's functions
+// whose arguments arrive in A and X. The simulator's runs are in
+// test_register_arguments_sim.cpp.
 #include <string>
 #include <vector>
 

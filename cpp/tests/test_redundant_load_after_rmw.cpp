@@ -1,5 +1,5 @@
 // The unit tests of tests/test_redundant_load_after_rmw.py, ported. The
-// tests there that compile C need the whole compiler and stay in Python.
+// simulator's runs are in test_redundant_load_after_rmw_sim.cpp.
 #include <string>
 
 #include "asm_text.h"

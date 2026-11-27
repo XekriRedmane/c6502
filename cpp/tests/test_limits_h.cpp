@@ -1,6 +1,6 @@
 // A `limits.h` in a directory given with `-I` comes before the bundled
-// one, from tests/test_limits_h.py. The runs of the bundled header's
-// macros stay in Python.
+// one, from tests/test_limits_h.py. The simulator's runs are in
+// test_limits_h_sim.cpp.
 #include <string>
 #include <vector>
 

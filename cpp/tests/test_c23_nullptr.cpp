@@ -55,7 +55,7 @@ TEST_CASE("c23_nullptr: <stddef.h> includes cleanly") {
 }
 
 TEST_CASE("c23_nullptr: the TAC interpreter runs a program of nullptr") {
-  // tests/test_c23_nullptr.py runs the same program in the simulator.
+  // test_c23_nullptr_sim.cpp runs the same program in the simulator.
   const std::string program = R"(#include <stddef.h>
 
 struct node { int value; struct node *next; };

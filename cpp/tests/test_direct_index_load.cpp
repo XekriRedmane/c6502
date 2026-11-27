@@ -1,5 +1,5 @@
-// The unit tests of tests/test_direct_index_load.py, ported. The tests
-// there that compile C need the whole compiler and stay in Python.
+// The unit tests of tests/test_direct_index_load.py, ported. The
+// simulator's runs are in test_direct_index_load_sim.cpp.
 #include "asm_text.h"
 #include "doctest.h"
 #include "passes/direct_index_load.h"

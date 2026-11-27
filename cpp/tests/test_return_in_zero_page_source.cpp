@@ -1,6 +1,6 @@
 // The `-S -O` text of a read through a `static` function's pointer
 // result right after the call, from tests/test_return_in_zero_page.py.
-// Its simulator runs stay in Python.
+// The simulator's runs are in test_return_in_zero_page_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

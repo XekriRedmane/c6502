@@ -1,5 +1,5 @@
 // The asm tests of tests/test_counter_to_index_reg.py, ported. The
-// tests that compile and run C stay in Python.
+// simulator's runs are in test_counter_to_index_reg_sim.cpp.
 #include <algorithm>
 #include <vector>
 

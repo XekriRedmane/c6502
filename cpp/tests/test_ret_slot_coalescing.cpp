@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_ret_slot_coalescing.py's program, in
-// which a local holding a copy of `F@ret` becomes `F@ret`. Its
-// simulator runs stay in Python.
+// which a local holding a copy of `F@ret` becomes `F@ret`. The
+// simulator's runs are in test_ret_slot_coalescing_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

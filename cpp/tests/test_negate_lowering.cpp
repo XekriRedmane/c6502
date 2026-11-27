@@ -1,5 +1,6 @@
 // The `-S -O` text of an integer negate, `0 - x` a byte at a time, from
-// tests/test_negate_lowering.py. Its simulator runs stay in Python.
+// tests/test_negate_lowering.py. The simulator's runs are in
+// test_negate_lowering_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

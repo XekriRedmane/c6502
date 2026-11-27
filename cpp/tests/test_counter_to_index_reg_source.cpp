@@ -1,5 +1,5 @@
 // The `-S -O` text of tests/test_counter_to_index_reg.py's delay loop.
-// Its simulator runs stay in Python.
+// The simulator's runs are in test_counter_to_index_reg_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

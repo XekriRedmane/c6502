@@ -1,5 +1,5 @@
 // tests/test_compound_literal.py's programs on the TAC interpreter. The
-// simulator runs stay in Python.
+// simulator's runs are in test_compound_literal_sim.cpp.
 #include <string>
 #include <vector>
 

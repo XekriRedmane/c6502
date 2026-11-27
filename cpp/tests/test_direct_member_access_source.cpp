@@ -1,7 +1,7 @@
 // The tests of tests/test_direct_member_access.py that read the `-S -O`
 // text: a member store to a global is a plain `STA g+k`, and a local
-// struct whose address doesn't escape has no pointer. The runs stay in
-// Python.
+// struct whose address doesn't escape has no pointer. The simulator's
+// runs are in test_direct_member_access_sim.cpp.
 #include <stdexcept>
 #include <string>
 

@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_known_compare_thread.py's shape of
-// `handle_timers` (examples/lode_runner/timers.c). The simulator runs
-// stay in Python.
+// `handle_timers` (examples/lode_runner/timers.c). The simulator's runs
+// are in test_known_compare_thread_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

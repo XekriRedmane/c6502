@@ -1,6 +1,6 @@
-// The tests of tests/test_dual_index_promotion.py that check the
-// pass's instructions, ported. The tests that compile C and run it in
-// the simulator stay in Python.
+// The tests of tests/test_dual_index_promotion.py that check the pass's
+// instructions, ported. The simulator's runs are in
+// test_dual_index_promotion_sim.cpp.
 #include <string>
 #include <vector>
 

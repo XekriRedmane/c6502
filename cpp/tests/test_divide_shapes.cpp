@@ -1,7 +1,7 @@
 // The tests of tests/test_divide_shapes.py that read the `-S -O` text
 // of a shift-and-subtract divide loop, as Zork's `divu16`
 // (examples/zork/numbers.c) has, and of a local array read by index.
-// The runs stay in Python.
+// The simulator's runs are in test_divide_shapes_sim.cpp.
 #include <stdexcept>
 #include <string>
 

@@ -1,5 +1,5 @@
 // The `-S -O` text of tests/test_branch_through_jump.py's backward
-// `goto`. Its simulator run stays in Python.
+// `goto`. The simulator's runs are in test_branch_through_jump_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

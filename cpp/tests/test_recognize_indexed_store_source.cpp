@@ -1,6 +1,7 @@
 // The `-S -O` text of tests/test_recognize_indexed_store.py's stores
-// through a `static T * const` at a byte index, which are `STA $XXXX,X`.
-// The simulator runs stay in Python.
+// through a `static T * const` at a byte index, which are `STA
+// $XXXX,X`. The simulator's runs are in
+// test_recognize_indexed_store_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

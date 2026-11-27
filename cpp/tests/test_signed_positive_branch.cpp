@@ -1,6 +1,7 @@
 // The `-S -O` text of a branch on a signed `x <= 0`, which tests the
-// sign bit and ORs the bytes, from tests/test_signed_positive_branch.py.
-// Its simulator runs stay in Python.
+// sign bit and ORs the bytes, from
+// tests/test_signed_positive_branch.py. The simulator's runs are in
+// test_signed_positive_branch_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

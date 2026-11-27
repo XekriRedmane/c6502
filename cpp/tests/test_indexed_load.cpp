@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_indexed_load.py's reads of a static
 // array of at most 256 bytes, which are absolute,X on its label. The
-// simulator runs stay in Python.
+// simulator's runs are in test_indexed_load_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

@@ -1,5 +1,5 @@
-// The asm tests of tests/test_rotate_loop_test.py, ported. The Python
-// tests that run compiled programs in the simulator stay in Python.
+// The asm tests of tests/test_rotate_loop_test.py, ported. The
+// simulator's runs are in test_rotate_loop_test_sim.cpp.
 #include <algorithm>
 #include <vector>
 

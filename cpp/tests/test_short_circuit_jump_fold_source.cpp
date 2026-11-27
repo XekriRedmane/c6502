@@ -1,6 +1,6 @@
 // The `-S -O` text of tests/test_short_circuit_jump_fold.py's `&&` and
-// `||` consumed by an `if`, which leave no 0-or-1 value. The runs stay
-// in Python.
+// `||` consumed by an `if`, which leave no 0-or-1 value. The
+// simulator's runs are in test_short_circuit_jump_fold_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

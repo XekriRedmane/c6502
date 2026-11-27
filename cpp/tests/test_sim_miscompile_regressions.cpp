@@ -1,7 +1,6 @@
 // The tests of tests/test_sim_miscompile_regressions.py that run the
-// TAC interpreter or read the `-S` text. The simulator runs of the same
-// programs stay in Python, and the comments there name the defect each
-// program pins down.
+// TAC interpreter or read the `-S` text. The simulator's runs are in
+// test_sim_miscompile_regressions_sim.cpp.
 #include <string>
 #include <vector>
 

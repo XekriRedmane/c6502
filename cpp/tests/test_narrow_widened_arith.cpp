@@ -1,5 +1,5 @@
 // The `-S -O` text of tests/test_narrow_widened_arith.py's byte shifts.
-// Their simulator runs stay in Python.
+// The simulator's runs are in test_narrow_widened_arith_sim.cpp.
 #include <string>
 
 #include "compile_case.h"

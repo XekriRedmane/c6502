@@ -1,6 +1,7 @@
 # Long runs and scratch scripts
 
 - Send the full output of a suite, fuzzer, or build to a file and read the file afterwards. Piping it through `tail` or `sort` lost the failure list, and ctest's pass or fail line, often enough that 10 to 20 minute runs had to be repeated.
+- A lead that waits for background agents or a long run can't sleep in a foreground Bash call, which the harness refuses. A scratch script that sleeps and then prints the lock's holder and each agent worktree's newest commit (C:/w/g1/pause.sh in G1), run in the foreground with a timeout just under 10 minutes, waits and shows progress, and the agents' reports arrive between calls.
 - Start a long run with the Bash tool's `run_in_background`. A `&` inside a foreground call is killed when that call's shell exits.
 - A script whose stdout is redirected to a data file writes its own messages to stderr, or they end up in the data.
 - Never name a scratch script after a standard-library module. A `bisect.py` beside a script shadowed the module, and importing `random` failed.

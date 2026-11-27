@@ -424,6 +424,20 @@ TEST_CASE("cpu-run: segments run from the given state and patches, with a digest
   CHECK(response == want);
 }
 
+TEST_CASE("cpu-run: a segment's instructions limit it in place of max_instructions") {
+  std::string image(0x10000, '\0');
+  const std::uint8_t program[] = {kLdaImm, 0x05, kLdaImm, 0x06, kLdaImm, 0x07, kBrk};
+  for (std::size_t i = 0; i < sizeof program; ++i) image[0x0800 + i] = static_cast<char>(program[i]);
+  const std::string args =
+      R"({"stops": [], "stop_at_brk": false, "max_cycles": 1000, "max_instructions": 1, "segments": [)"
+      R"({"pc": 2048, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": [], "instructions": 2}, )"
+      R"({"pc": 2052, "a": 6, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 4, "patches": []}]})";
+  const std::string response =
+      c6502::backend::respond("c6502-backend 3\nmode cpu-run\nargs " + args + "\nimage 65536\n" + image);
+  CHECK(c6502::suite::contains(response, "segment 0 count 2\nstate 2052 6 0 0 255 48 4\n"));
+  CHECK(c6502::suite::contains(response, "segment 1 count 1\nstate 2054 7 0 0 255 48 6\n"));
+}
+
 TEST_CASE("cpu-run: a word read at $FFFF ends the response with an error") {
   std::string image(0x10000, '\0');
   image[0xFFFE] = static_cast<char>(kLdaAbs);

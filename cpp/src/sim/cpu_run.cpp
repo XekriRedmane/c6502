@@ -140,6 +140,10 @@ std::string respond(const json::Value& kwargs, std::string_view image) {
             static_cast<std::uint8_t>(unsigned_of(pair.items[1], "patch value"));
       }
     }
+    Cpu::Limits segment_limits = limits;
+    if (const json::Value* n = seg.get("instructions"); n != nullptr && n->kind != json::Value::Kind::kNull) {
+      segment_limits.max_instructions = unsigned_of(*n, "segment's instructions");
+    }
     digests.clear();
     written.reset();
     log.clear();
@@ -148,7 +152,7 @@ std::string respond(const json::Value& kwargs, std::string_view image) {
     std::uint64_t instructions = 0;
     std::string error;
     try {
-      const Cpu::RunResult result = cpu.run(limits);
+      const Cpu::RunResult result = cpu.run(segment_limits);
       stop = stop_name(result.stop);
       instructions = result.instructions;
     } catch (const CpuError& e) {

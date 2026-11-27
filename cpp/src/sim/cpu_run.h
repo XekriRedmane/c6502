@@ -30,12 +30,16 @@ std::uint32_t digest(const Cpu& cpu, const std::vector<std::pair<std::uint16_t, 
 //     stop_at_brk      whether a segment stops at an opcode of $00
 //     max_cycles       the cycle count at which a segment stops
 //     max_instructions the instructions after which a segment stops, or null
-//     segments         a list of {pc, a, x, y, sp, p, cycles, patches}
+//     segments         a list of {pc, a, x, y, sp, p, cycles, patches,
+//                      instructions}
 //
 // and whose memory starts as `image`, 65,536 bytes. Each segment sets
 // the registers and the cycle count, stores each `[address, value]` of
 // `patches` in memory, and runs the CPU from there with memory as the
-// segment before it left it. The checks before each instruction come in
+// segment before it left it. A segment's `instructions`, when it is
+// there and not null, takes the place of `max_instructions` for it, so
+// that a game machine's run, whose I/O writes memory between two
+// instructions, is a segment for each stretch between two such writes. The checks before each instruction come in
 // the order of the harness's `run`: the cycles, the instructions, the
 // stops, and BRK. The response has, for each segment k,
 //

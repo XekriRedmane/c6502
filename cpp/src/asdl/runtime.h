@@ -1,7 +1,7 @@
-// The support code of the IR classes that `asdl.py --cpp` generates:
-// the integer type of an ASDL `int`, the box that holds a recursive
-// field, the dump format's reader and writer, and the helpers that
-// stand in for Python's `isinstance`.
+// The support code of the IR classes that asdlgen (cpp/tools/asdlgen.h)
+// generates: the integer type of an ASDL `int`, the box that holds a
+// recursive field, the dump format's reader and writer, and the helpers
+// that stand in for Python's `isinstance`.
 #pragma once
 
 #include <cstddef>

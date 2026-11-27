@@ -3,9 +3,10 @@ ASDL-defined IRs, which the C++ port reads and writes too.
 
 `dump(value)` returns the text and `load(text, module)` returns the
 value, equal (`==`) to the one dumped. The C++ side's readers and
-writers are generated from the same .asdl files by `asdl.py --cpp`
-(cpp/src/asdl/runtime.h and cpp/generated/), and a value dumped by
-either side and read by the other is dumped again as the same bytes.
+writers are generated from the same .asdl files by asdlgen
+(cpp/tools/asdlgen.h, cpp/src/asdl/runtime.h, and cpp/generated/), and
+a value dumped by either side and read by the other is dumped again as
+the same bytes.
 This module builds its readers and writers from the .asdl files when
 it is first used on a module, so the two sides follow the same schema.
 

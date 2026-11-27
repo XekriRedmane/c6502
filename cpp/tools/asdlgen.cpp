@@ -295,6 +295,8 @@ bool is_cpp_keyword(std::string_view name) {
 
 const std::string kRt = "::c6502::asdl";
 
+const std::string kGeneratedBy = " by asdlgen (cpp/tools/asdlgen.h). Do not edit.";
+
 std::string field_name(const Field& f) { return f.name ? *f.name : f.type; }
 
 // A field named after a C++ keyword, such as `const`, gets a trailing
@@ -474,7 +476,7 @@ std::vector<Field> py_fields(const Type& t, const Constructor& c) {
 std::string cpp_header(const Module& mod, std::string_view source, std::string_view name) {
   const std::string ns(name);
   Lines out{
-      "// Generated from " + std::string(source) + " by `asdl.py --cpp`. Do not edit.",
+      "// Generated from " + std::string(source) + kGeneratedBy,
       "#pragma once",
       "",
       "#include <cstdint>",
@@ -834,7 +836,7 @@ Lines index_switch(const std::string& head, const Type& t, const std::string& be
 std::string cpp_source(const Module& mod, std::string_view source, std::string_view name) {
   const std::string ns(name);
   Lines out{
-      "// Generated from " + std::string(source) + " by `asdl.py --cpp`. Do not edit.",
+      "// Generated from " + std::string(source) + kGeneratedBy,
       "#include \"" + ns + ".h\"",
       "",
       "#include <utility>",

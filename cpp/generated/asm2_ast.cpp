@@ -1,4 +1,4 @@
-// Generated from asm2.asdl by `asdl.py --cpp`. Do not edit.
+// Generated from asm2.asdl by asdlgen (cpp/tools/asdlgen.h). Do not edit.
 #include "asm2_ast.h"
 
 #include <utility>

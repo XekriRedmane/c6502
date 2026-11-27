@@ -544,17 +544,15 @@ describes each tool.
 
 ### Regenerating the AST modules
 
-Each `*_ast.py` module, and the C++ IR classes in `cpp/generated/`,
-are generated from the matching `.asdl` file by `asdl.py`. After
-editing an ASDL file, regenerate both.
+Each `*_ast.py` module is generated from the matching `.asdl` file
+by `asdl.py`, and the C++ IR classes in `cpp/generated/` by asdlgen
+(`cpp/tools/asdlgen.h`), which the C++ build runs. After editing an
+ASDL file, regenerate the Python modules and build the compiler, and
+commit the files in `cpp/generated/` that the build rewrote.
 
 ```sh
 uv run python asdl.py c99.asdl c99_ast.py
 uv run python asdl.py tac.asdl tac_ast.py
 uv run python asdl.py asm.asdl asm_ast.py
 uv run python asdl.py asm2.asdl asm2_ast.py
-uv run python asdl.py --cpp c99.asdl cpp/generated
-uv run python asdl.py --cpp tac.asdl cpp/generated
-uv run python asdl.py --cpp asm.asdl cpp/generated
-uv run python asdl.py --cpp asm2.asdl cpp/generated
 ```

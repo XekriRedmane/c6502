@@ -53,8 +53,13 @@ path in `C6502_CPP`, and are skipped when it isn't built.
 On 19 Nov 2026 the build was clean with MSVC 19.36 (Build Tools 14.36),
 and with GCC 12.2 and Clang 14.0.6 on Debian 12 in WSL.
 
-The build makes three targets.
+The build makes these targets.
 
+- `asdlgen`, the generator of the IR classes in `generated/`
+  (`tools/asdlgen_main.cpp`, with the parser and the generator in
+  `tools/asdlgen.*` as the library `asdlgen_lib`). It uses none of the
+  generated code, and the target `asdl_generated` runs it before
+  `c6502` is built ("The IR classes").
 - `c6502`, a static library with all of the compiler's code (`src/`
   and `generated/`). A `.cpp` file added under `src/`, `src/asdl/`,
   `src/passes/`, `src/passes/optimization/`,
@@ -73,7 +78,7 @@ cpp/
   CMakeLists.txt
   generated/          checked in
     asm_ast.h/.cpp    one header and one source per .asdl module, which
-                      asdl.py --cpp writes, never edited
+                      asdlgen writes, never edited
     rtlib_helpers.cpp the runtime helpers of rtlib/helpers.py, which
                       tools/rtlib_table.py writes, never edited
     c99_lalr.cpp      the tables of the C parser (lark_table.h), which
@@ -307,11 +312,19 @@ compile time matters for a suite that will grow to cover every pass.
 
 ## The IR classes
 
-`uv run python asdl.py --cpp <name>.asdl cpp/generated` writes
-`<name>_ast.h` and `<name>_ast.cpp`, in namespace `c6502::<name>_ast`.
-`tests/test_asdl_cpp.py` checks that the checked-in files are what the
-generator writes, so an `.asdl` change needs this run for all four
-modules.
+asdlgen (`tools/asdlgen.h`) writes `<name>_ast.h` and `<name>_ast.cpp`
+from `<name>.asdl`, in namespace `c6502::<name>_ast`. It is a port of
+the C++ half of asdl.py, made in step 9 of the port, and it wrote the
+eight files byte for byte as `asdl.py --cpp` did. The build runs it on
+the four `.asdl` files at the root (`add_custom_command` in
+CMakeLists.txt) whenever one of them or the tool is newer than the
+last run's stamp, and it rewrites only the files whose bytes differ.
+The files stay checked in, so a change to an `.asdl` file is committed
+with the generated diff that its build wrote. The ctest case
+`check_asdl` runs `asdlgen --check`, which compares the files with what
+it would write without writing them, and the doctest case
+"regenerating the IR classes gives the checked-in files" does the
+same, so a hand edit of a generated file fails both.
 
 The names follow the Python modules. Each constructor is a struct with
 the constructor's name and its fields as members, in the `.asdl`'s
@@ -345,7 +358,7 @@ A field whose type is in a cycle with its struct's type (an `exp` in
 `asdl::Box<T>`, a pointer with value semantics. Copying a box copies
 the value and `==` compares values. A box takes a `T` or any
 constructor of `T`, so `ptr.referenced_type = c99_ast::Char{}` works.
-`asdl.py` finds the cycles from the strongly connected components of
+asdlgen finds the cycles from the strongly connected components of
 the fields' types, so the asm IR, which has none, has no boxes.
 
 An ASDL `int` is `asdl::Int`, a signed 128-bit integer (`__int128` on
@@ -1164,7 +1177,7 @@ These pieces of the front end are ported.
 - `diagnostics` (`src/diagnostics.*`): `CompileWarning`, `warn`, and
   `Collecting`, the RAII form of `collecting()`, whose innermost block
   is kept per thread as Python keeps it in a context variable.
-- Python's `repr` of every IR value. `asdl.py --cpp` writes a `repr`
+- Python's `repr` of every IR value. asdlgen writes a `repr`
   for each struct and sum type beside the dump format's functions, the
   dataclass's `ClassName(field=value, ...)` with the fields in the
   `.asdl`'s order, and `asdl::py_repr(v)` returns it. Strings go through
@@ -2202,7 +2215,7 @@ which run the parser, `passes::resolved` (compile.py's `_resolved`, with
 the unroller under `-O`), or `_resolved`, the type checker, and
 `c99_to_tac` followed under `-O` by the inliner and the TAC optimizer
 only, as `_run_stage` does, and return `asdl::py_pretty` of the tree.
-`asdl.py --cpp` generates a `pretty` for each struct and sum type of
+asdlgen generates a `pretty` for each struct and sum type of
 the four IRs, which writes pretty.py's text: the class name, a
 `name=value,` line for each field with two spaces of indentation per
 level, in the order of `dataclasses.fields` (a sum type's attributes

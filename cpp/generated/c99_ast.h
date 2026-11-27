@@ -1,4 +1,4 @@
-// Generated from c99.asdl by `asdl.py --cpp`. Do not edit.
+// Generated from c99.asdl by asdlgen (cpp/tools/asdlgen.h). Do not edit.
 #pragma once
 
 #include <cstdint>

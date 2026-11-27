@@ -1,4 +1,4 @@
-// Generated from tac.asdl by `asdl.py --cpp`. Do not edit.
+// Generated from tac.asdl by asdlgen (cpp/tools/asdlgen.h). Do not edit.
 #pragma once
 
 #include <cstdint>

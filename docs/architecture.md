@@ -94,9 +94,9 @@ that the tests run the code the command line writes.
 
 ## The four IRs
 
-Each IR is declared in an ASDL file, and `asdl.py` generates a module
-of Python dataclasses from it and, with `--cpp`, the C++ classes in
-cpp/generated/. A sum type's base class is `Type_<name>`, and
+Each IR is declared in an ASDL file, from which `asdl.py` generates a
+module of Python dataclasses and asdlgen (cpp/tools/asdlgen.h) the C++
+classes in cpp/generated/. A sum type's base class is `Type_<name>`, and
 each constructor keeps its ASDL name.
 
 | IR | Declared in | Made by | What it holds |

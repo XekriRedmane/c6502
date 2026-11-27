@@ -243,7 +243,7 @@ def stage_source(
     """Returns what `compile.py` prints for the C source `source` at
     `stage`, one of "lex", "parse", "resolve", and "tac", as
     `lex_source` does for "lex". For the other three it is the `pretty`
-    text (cpp/generated/, `asdl.py --cpp`) of the c99 program after the
+    text (cpp/generated/, written by asdlgen) of the c99 program after the
     parser, of the program after the passes that resolve names, or of
     the TAC after `c99_to_tac` (and under `-O`, `optimize`, after the
     inliner, unless `inline` is false, and the TAC optimizer). With the

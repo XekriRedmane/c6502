@@ -1,3 +1,4 @@
+import os
 import textwrap
 import unittest
 
@@ -322,6 +323,18 @@ class TestRealistic(unittest.TestCase):
         self.assertEqual(f.name, "main")
         self.assertEqual(len(f.body), 2)
         self.assertIsNone(f.body[1].value)
+
+
+class TestCheckedInModules(unittest.TestCase):
+    def test_python_output_is_unchanged(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for stem in ("asm", "asm2", "tac", "c99"):
+            with self.subTest(module=stem):
+                with open(os.path.join(root, f"{stem}.asdl"),
+                          encoding="utf-8") as f:
+                    code = generate(parse(f.read()), source=f"{stem}.asdl")
+                with open(os.path.join(root, f"{stem}_ast.py"), "rb") as f:
+                    self.assertEqual(f.read().decode("utf-8"), code)
 
 
 if __name__ == "__main__":

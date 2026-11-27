@@ -4,16 +4,15 @@ an access through `&obj + k` into a direct access to byte `k` of
 statics and of automatic aggregates.
 
 Each program runs on the unoptimized TAC and through both pipelines,
-and all three must agree with the expected value. The shape tests
-check that a member store to a global is a plain `STA g+k`, and that
-a local struct whose address no longer escapes gets zero-page slots
-instead of a pointer.
+and all three must agree with the expected value. The shape tests in
+cpp/tests/test_direct_member_access_source.cpp check that a member
+store to a global is a plain `STA g+k`, and that a local struct whose
+address no longer escapes gets zero-page slots instead of a pointer.
 """
 from __future__ import annotations
 
 import unittest
 
-from compile import _run_source
 from sim.harness import build_sim
 from tests.test_sim_chapters import _run_program
 from tests.cpp_build import needs_c6502cpp
@@ -23,10 +22,6 @@ _S = "struct s { unsigned char a; int b; unsigned char c; };\n"
 
 def _tac_main(src: str) -> int:
     return _run_program(src)
-
-
-def _codegen(src: str) -> str:
-    return _run_source("codegen", src, optimize=True)
 
 
 @needs_c6502cpp
@@ -126,44 +121,6 @@ class TestDirectMemberAccessSim(unittest.TestCase):
             "    return r.b * 10 + r.c;\n"
             "}\n"
         ), 45 * 10 + 5)
-
-
-@needs_c6502cpp
-class TestDirectMemberAccessShape(unittest.TestCase):
-
-    def test_global_member_store_is_absolute(self):
-        asm = _codegen(_S + (
-            "struct s g;\n"
-            "void f(unsigned char x) { g.c = x; }\n"
-            "int main(void) { f(1); return g.c; }\n"
-        ))
-        f = asm.split("\nf:")[1].split("\nmain:")[0]
-        self.assertIn("STA   g+3", f)
-        self.assertNotIn("(", f)
-
-    def test_volatile_stores_kept(self):
-        # Both stores to a volatile array element stay, in order.
-        asm = _codegen(
-            "volatile unsigned char port[2];\n"
-            "void f(void) { port[1] = 1; port[1] = 2; }\n"
-            "int main(void) { f(); return 0; }\n"
-        )
-        f = asm.split("\nf:")[1].split("\nmain:")[0]
-        self.assertEqual(f.count("STA   port+1"), 2)
-        self.assertLess(f.index("#$01"), f.index("#$02"))
-
-    def test_local_struct_has_no_pointer(self):
-        asm = _codegen(_S + (
-            "unsigned char f(unsigned char x) {\n"
-            "    struct s r;\n"
-            "    r.a = x; r.c = x + 1;\n"
-            "    return r.a + r.c;\n"
-            "}\n"
-            "int main(void) { return f(1); }\n"
-        ))
-        f = asm.split("\nf:")[1].split("\nmain:")[0]
-        self.assertNotIn("#<", f)
-        self.assertNotIn("(", f)
 
 
 if __name__ == "__main__":

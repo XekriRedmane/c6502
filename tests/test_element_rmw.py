@@ -8,7 +8,9 @@ relaxation to zp,X, and dasm) is in `test_binutils.py`.
 
 The tests that called the Python functions directly are doctest cases of
 the C++ port now, each named for the test it came from
-(docs/cpp_port.md, step 8, group G6)."""
+(docs/cpp_port.md, step 8, group G6).
+
+The `-S` text is checked in cpp/tests/test_element_rmw.cpp."""
 from __future__ import annotations
 
 import unittest
@@ -42,11 +44,6 @@ class TestEmit(unittest.TestCase):
             bytes([op, tab & 0xFF, tab >> 8])
             for op in (0xFE, 0xDE, 0x1E, 0x5E, 0x3E, 0x7E)) + b"\x60")
         self.assertEqual(instruction_size(asm_ast.Inc(dst=_E)), 3)
-
-
-def _asm(src: str, optimize: bool) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=optimize)
 
 
 _PROGRAM = """
@@ -174,14 +171,6 @@ class TestPrograms(unittest.TestCase):
             with self.subTest(optimize=optimize):
                 result = build_sim(src, optimize=optimize).run()
                 self.assertEqual(result.return_int(), 9)
-
-    def test_optimized_code_uses_the_indexed_forms(self) -> None:
-        text = _asm(_PROGRAM, True)
-        for op in ("DEC", "INC", "ASL", "LSR"):
-            self.assertRegex(text, rf"(?m)^   {op}   a,X$")
-        body = text[text.index("timers:"):text.index("main:")]
-        self.assertNotRegex(body, r"STA   a,X")
-        self.assertRegex(body, r"DEC   a,X")
 
 
 if __name__ == "__main__":

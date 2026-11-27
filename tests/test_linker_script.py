@@ -1,16 +1,14 @@
 """Tests for linker scripts (`compile.py -T`) and
 `[[c6502::section("name")]]`.
 
-Covers the script parser (cpp/src/passes/link_script.h), the attribute in the
-parser and type checker, each item's default section
-(cpp/src/passes/sections.h), renaming internal names two units share, and
-linked programs laid out by a script (cpp/src/passes/link_layout.h): run
-in the simulator, with `.data` copied from ROM, a NOLOAD `.bss`
-cleared, a section at a fixed address, page alignment, and a link
-that fails on a region that overflows or a section outside the
-6502's address space. It also covers functions
-that end by jumping to another falling into it instead
-(`link_layout.fall_through`), and `(NOREORDER)`.
+Covers linked programs laid out by a script
+(cpp/src/passes/link_layout.h), run in the simulator with `.data`
+copied from ROM, a NOLOAD `.bss` cleared, a section at a fixed
+address, and page alignment, a function that ends by jumping to
+another unit's falling into it (`link_layout.fall_through`), and
+internal names two units share. The tests that read the `-S` text or
+the linked program's text, and the link errors, are doctest cases in
+cpp/tests/test_linker_script_source.cpp.
 """
 from __future__ import annotations
 
@@ -18,14 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from errors import ParserError, TypeCheckError
 from tests.cpp_build import needs_c6502cpp
-
-
-
-def _codegen(src: str) -> str:
-    from compile import _run_source
-    return _run_source("codegen", src, optimize=True)
 
 
 def _link(sources: list[str], script: str | None = None,
@@ -99,86 +90,7 @@ _EXPECTED = 147
 
 
 @needs_c6502cpp
-class TestSectionAttribute(unittest.TestCase):
-
-    def _items(self, src: str) -> dict[str, str]:
-        asm = _codegen(src)
-        out = {}
-        for line in asm.splitlines():
-            if line.startswith("; item "):
-                parts = line.split()
-                out[parts[2]] = dict(p.split("=") for p in parts[3:])["section"]
-        return out
-
-    def test_default_sections(self) -> None:
-        items = self._items(
-            "const unsigned char k[2] = {1, 2};\n"
-            "unsigned char z[2];\n"
-            "unsigned char d[2] = {3, 4};\n"
-            "int main(void) { const char *s = \"hi\"; "
-            "return k[0] + z[0] + d[0] + s[0]; }\n"
-        )
-        self.assertEqual(items["main"], ".text")
-        self.assertEqual(items["k"], ".rodata")
-        self.assertEqual(items["z"], ".bss")
-        self.assertEqual(items["d"], ".data")
-        self.assertEqual(items["str@0"], ".rodata")
-
-    def test_named_sections(self) -> None:
-        items = self._items(
-            "[[c6502::section(\".text.boot\")]] int main(void);\n"
-            "unsigned char t [[c6502::section(\".page\")]][2] = {1, 2};\n"
-            "int f(void) { static int n [[c6502::section(\".noinit\")]];"
-            " return ++n; }\n"
-            "int main(void) { return t[0] + f(); }\n"
-        )
-        self.assertEqual(items["main"], ".text.boot")
-        self.assertEqual(items["t"], ".page")
-        self.assertEqual(items["@0.n"], ".noinit")
-
-    def test_errors(self) -> None:
-        main = "int main(void) { return 0; }\n"
-        for src, error in [
-            ("int g [[c6502::section(1)]];\n", ParserError),
-            ("int g [[c6502::section(\"1x\")]];\n", ParserError),
-            ("int f(void) { int x [[c6502::section(\".d\")]] = 1;"
-             " return x; }\n", TypeCheckError),
-            ("unsigned char g [[c6502::zeropage, c6502::section(\".d\")]];\n",
-             TypeCheckError),
-            ("extern unsigned char g [[c6502::address(0xC000), c6502::"
-             "section(\".d\")]];\n", TypeCheckError),
-            ("int g [[c6502::section(\".a\")]];\n"
-             "int g [[c6502::section(\".b\")]];\n", TypeCheckError),
-        ]:
-            with self.subTest(src=src):
-                with self.assertRaises(error):
-                    _codegen(src + main)
-
-
-@needs_c6502cpp
 class TestScriptedLink(unittest.TestCase):
-
-    def test_sections_laid_out(self) -> None:
-        rc, text, err = _link([_UNIT_A, _UNIT_B], _ROM_SCRIPT)
-        self.assertEqual(rc, 0, err)
-        self.assertIn("   SEG   text\n   ORG   $8000\n", text)
-        self.assertIn("   SEG.U bss\n", text)
-        self.assertIn("   RORG  $0800\n", text)
-        self.assertIn("   ORG   $BFFA\n", text)
-        # `main`, from .text.boot, comes before `pick`.
-        self.assertLess(text.index("\nmain:"), text.index("\npick:"))
-
-    def test_sections_by_file(self) -> None:
-        # The second unit's code goes first, by its file's name.
-        script = _ROM_SCRIPT.replace(
-            ".text : { *(.text.boot) *(.text .text.*) } > rom",
-            ".first : { u1.o(.text .text.*) } > rom\n"
-            "    .text : { *(.text.boot) *(.text .text.*) } > rom",
-        )
-        rc, text, err = _link([_UNIT_A, _UNIT_B], script)
-        self.assertEqual(rc, 0, err)
-        self.assertLess(text.index("\npick:"), text.index("\nmain:"))
-        self.assertIn("   SEG   first\n   ORG   $8000\n", text)
 
     def test_runs_with_data_copied_and_bss_cleared(self) -> None:
         from sim.linked import build_linked_sim
@@ -198,64 +110,6 @@ class TestScriptedLink(unittest.TestCase):
         self.assertEqual(sim.run().return_int(), _EXPECTED)
         mem = sim.mpu.memory
         self.assertEqual(mem[0xBFFA] | mem[0xBFFB] << 8, 0x8000)
-
-    def test_region_overflow_rejected(self) -> None:
-        small = _ROM_SCRIPT.replace("LENGTH = 16K", "LENGTH = 0x40")
-        rc, _, err = _link([_UNIT_A, _UNIT_B], small)
-        self.assertEqual(rc, 1)
-        self.assertRegex(
-            err, r"section \.\w+ runs past the end of region rom by \d+ bytes",
-        )
-
-    def test_origin_outside_address_space_rejected(self) -> None:
-        # The last is too wide for the C++ linker's 64-bit addresses.
-        for origin, shown in (("0x10000", "$10000"), ("-1", "-$0001"),
-                              ("0x10000000000000000", "$10000000000000000")):
-            with self.subTest(origin=origin):
-                rc, _, err = _link([_UNIT_A, _UNIT_B],
-                                   extra=[f"-Ttext={origin}"])
-                self.assertEqual(rc, 1)
-                self.assertIn(
-                    f"link error: the origin {shown} is outside the "
-                    f"6502's address space ($0000-$FFFF)", err,
-                )
-
-    def test_section_past_the_top_of_memory_rejected(self) -> None:
-        rc, _, err = _link([_UNIT_A, _UNIT_B], extra=["-Ttext=0xFFF0"])
-        self.assertEqual(rc, 1)
-        self.assertRegex(
-            err, r"section \.text runs at \$FFF0 with \d+ bytes, outside "
-                 r"the 6502's address space \(\$0000-\$FFFF\)",
-        )
-
-    def test_load_address_outside_address_space_rejected(self) -> None:
-        script = _ROM_SCRIPT.replace("ORIGIN = 0x8000", "ORIGIN = 0xFFF0")
-        script = script.replace("LENGTH = 16K", "LENGTH = 1K")
-        rc, _, err = _link([_UNIT_A, _UNIT_B], script)
-        self.assertEqual(rc, 1)
-        self.assertRegex(
-            err, r"section \.\w+ (runs|loads) at \$[0-9A-F]+ with \d+ "
-                 r"bytes, outside the 6502's address space",
-        )
-
-    def test_unplaced_section_rejected(self) -> None:
-        script = _ROM_SCRIPT.replace("*(.page)", "*(.nothing)")
-        rc, _, err = _link([_UNIT_A, _UNIT_B], script)
-        self.assertEqual(rc, 1)
-        self.assertIn("no output section in the script takes `squares`", err)
-
-    def test_initialized_object_in_noload_rejected(self) -> None:
-        script = _ROM_SCRIPT.replace("*(.bss .bss.*)", "*(.bss .bss.* .data)")
-        script = script.replace(".data : { *(.data .data.*) }",
-                                ".data : { *(.data.*) }")
-        rc, _, err = _link([_UNIT_A, _UNIT_B], script)
-        self.assertEqual(rc, 1)
-        self.assertIn("NOLOAD", err)
-
-    def test_bad_script_reported(self) -> None:
-        rc, _, err = _link([_UNIT_B], "SECTIONS { .text : { *(.text) } > r }")
-        self.assertEqual(rc, 1)
-        self.assertIn("doesn't define", err)
 
 
 @needs_c6502cpp
@@ -286,21 +140,6 @@ SECTIONS
 }
 """
 
-    def test_falls_into_other_unit(self) -> None:
-        rc, text, err = _link([self._MAIN, self._FINISH], self._SCRIPT % "")
-        self.assertEqual(rc, 0, err)
-        self.assertNotIn("JMP   finish", text)
-        step = text.index("\nstep:")
-        finish = text.index("\nfinish:")
-        self.assertLess(step, finish)
-        self.assertNotIn("RTS", text[step:finish])
-
-    def test_noreorder_keeps_jump(self) -> None:
-        rc, text, err = _link([self._MAIN, self._FINISH],
-                              self._SCRIPT % " (NOREORDER)")
-        self.assertEqual(rc, 0, err)
-        self.assertIn("JMP   finish", text)
-
     def test_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([self._MAIN, self._FINISH], self._SCRIPT % "")
@@ -321,23 +160,12 @@ class TestNames(unittest.TestCase):
           "unsigned char b(void) { const char *s = \"B\"; hits++; "
           "return hits + s[0]; }\n")
 
-    def test_renamed(self) -> None:
-        rc, text, err = _link([self._A, self._B])
-        self.assertEqual(rc, 0, err)
-        self.assertIn("str@0.1", text)
-
     def test_runs(self) -> None:
         from sim.linked import build_linked_sim
         rc, text, err = _link([self._A, self._B])
         self.assertEqual(rc, 0, err)
         self.assertEqual(build_linked_sim(text.exe).run().return_int(),
                          2 + ord("A") + 11 + ord("B"))
-
-    def test_external_name_defined_twice(self) -> None:
-        rc, _, err = _link(["int g = 1;\nint main(void) { return g; }\n",
-                            "int g = 2;\n"])
-        self.assertEqual(rc, 1)
-        self.assertIn("`g` is defined in multiple TUs", err)
 
 
 if __name__ == "__main__":

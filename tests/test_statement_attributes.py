@@ -6,24 +6,17 @@ attributes before a statement, the errors for each attribute where it
 doesn't apply, and the error for the `#pragma c6502` lines they
 replaced. cpp/tests/test_unroll.cpp, cpp/tests/test_unroll_source.cpp,
 and tests/test_recursion_saves.py test what `unroll` and
-`save_hardware_stack` do."""
+`save_hardware_stack` do.
+
+The `--tac -O` text of a kept loop is checked in
+cpp/tests/test_statement_attributes.cpp."""
 
 from __future__ import annotations
 
 import unittest
 
-from compile import _run_source
-
 
 class TestLoopAttributes(unittest.TestCase):
-
-    def test_keep_keeps_a_delay_loop(self) -> None:
-        for attribute, kept in (("", False), ("[[c6502::keep]] ", True)):
-            with self.subTest(attribute=attribute):
-                tac = _run_source("tac", "void f(void) { " + attribute
-                    + "for (unsigned char y = 0xB4; --y;) { } }", optimize=True)
-                self.assertEqual("_keep_start" in tac, kept)
-                self.assertEqual("Jump(" in tac, kept)
 
     def test_break_and_continue_in_a_kept_loop(self) -> None:
         # A `break` or `continue` carries the loop's label without

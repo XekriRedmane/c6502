@@ -855,8 +855,6 @@ int framed(const std::vector<std::string>& argv) {
   return 0;
 }
 
-// Whether `root` is a c6502 checkout, which holds compile.py and
-// include/stdint.h.
 bool is_checkout(const fs::path& root) {
   std::error_code ec;
   return fs::is_regular_file(root / "compile.py", ec) &&

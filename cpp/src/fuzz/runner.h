@@ -1,5 +1,5 @@
 // Runs a C program on the three execution paths and compares main's
-// return, ported from fuzz/runner.py.
+// return.
 //
 //   * `tac`, the TAC interpreter (src/tac_sim.h) on the unoptimized TAC;
 //   * `unopt`, the simulator on the program compiled as `-S` compiles it;

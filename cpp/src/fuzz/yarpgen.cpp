@@ -41,7 +41,6 @@ long process_id() {
 #endif
 }
 
-// A new directory, removed with what it holds when the object goes.
 class ScratchDir {
  public:
   explicit ScratchDir(const std::string& name) : path_(fs::temp_directory_path() / name) {

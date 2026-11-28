@@ -142,8 +142,6 @@ bool falls_off_end(const std::string& source, const passes::FrontEndOptions& opt
   } catch (const CompileError&) {
     return false;
   } catch (const InternalError&) {
-    // Python's `falls_off_end` takes any exception of the front end as
-    // an invalid candidate.
     return false;
   }
   tac_sim::Outcome o;

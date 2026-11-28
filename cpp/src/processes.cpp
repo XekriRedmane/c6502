@@ -22,8 +22,7 @@ namespace c6502::processes {
 namespace {
 
 #ifdef _WIN32
-// Quotes `arg` for CommandLineToArgvW, as Python's
-// `subprocess.list2cmdline` does.
+// Quotes `arg` by the rules CommandLineToArgvW splits a command line by.
 std::wstring quote_arg(const std::wstring& arg) {
   if (!arg.empty() && arg.find_first_of(L" \t\"") == std::wstring::npos) return arg;
   std::wstring out = L"\"";

@@ -1,6 +1,3 @@
-// The front end and the runs of the TAC interpreter (src/tac_sim.h)
-// that the fuzzers (src/fuzz/) and check-golden's `tacsim` jobs take,
-// and the modes of `c6502cpp backend` that give them.
 #pragma once
 
 #include <optional>
@@ -33,9 +30,7 @@ Translated translate(const std::string& source, const passes::FrontEndOptions& o
                      std::string& err, bool fell_off = false);
 
 // What `main` returns on the TAC of `t`, and on the TAC after the TAC
-// optimizer, as fuzz/reduce.py's `_tac_results` reads them. The
-// optimizer runs only when the first run raised nothing, since Python
-// raises the first run's error.
+// optimizer. `optimized` is empty when the first run raised an error.
 struct PlainAndOptimized {
   tac_sim::Outcome plain;
   std::optional<tac_sim::Outcome> optimized;
@@ -45,8 +40,7 @@ PlainAndOptimized run_plain_and_optimized(Translated t);
 // The first step of the TAC optimizer after which `main` returns
 // something other than on the unoptimized TAC, with the function the
 // step changed and both results. A step is named by the Python class of
-// its pass (`NamedPass::class_name`), as fuzz/tac_passes.py named it,
-// or `to_ssa` or `from_ssa`.
+// its pass (`NamedPass::class_name`), or `to_ssa` or `from_ssa`.
 struct ChangingPass {
   std::string function;
   std::string pass;
@@ -54,17 +48,11 @@ struct ChangingPass {
   tac_sim::Outcome got;
 };
 
-// Returns fuzz/tac_passes.py's `first_changing_pass` of `t`: it runs
-// `main` on the TAC, then optimizes the program, and after each step of
-// the optimizer's driver (`framework::set_observer`) runs `main` on the
-// program with the function at that step. Returns none when no step
-// changes `main`'s result.
 std::optional<ChangingPass> first_changing_pass(Translated& t);
 
-// Returns fuzz/reduce.py's `falls_off_end` of `source`: whether a run of
-// `main` on the TAC reaches the end of a function, other than `main`,
-// that returns a value. A program that the front end rejects, or that
-// raises any other error, gives false.
+// Returns whether a run of `main` on the TAC of `source` reaches the end
+// of a function, other than `main`, that returns a value. A program that
+// the front end rejects, or that raises any other error, gives false.
 bool falls_off_end(const std::string& source, const passes::FrontEndOptions& options,
                    std::string& err);
 

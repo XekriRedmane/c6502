@@ -74,7 +74,6 @@ void err(const std::string& text) {
   std::fflush(stderr);
 }
 
-// The checkout's paths and the runner, found from the executable.
 struct Setup {
   explicit Setup(const std::string& self)
       : self(processes::self_path(self)),
@@ -97,8 +96,6 @@ GeneratedProgram make_program(Generator g, Int seed, const Setup& setup) {
   throw std::logic_error("no such generator");
 }
 
-// What one seed gave: its program, each path's result, and the paths
-// that got it wrong.
 struct SeedOutcome {
   std::string source;
   Results results;
@@ -113,8 +110,6 @@ SeedOutcome check_seed(Generator g, Int seed, const Setup& setup) {
   o.source = std::move(p.source);
   return o;
 }
-
-// --- A worker's record of one seed ---
 
 void put_section(std::string& rec, const std::string& key, const std::string& body) {
   rec += key + " " + std::to_string(body.size()) + "\n" + body;
@@ -171,8 +166,6 @@ SeedOutcome outcome_of(const std::string& rec) {
   return o;
 }
 
-// --- The command lines ---
-
 bool is_int(const std::string& text) {
   try {
     py_int::parse(text, 10, "");
@@ -199,8 +192,6 @@ long process_id() {
 #endif
 }
 
-// Writes one seed's lines, and saves a wrong program. Returns whether
-// the program was wrong, and counts a rejection in `rejected`.
 bool report(const std::string& prog, std::int64_t seed, const SeedOutcome& o, const fs::path& dir,
             bool verbose, int& rejected) {
   const std::string head = "seed " + std::to_string(seed) + ": ";
@@ -252,8 +243,6 @@ int fuzz_main(Generator g, const std::string& prog, const std::vector<std::strin
       wrong += report(prog, seed, check_seed(g, seed, setup), dir, verbose, rejected) ? 1 : 0;
     }
   } else {
-    // A process per seed, since the compiler keeps some of its state in
-    // globals, and the records come back in seed order.
     const fs::path records = fs::temp_directory_path() / ("c6502-fuzz-" + std::to_string(process_id()));
     fs::create_directories(records);
     auto record_path = [&](std::int64_t seed) {
@@ -299,7 +288,6 @@ int fuzz_main(Generator g, const std::string& prog, const std::vector<std::strin
   return wrong != 0 ? 1 : 0;
 }
 
-// `fuzz worker GENERATOR SEED FILE`, which `-j` starts for each seed.
 int worker(const std::vector<std::string>& args, const Setup& setup) {
   const std::optional<Generator> g = args.size() == 3 ? generator_named(args[0]) : std::nullopt;
   if (!g) {
@@ -338,8 +326,6 @@ int programs(const std::vector<std::string>& args, const Setup& setup) {
   return 0;
 }
 
-// Returns the files `run` checks: each file named, and the `.c` files of
-// each directory named, sorted as Python sorts paths.
 std::vector<fs::path> files_of(const std::vector<std::string>& paths) {
   std::vector<fs::path> files;
   for (const std::string& p : paths) {
@@ -355,7 +341,6 @@ std::vector<fs::path> files_of(const std::vector<std::string>& paths) {
     auto key = [](const fs::path& f) {
       std::string k = compile_command::path_text(f);
 #ifdef _WIN32
-      // A Windows path compares without case.
       for (char& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 #endif
       return k;

@@ -10,13 +10,12 @@ checker, then `c99_to_tac`, under `-O` the inliner,
 page, code generation, the asm back end's region (or the unoptimized
 peephole fixed point and long branches), the work after it that reads
 the asm program, `asm_to_asm2`, and emission, and returns the `-S` text.
-Under `C6502_CHECK_IR=1`, the request's
-`check_ir` turns on the IR checks (cpp/src/passes/ir_check.h), which
-check the IR after each pass, and a failed check comes back as the
-AssertionError of an internal error, with the message of
-`IRCheckError`. Without `emit`, the C++ side stops before `asm_to_asm2`
-and returns the finished asm program with its slot symbols, which the
-simulator harness assembles.
+Under `C6502_CHECK_IR=1`, the request's `check_ir` turns on the IR
+checks (cpp/src/passes/ir_check.h), which check the IR after each pass,
+and a failed check comes back as the AssertionError of an internal
+error, with the message of `IRCheckError`. Without `emit`, the C++
+side stops before `asm_to_asm2` and returns the finished asm program
+with its slot symbols, which the simulator harness assembles.
 
 `lex_source` sends the same request in the mode `lex`, which runs only
 the preprocessor and the lexer and returns the text `compile.py --lex`
@@ -309,7 +308,6 @@ def compile_source(
 
 
 def _ir_check_enabled() -> bool:
-    """Whether the IR checks are on, which `C6502_CHECK_IR=1` asks for."""
     return os.environ.get("C6502_CHECK_IR") == "1"
 
 

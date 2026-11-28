@@ -1,5 +1,5 @@
 // Random programs from YARPGen (https://github.com/intel/yarpgen), run
-// on every c6502 path, ported from fuzz/yarpgen.py.
+// on every c6502 path.
 //
 // YARPGen generates loop nests over arrays and scalars of every integer
 // type, with values it has checked for undefined behavior under its

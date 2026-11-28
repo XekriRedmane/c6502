@@ -21,13 +21,10 @@ namespace c6502::fuzz {
 
 namespace {
 
-// The length fuzz/runner.py cuts an error's message to, in characters.
 constexpr std::size_t kMessageChars = 120;
 
-// The messages of the backend limits (`is_backend_limit`).
 constexpr const char* kBackendLimits[] = {"local_bytes", "frame offset"};
 
-// Returns the first `n` characters of the UTF-8 text `s`.
 std::string first_chars(const std::string& s, std::size_t n) {
   std::size_t i = 0;
   for (std::size_t chars = 0; i < s.size() && chars < n; ++chars) {
@@ -44,20 +41,12 @@ std::string strip(const std::string& s) {
   return s.substr(b, s.find_last_not_of(ws) - b + 1);
 }
 
-// Returns the text of an error result, as fuzz/runner.py writes
-// `ERR {type(e).__name__}: {str(e)[:120]}`. `python_type` is the
-// exception's Python type, whose class name is the part after the last
-// `.` (`struct.error` is `error`).
 Result error_result(const std::string& python_type, const std::string& message) {
   const std::size_t dot = python_type.rfind('.');
   const std::string name = dot == std::string::npos ? python_type : python_type.substr(dot + 1);
   return "ERR " + name + ": " + first_chars(message, kMessageChars);
 }
 
-// The errors as cpp_backend.py raises them from the exit of `c6502cpp
-// backend`: a bug the compiler reports (exit status 3) is an
-// AssertionError with the message after "internal error: ", and any
-// other failure a RuntimeError with the stderr of the process.
 Result internal_error_result(const InternalError& e) {
   std::string m = strip(std::string("internal error: ") + e.what());
   m.erase(0, std::string("internal error: ").size());
@@ -93,7 +82,6 @@ std::int64_t s16(std::int64_t v) {
 Runner::Runner(std::string include_dir) : include_dir_(std::move(include_dir)) {}
 
 Result Runner::run_tac(const std::string& src) const {
-  // fuzz/runner.py turns the IR checks on for every compile.
   const passes::ir_check::Enabled checks(true);
   std::string err;
   std::vector<diagnostics::CompileWarning> warnings;
@@ -149,7 +137,6 @@ Result Runner::run_asm(const std::string& src, bool optimize) const {
   } catch (const sim::HookError& e) {
     return error_result(e.python_type(), e.what());
   } catch (const sim::CpuError&) {
-    // py65 reads the word's high byte past the end of its bytearray.
     return error_result("IndexError", "bytearray index out of range");
   } catch (const std::invalid_argument& e) {
     return error_result("ValueError", e.what());
@@ -208,7 +195,6 @@ std::string format_result(const Results& res) {
 }
 
 std::optional<std::int64_t> expected_of(const std::string& src) {
-  // The first match of `//\s*expect:\s*(-?\d+)`.
   auto space = [](char c) { return c == ' ' || (c >= '\t' && c <= '\r'); };
   for (std::size_t at = src.find("//"); at != std::string::npos; at = src.find("//", at + 1)) {
     std::size_t i = at + 2;

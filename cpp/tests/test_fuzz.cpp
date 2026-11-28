@@ -1,7 +1,3 @@
-// The fuzzers' runner and reducer (src/fuzz/runner.h and reduce.h),
-// with the checks of tests/test_fuzz_tools.py, which ran a few seeds on
-// every path and tested the reducer's check for a function that falls
-// off its end.
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,7 +23,6 @@ std::string bad_paths(const std::vector<fuzz::Mode>& bad) {
   return out;
 }
 
-// Checks that every path gives the program's result.
 void check_agree(const fuzz::GeneratedProgram& p) {
   const fuzz::Results res = runner().run_all(p.source);
   INFO(fuzz::format_result(res) << "\n" << p.source);
@@ -44,19 +39,12 @@ TEST_CASE("fuzz: seeds 0 to 2 of exprs agree on every path") {
 }
 
 TEST_CASE("fuzz: seeds 1 and 44 of calls agree on every path") {
-  // Seed 44 has every feature: the recursive function, the
-  // pointer-called function, `register`, pointer parameters, and a call
-  // in a loop. Seed 1 has `register` only.
   for (int seed : {1, 44}) {
     INFO("seed " << seed);
     check_agree(fuzz::calls::make_program(seed));
   }
 }
 
-// The reducer never keeps a candidate that reaches the end of a function
-// returning a value, whose value C99 6.9.1p12 leaves undefined. Reducing
-// `fuzz.calls` seed 335 emptied three functions whose results were still
-// used, which made the reduced program's disagreement meaningless.
 TEST_CASE("fuzz: falls_off_end tells whether a run reaches the end of a function") {
   struct Case {
     std::string source;
@@ -65,7 +53,6 @@ TEST_CASE("fuzz: falls_off_end tells whether a run reaches the end of a function
   const Case cases[] = {
       {"int f(int x) { return x + 1; }\nint main(void) { return f(2); }\n", false},
       {"int f(int x) { x = x + 1; }\nint main(void) { return f(2); }\n", true},
-      // Only the path the run takes counts.
       {"int f(int x) { if (x) return 1; }\nint main(void) { return f(2); }\n", false},
       {"int f(int x) { if (x) return 1; }\nint main(void) { return f(0); }\n", true},
       {"int g; void f(void) { g = 1; }\nint main(void) { f(); return g; }\n", false},
@@ -80,8 +67,6 @@ TEST_CASE("fuzz: falls_off_end tells whether a run reaches the end of a function
 }
 
 TEST_CASE("fuzz: the reducer's predicate rejects a candidate that falls off the end") {
-  // A program that fails on every path, so that any candidate failing the
-  // same way would be kept.
   const std::string src =
       "int f(int x) { return x; }\nint main(void) { return f(3); }\n// expect: 4\n";
   const fuzz::Runner r = runner();

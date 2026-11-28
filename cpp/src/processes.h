@@ -1,6 +1,3 @@
-// Child processes, for the commands that spread their work over
-// processes of their own (check-golden and the fuzzers) and for the
-// fuzzer of YARPGen's programs, which runs YARPGen.
 #pragma once
 
 #include <cstddef>
@@ -52,7 +49,6 @@ class Children {
   std::size_t running() const { return running_.size(); }
 
  private:
-  // The process's handle on Windows, and its ID elsewhere, by number.
   std::map<std::size_t, std::intptr_t> running_;
   std::size_t next_ = 0;
 };

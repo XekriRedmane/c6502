@@ -1,8 +1,5 @@
 // The port of tac_sim.py, the TAC interpreter, which runs a TAC program
-// with its symbol table and type table. The fuzzers take its result as
-// the reference for both asm pipelines, and `fuzz tac-passes` runs it
-// after each pass of the TAC optimizer to find the pass that changes a
-// program's result.
+// with its symbol table and type table.
 //
 // Each TAC instruction maps to an operation that mirrors the bit-level
 // semantics of the 6502 lowering. A scalar value lives in its frame's

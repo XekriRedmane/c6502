@@ -21,13 +21,8 @@
 # std::shuffle, and the C++ standard doesn't specify how they turn the
 # engine's numbers into values. A build against another standard library
 # therefore writes other programs for the same seed. Zig's clang builds
-# against libc++, as the earlier fuzz/build_yarpgen.py did with the Zig
-# of the `ziglang` package on PyPI, so a seed in an earlier fuzzer report
-# still names the program it named then. On Windows, the zig.exe in
-# ziglang.org's archive is the same file as the one in that package, and
-# on 27 Nov 2026 the two builds wrote the same init.h, func.c, and
-# driver.c for each of seeds 1 to 100, apart from the build date and the
-# command line in the opening comment of func.c.
+# against libc++, as the fuzzer's earlier builds did, so a seed in an
+# earlier fuzzer report still names the program it named then.
 #
 # MSVC builds this commit too, in about 20 s, with Visual Studio's CMake,
 # the generator "Visual Studio 17 2022", -A x64, and `cmake --build
@@ -142,8 +137,6 @@ write_wrappers() {
   done
 }
 
-# Puts Visual Studio's CMake and Ninja on the PATH when the PATH lacks
-# either of them.
 find_cmake() {
   if command -v cmake > /dev/null && command -v ninja > /dev/null; then
     return

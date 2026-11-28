@@ -19,8 +19,6 @@ passes::FrontEndOptions front_options(const Runner& runner) {
   return o;
 }
 
-// The lines of `text`, split where Python's `str.splitlines` splits
-// ASCII text and UTF-8's NEL, LS, and PS.
 std::vector<std::string> split_lines(const std::string& text) {
   std::vector<std::string> out;
   std::string line;
@@ -56,8 +54,6 @@ std::string join_lines(const std::vector<std::string>& lines) {
   return out + "\n";
 }
 
-// A match of `\(\(([^()]*)\) ([^()\s]+) \(([^()]*)\)\)`: its span and
-// its first and third groups, the operands.
 struct Binary {
   std::size_t start;
   std::size_t end;
@@ -67,12 +63,8 @@ struct Binary {
 
 bool is_paren(char c) { return c == '(' || c == ')'; }
 
-// Python's `\s` on ASCII: the whitespace and U+001C to U+001F.
 bool is_space(char c) { return c == ' ' || (c >= '\t' && c <= '\r') || (c >= '\x1c' && c <= '\x1f'); }
 
-// Returns the match of the pattern at `pos`. Each repeat of the pattern
-// is followed by a character it can't take, so the greedy repeats never
-// give anything back.
 std::optional<Binary> match_binary(const std::string& s, std::size_t pos) {
   std::size_t i = pos;
   auto literal = [&](std::string_view lit) {
@@ -95,7 +87,6 @@ std::optional<Binary> match_binary(const std::string& s, std::size_t pos) {
   return Binary{pos, i, std::move(left), std::move(right)};
 }
 
-// Returns the matches of the pattern in `s`, as `finditer` gives them.
 std::vector<Binary> binaries(const std::string& s) {
   std::vector<Binary> out;
   for (std::size_t pos = 0; pos < s.size();) {
@@ -112,7 +103,6 @@ std::vector<Binary> binaries(const std::string& s) {
 }  // namespace
 
 bool falls_off_end(const Runner& runner, const std::string& src) {
-  // fuzz/reduce.py imports fuzz/runner.py, which turns the IR checks on.
   const passes::ir_check::Enabled checks(true);
   std::string err;
   std::vector<diagnostics::CompileWarning> warnings;
@@ -134,7 +124,6 @@ std::optional<TacResults> tac_results(const Runner& runner, const std::string& s
     if (r.plain.error_type || !r.optimized || r.optimized->error_type) return std::nullopt;
     return TacResults{r.plain.value, r.optimized->value};
   } catch (const std::exception&) {
-    // Python's predicate takes any exception as an invalid candidate.
     return std::nullopt;
   }
 }
@@ -156,8 +145,6 @@ Predicate make_predicate(const Runner& runner, const std::string& src, Failure f
   const auto original = signature(runner.run_all(src));
   return [&runner, signature, original](const std::string& cand) {
     if (falls_off_end(runner, cand)) return false;
-    // The same wrong paths, and each path still compiles (or still
-    // errors) as before, so deleting `main` doesn't count.
     return signature(runner.run_all(cand)) == original;
   };
 }
@@ -169,8 +156,6 @@ std::string reduce(const std::string& src, const Predicate& still_fails) {
   while (changed) {
     changed = false;
     for (std::size_t i = 0; i < lines.size();) {
-      // Keep the `// expect: N` line so the output still says what main
-      // should return.
       if (lines[i].find("expect:") != std::string::npos) {
         ++i;
         continue;

@@ -90,9 +90,27 @@ bool boolean(const json::Value* v, bool fallback) {
 
 // Returns the rest of a `tac-observe` response.
 std::string observe(Translated& t) {
+  const std::optional<ChangingPass> found = first_changing_pass(t);
+  if (!found) return "found null\n";
+  return "found [" + json::quote(found->function) + ", " + json::quote(found->pass) + ", " +
+         observed_json(found->expected) + ", " + observed_json(found->got) + "]\n";
+}
+
+}  // namespace
+
+PlainAndOptimized run_plain_and_optimized(Translated t) {
+  PlainAndOptimized out{tac_sim::run_main(t.tac, t.symbols, &t.types), std::nullopt};
+  if (!out.plain.error_type) {
+    ir::Program opt = passes::optimize_program(std::move(t.tac), &t.symbols);
+    out.optimized = tac_sim::run_main(opt, t.symbols, &t.types);
+  }
+  return out;
+}
+
+std::optional<ChangingPass> first_changing_pass(Translated& t) {
   const tac_sim::Outcome expected = tac_sim::run_main(t.tac, t.symbols, &t.types);
   ir::Program current = t.tac;
-  std::optional<std::string> found;
+  std::optional<ChangingPass> found;
   const passes::framework::Observer observer = [&](const ir::Function& fn, std::string_view after) {
     if (found) return;
     for (auto& top : current.top_level) {
@@ -103,10 +121,7 @@ std::string observe(Translated& t) {
       }
     }
     const tac_sim::Outcome got = tac_sim::run_main(current, t.symbols, &t.types);
-    if (got != expected) {
-      found = "[" + json::quote(fn.name) + ", " + json::quote(std::string(after)) +
-              ", " + observed_json(expected) + ", " + observed_json(got) + "]";
-    }
+    if (got != expected) found = ChangingPass{fn.name, std::string(after), expected, got};
   };
   const passes::framework::Observer* previous = passes::framework::set_observer(&observer);
   try {
@@ -116,10 +131,29 @@ std::string observe(Translated& t) {
     throw;
   }
   passes::framework::set_observer(previous);
-  return "found " + (found ? *found : std::string("null")) + "\n";
+  return found;
 }
 
-}  // namespace
+bool falls_off_end(const std::string& source, const passes::FrontEndOptions& options,
+                   std::string& err) {
+  std::optional<Translated> t;
+  try {
+    t = translate("void " + std::string(kFellOff) + "(void);\n" + source, options, err, true);
+  } catch (const CompileError&) {
+    return false;
+  } catch (const InternalError&) {
+    // Python's `falls_off_end` takes any exception of the front end as
+    // an invalid candidate.
+    return false;
+  }
+  tac_sim::Outcome o;
+  try {
+    o = tac_sim::run_main(t->tac, t->symbols, &t->types);
+  } catch (const InternalError&) {
+    return false;
+  }
+  return o.error_type == "TacSimError" && o.error_message.find(kFellOff) != std::string::npos;
+}
 
 Translated translate(const std::string& source, const passes::FrontEndOptions& options,
                      std::string& err, bool fell_off) {
@@ -150,45 +184,33 @@ std::string respond(const std::string& mode, const json::Value& kwargs, const st
   }
   if (const json::Value* d = kwargs.get("include_dir")) options.include_dir = d->string;
   options.preprocess = boolean(kwargs.get("preprocess"), true);
-  const bool fell_off = mode == "tac-falls-off";
-
   std::string err;
   std::vector<diagnostics::CompileWarning> found;
+  if (mode == "tac-falls-off") {
+    bool fell = false;
+    {
+      diagnostics::Collecting block(found);
+      fell = falls_off_end(source, options, err);
+    }
+    return diagnostics_lines(err, found) + "fell " + (fell ? "true" : "false") + "\n";
+  }
   std::optional<Translated> t;
   std::optional<std::string> error;
   try {
     diagnostics::Collecting block(found);
-    t = translate(fell_off ? "void " + std::string(kFellOff) + "(void);\n" + source : source,
-                  options, err, fell_off);
+    t = translate(source, options, err);
   } catch (const CompileError& e) {
     error = stage_checks::error_text(e.python_type(), e.what());
-  } catch (const InternalError&) {
-    // Python's `falls_off_end` takes any exception of the front end as
-    // an invalid candidate.
-    if (!fell_off) throw;
-    error = "";
   }
   std::string out = diagnostics_lines(err, found);
-  if (fell_off) {
-    if (error) return out + "fell false\n";
-    tac_sim::Outcome o;
-    try {
-      o = tac_sim::run_main(t->tac, t->symbols, &t->types);
-    } catch (const InternalError&) {
-      return out + "fell false\n";
-    }
-    const bool fell = o.error_type == "TacSimError" &&
-                      o.error_message.find(kFellOff) != std::string::npos;
-    return out + "fell " + (fell ? "true" : "false") + "\n";
-  }
   if (error) return out + "error " + *error + "\n";
   if (mode == "tac-observe") return out + observe(*t);
-  const tac_sim::Outcome plain = tac_sim::run_main(t->tac, t->symbols, &t->types);
-  out += "result " + outcome_json(plain) + "\n";
-  if (boolean(kwargs.get("optimized"), false) && !plain.error_type) {
-    ir::Program opt = passes::optimize_program(std::move(t->tac), &t->symbols);
-    out += "optimized " + outcome_json(tac_sim::run_main(opt, t->symbols, &t->types)) + "\n";
+  if (!boolean(kwargs.get("optimized"), false)) {
+    return out + "result " + outcome_json(tac_sim::run_main(t->tac, t->symbols, &t->types)) + "\n";
   }
+  const PlainAndOptimized r = run_plain_and_optimized(std::move(*t));
+  out += "result " + outcome_json(r.plain) + "\n";
+  if (r.optimized) out += "optimized " + outcome_json(*r.optimized) + "\n";
   return out;
 }
 

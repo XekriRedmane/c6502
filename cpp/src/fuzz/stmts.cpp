@@ -26,25 +26,14 @@ TypeTable standard_types() {
   };
 }
 
-// The objects' types, weighted toward the narrow ones the 6502 handles
-// in fewer instructions, where the 1- and 2-byte lowerings live.
 const std::vector<std::pair<std::string, int>> kTypeWeights = {
     {"schar", 6}, {"uchar", 8}, {"int", 6},   {"uint", 8},
     {"long", 3},  {"ulong", 3}, {"llong", 1}, {"ullong", 1},
 };
-// The weight of each bit-precise type a seed adds, that of `long`.
 constexpr int kBitPreciseWeight = 3;
-// The statements of a function, counting nested ones. Without -O every
-// TAC temporary gets its own frame byte, and a frame is at most 253
-// bytes, so a long body is rejected on that path.
 constexpr int kStmtBudget = 12;
-// The `mix()` calls of each checksum function at the end of main, for
-// the same reason.
 constexpr std::size_t kMixPerFn = 4;
-// The steps of the interpreter after which a program counts as one that
-// doesn't end.
 constexpr long kStepLimit = 200'000;
-// The bytes of zero page the zero-page globals may take.
 constexpr int kZeroPageBytes = 40;
 constexpr int kAttempts = 200;
 
@@ -56,15 +45,12 @@ const Int kInteresting[] = {0,      1,      2,       3,          0x7F,
                             0x80,   0xFF,   0x100,   0x7FFF,     0x8000,
                             0xFFFF, 0x10000, Int(0x7FFFFFFF), Int(0x80000000LL)};
 
-// --- The program's tree ---
-
 struct Expr;
 using ExprPtr = std::shared_ptr<const Expr>;
 
 struct Lvalue {
   enum class Kind { kVar, kIndex, kMember, kDeref };
   Kind kind = Kind::kVar;
-  // The variable, the array, the struct, or the pointer.
   std::string name;
   std::string member;
   ExprPtr index;
@@ -83,18 +69,11 @@ enum class ExprKind { kConst, kRead, kCast, kUnary, kBinary, kShift, kCompare, k
 struct Expr {
   ExprKind kind = ExprKind::kConst;
   Int value = 0;
-  // A constant's type, or the type of a cast.
   std::string type;
-  // What a read reads, or what an operator modifies.
   Lvalue lv;
-  // The C operator of a unary, binary, shift, comparison, or logical
-  // expression.
   std::string op;
   OpKind op_kind = OpKind::kPreInc;
-  // A shift's count, or an operator's right operand.
   int count = 0;
-  // The function a call calls, or the local whose address an argument
-  // is.
   std::string name;
   std::vector<ExprPtr> operands;
 };
@@ -140,9 +119,7 @@ enum class StmtKind { kAssign, kExpr, kMix, kIf, kFor, kWhile, kDo, kSwitch, kBr
 struct Stmt {
   StmtKind kind = StmtKind::kExpr;
   Lvalue lv;
-  // The value, the condition, or the switch's selector.
   ExprPtr e;
-  // The `if`'s branches, or the loop's body in `then`.
   Block then;
   Block els;
   std::string counter;
@@ -163,9 +140,7 @@ struct Obj {
   std::string type;
   ObjKind kind = ObjKind::kLocal;
   Int init = 0;
-  // The elements of an array, or the members of a struct.
   std::vector<Int> inits;
-  // The global a global pointer points to.
   std::string target;
   bool vol = false;
   std::vector<Member> members;
@@ -177,14 +152,12 @@ struct Fn {
   std::vector<Obj> params;
   std::vector<Obj> locals;
   std::vector<Obj> statics;
-  // The `unsigned char` counters of the `while` and `do` loops.
   std::vector<std::string> counters;
   Block body;
 };
 
 struct Prog {
   std::vector<Obj> globals;
-  // Each callee before its callers, and main last.
   std::vector<Fn> fns;
 };
 
@@ -207,8 +180,6 @@ std::vector<Lvalue> global_reads(const Obj& g) {
       return {};
   }
 }
-
-// --- C's integer rules on the program's types ---
 
 class Types {
  public:
@@ -251,8 +222,6 @@ class Types {
  private:
   TypeTable& table_;
 };
-
-// --- Rendering ---
 
 const char* op_format(OpKind k) {
   switch (k) {
@@ -367,8 +336,6 @@ class Renderer {
         return;
       case StmtKind::kSwitch:
         out.push_back(ind + "switch (" + ex(*s.e) + ") {");
-        // A label needs a statement after it, so an empty body is
-        // rendered as `;`.
         for (const SwitchCase& c : s.cases) {
           out.push_back(ind + "case " + std::to_string(c.value) + ":");
           if (c.body.empty()) {
@@ -453,7 +420,6 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
         break;
     }
   }
-  // main ends by mixing every global, a few per function.
   std::vector<Lvalue> reads;
   for (const Obj& g : p.globals) {
     for (Lvalue& l : global_reads(g)) reads.push_back(std::move(l));
@@ -499,10 +465,6 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
   return out;
 }
 
-// --- The interpreter ---
-
-// Raised when the program would hit undefined behavior, or runs past
-// `kStepLimit`.
 struct UndefinedBehavior {};
 struct Returned {
   Int value;
@@ -555,7 +517,6 @@ class Interp {
     acc_ = rot ^ static_cast<std::int64_t>(u & 0xFFFF) ^ static_cast<std::int64_t>((u >> 16) & 0xFFFF);
   }
 
-  // Runs main, and then the tail `render` gives it: mix every global.
   void run_program(const Prog& p) {
     call("main", {});
     frames_.emplace_back();
@@ -584,7 +545,6 @@ class Interp {
     if (++steps_ > kStepLimit) throw UndefinedBehavior{};
   }
 
-  // Returns the memory key of an lvalue.
   std::string loc(const Lvalue& l) {
     Frame& frame = frames_.back();
     switch (l.kind) {
@@ -601,7 +561,6 @@ class Interp {
       case Lvalue::Kind::kMember:
         return member_key(l.name, l.member);
       case Lvalue::Kind::kDeref:
-        // A pointer parameter holds the key of the caller's local.
         if (auto it = frame.find(l.name); it != frame.end()) return pointees_.at(it->second);
         return gptr_.at(l.name);
     }
@@ -708,8 +667,6 @@ class Interp {
       }
       case ExprKind::kCond: {
         const Value c = ev(*e.operands[0]);
-        // The type is the usual arithmetic conversion of both arms, and
-        // only the chosen arm is evaluated (both are pure).
         const std::string at = type_of(*e.operands[1]);
         const std::string bt = type_of(*e.operands[2]);
         const std::string ct = types_.common(at, bt);
@@ -726,8 +683,6 @@ class Interp {
     throw std::logic_error("stmts: an address outside a call's arguments");
   }
 
-  // Returns the type of a pure expression. It is evaluated, which has no
-  // effect but on the count of steps, which is put back.
   std::string type_of(const Expr& e) {
     const long saved = steps_;
     std::string t = ev(e).type;
@@ -820,7 +775,6 @@ class Interp {
     for (const Stmt& s : body) exec(s);
   }
 
-  // Runs a loop's body once, and returns false when it broke out.
   bool run_iteration(const Block& body) {
     try {
       run(body);
@@ -881,9 +835,6 @@ class Interp {
       }
       case StmtKind::kSwitch: {
         const Int v = ev(*s.e).v;
-        // The labeled bodies in source order, with `default` rendered
-        // last. Control enters at the matching case, or at `default`,
-        // and falls through until a break.
         std::optional<std::size_t> start;
         for (std::size_t i = 0; i < s.cases.size(); ++i) {
           if (s.cases[i].value == v) {
@@ -916,7 +867,6 @@ class Interp {
   std::map<std::string, const Fn*> fns_;
   std::unordered_map<std::string, Int> mem_;
   std::unordered_map<std::string, std::string> obj_types_;
-  // The key of the local each pointer parameter points to.
   std::unordered_map<std::string, std::string> pointees_;
   std::map<std::string, std::string> gptr_;
   std::vector<Frame> frames_;
@@ -924,10 +874,6 @@ class Interp {
   long steps_ = 0;
 };
 
-// --- Generation ---
-
-// An object a statement can write, with the key that names it for the
-// rule of one modification per expression.
 struct Writable {
   Lvalue lv;
   std::string type;
@@ -936,7 +882,6 @@ struct Writable {
 
 struct WithOp {
   ExprPtr e;
-  // The key of the object the expression modifies.
   std::optional<std::string> written;
 };
 
@@ -945,7 +890,6 @@ struct SideOp {
   std::string key;
 };
 
-// How a block's statements may leave it.
 struct Context {
   int depth = 0;
   int loops = 0;
@@ -1064,8 +1008,6 @@ class Generator {
       o.init = value(t);
       fn.locals.push_back(std::move(o));
     }
-    // One local per pointee type a callee takes by pointer, so every
-    // call has a local of its own to pass.
     for (const Fn& c : callees) {
       for (const Obj& p : c.params) {
         if (p.kind != ObjKind::kPointerParam) continue;
@@ -1085,8 +1027,6 @@ class Generator {
       o.init = value(t);
       fn.statics.push_back(std::move(o));
     }
-    // A local whose type some callee takes by pointer may be passed by
-    // address, so it stays plain.
     std::vector<std::string> by_ptr;
     for (const Fn& c : callees) {
       for (const Obj& p : c.params) {
@@ -1115,7 +1055,6 @@ class Generator {
     return fn;
   }
 
-  // Returns every writable object in scope.
   std::vector<Writable> lvalues() {
     std::vector<Writable> out;
     const Fn& f = *fn_;
@@ -1169,7 +1108,6 @@ class Generator {
     return constant(rng_.randint(0, 3), "int");
   }
 
-  // Returns a pure expression that reads no object named `avoid`.
   ExprPtr expr(int depth, const std::optional<std::string>& avoid = std::nullopt) {
     py_random::Random& r = rng_;
     if (depth == 0 || r.random() < 0.3) {
@@ -1232,8 +1170,6 @@ class Generator {
     return with_operands(ExprKind::kBinary, op, {std::move(a), std::move(b)});
   }
 
-  // Returns an operator applied to a writable object, or none when there
-  // is no such object.
   std::optional<SideOp> side_op() {
     const std::vector<Writable> choices = lvalues();
     if (choices.empty()) return std::nullopt;
@@ -1251,7 +1187,6 @@ class Generator {
     return SideOp{make(std::move(e)), w.key};
   }
 
-  // Returns an expression with at most one operator in it.
   WithOp with_op(int depth) {
     py_random::Random& r = rng_;
     if (r.random() < 0.5) return {expr(depth), std::nullopt};
@@ -1270,7 +1205,6 @@ class Generator {
     return rng_.choice(kDepths);
   }
 
-  // Returns a call of an earlier function with pure arguments, or none.
   ExprPtr call() {
     if (callees_->empty()) return nullptr;
     const Fn& f = rng_.choice(*callees_);
@@ -1384,7 +1318,6 @@ class Generator {
         return s;
       }
     }
-    // An assignment, whose target isn't the one the value modifies.
     WithOp w = with_op(op_depth());
     const std::vector<Writable> targets = lvalues_except(w.written);
     s.kind = StmtKind::kAssign;
@@ -1396,8 +1329,7 @@ class Generator {
   py_random::Random& rng_;
   // Picks which objects are `volatile`. It's separate from `rng_` so
   // that adding the qualifier leaves each seed's program otherwise the
-  // same. A volatile object's address is never taken, since `&v` is a
-  // `volatile T *` that a plain `T *` can't hold.
+  // same.
   py_random::Random& vrng_;
   const Types& types_;
   std::vector<std::pair<std::string, int>> weights_;

@@ -11,7 +11,6 @@ namespace c6502::fuzz::exprs {
 
 namespace {
 
-// Raised when the expression being generated would be undefined.
 struct UndefinedBehavior {};
 
 const std::vector<std::string> kStandardKeys = {"schar", "uchar", "int", "uint", "long", "ulong"};
@@ -27,7 +26,6 @@ TypeTable standard_types() {
 const RankTable kRank = {{"int", 1}, {"uint", 1}, {"long", 2}, {"ulong", 2}};
 const UnsignedOf kUnsignedOf = {{"int", "uint"}, {"long", "ulong"}};
 
-// The constants a leaf draws from, before the random bits of its type.
 const Int kLeafConstants[] = {0,     1,     2,      7,          127,       128,
                               255,   256,   0x7FFF, 0x8000,     0xFFFF,    0x12345,
                               Int(0x7FFFFFFF), Int(0x80000000LL)};
@@ -133,9 +131,6 @@ class Generator {
     return kUnsignedOf.at(s);
   }
 
-  // Returns a C expression of type `t` with value `v`. A negative value
-  // is written as a cast of the unsigned bit pattern, which is a plain
-  // integer constant expression.
   std::string lit(Int v, const std::string& t) const {
     const IntType& it = type(t);
     if (is_bit_precise(t)) return bit_precise_literal(types_, v, t);
@@ -147,8 +142,6 @@ class Generator {
     return "((" + it.spelling + ")" + decimal(v) + suffix + ")";
   }
 
-  // Returns a random expression of the types `keys_`, and throws
-  // `UndefinedBehavior` when it would be undefined.
   Expr gen(int depth) {
     if (depth == 0 || rng_.random() < 0.25) {
       if (rng_.random() < 0.7) {

@@ -21,13 +21,9 @@ const std::map<std::string, int> kSize = {{"signed char", 1}, {"unsigned char", 
 
 constexpr const char* kPointer = "int *";
 
-// Recursion keeps a function on the soft stack, since a zp_abi function
-// can't be on a call-graph cycle.
 constexpr const char* kRec =
     "int rec(int d, int x) { if (d <= 0) return x & 255; "
     "return rec(d - 1, (x * 3 + d) & 1023) + 1; }";
-// The same recursion with a 1-byte and a 4-byte local live across the
-// call, saved on the hardware stack.
 constexpr const char* kRecSaved =
     "int rec(int d, int x) {\n"
     "    unsigned char a = (unsigned char)(x * 7);\n"
@@ -65,8 +61,6 @@ class Generator {
   Generator(py_random::Random& rng, std::vector<std::string> types)
       : rng_(rng), types_(std::move(types)) {}
 
-  // Returns a random integer expression over `vars` with no undefined
-  // division or shift, whose casts are to the seed's types.
   std::string expr(const std::vector<std::string>& vars, int depth) {
     if (depth == 0 || rng_.random() < 0.3) {
       if (!vars.empty() && rng_.random() < 0.8) return rng_.choice(vars);
@@ -115,8 +109,6 @@ GeneratedProgram make_program(Int seed) {
   py_random::Random crng(seed * 7919 + 1);
   // So does the choice of recursive function.
   const bool saved_rec = py_random::Random(seed * 104729 + 3).random() < 0.5;
-  // Half the seeds add two bit-precise types (C23 §6.2.5), from a stream
-  // of their own too.
   std::vector<std::string> types = kTypes;
   std::map<std::string, int> size = kSize;
   TypeTable bp_types;
@@ -144,7 +136,6 @@ GeneratedProgram make_program(Int seed) {
     sigs[i].ret = gen.type();
     const int n_params = static_cast<int>(rng.randint(0, 4));
     for (int k = 0; k < n_params; ++k) sigs[i].params.push_back({gen.type(), "p" + std::to_string(k)});
-    // Receives the address of a local in each caller.
     if (rng.random() < 0.25) sigs[i].params.push_back({kPointer, "pp"});
   }
   std::vector<std::vector<int>> calls(n);
@@ -158,27 +149,17 @@ GeneratedProgram make_program(Int seed) {
   }
   std::vector<bool> calls_rec(n);
   for (int i = 0; i < n; ++i) calls_rec[i] = use_rec && rng.random() < 0.5;
-  // A carry-flag function returns `bool`, and its address can't be
-  // taken, so the pointer-called one is left out.
   std::set<int> carry;
   for (int i = 0; i < n; ++i) {
     if (crng.random() < 0.3 && !(use_ptr_fn && i == n - 1)) carry.insert(i);
   }
   for (int i : carry) sigs[i].ret = "bool";
-  // Which of them carry the attribute, from a stream of its own too.
   py_random::Random arng(seed * 15485863 + 5);
   std::set<int> marked;
   for (int i : carry) {
     if (arng.random() < 0.5) marked.insert(i);
   }
 
-  // The functions that end up on the soft stack under -O: the
-  // pointer-called one, each caller through the pointer, each caller of
-  // `rec` when `rec` has no private pool, and every caller of one of
-  // those (a zp_abi function can only call zp_abi functions and
-  // soft-stack functions with a pool, and the `rec` whose recursive call
-  // is marked `[[c6502::save_hardware_stack]]` has one). `register` is
-  // allowed only on the rest, since it needs zp_abi.
   std::set<int> soft;
   auto calls_to = [&](int i, int j) {
     return std::find(calls[i].begin(), calls[i].end(), j) != calls[i].end();
@@ -212,7 +193,6 @@ GeneratedProgram make_program(Int seed) {
     int reg_bytes = 0;
     for (const Param& p : params) {
       std::string q;
-      // At most two register arg-bytes (A, then X), and never a pointer.
       if (reg_ok(i) && p.type != kPointer && reg_bytes + size.at(p.type) <= 2 &&
           rng.random() < 0.4) {
         q = "register ";
@@ -257,7 +237,6 @@ GeneratedProgram make_program(Int seed) {
       }
       const std::string dst = rng.choice(locals_of(vars));
       if (carry.count(j) != 0 && crng.random() < 0.5) {
-        // Branch on the carry flag instead of reading a value.
         body.push_back("    if (" + call + ") " + dst + " += 3; else " + dst + " ^= 5;");
       } else if (rng.random() < 0.3) {
         body.push_back("    for (int it = 0; it < 3; it++) " + dst + " += (" + call + ") + it;");

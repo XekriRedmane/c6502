@@ -25,10 +25,6 @@
 // the reference. Undefined behavior is avoided by construction: divisors
 // are `(e | 1)` and shift counts `(e & 7)`. Signed overflow does occur,
 // and every path wraps it the same way.
-//
-// Its choice of the functions that end up on the soft stack (`soft` in
-// calls.cpp) follows the eligibility rules of
-// src/passes/abi_selection.cpp, since `register` needs zp_abi.
 #pragma once
 
 #include "asdl/runtime.h"

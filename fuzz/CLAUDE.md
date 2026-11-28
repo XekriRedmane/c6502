@@ -181,8 +181,9 @@ it. Undefined behavior is ruled out by construction (one modification
 per expression, on an object nothing else in the statement names;
 loop counters the body never writes) or, for signed overflow and bad
 shifts, by the interpreter stopping, in which case the seed draws
-another program. A function is capped at `kStmtBudget` statements so
-the unoptimized frame stays under 253 bytes.
+another program. A function is capped at
+`kStmtsPerFnUnderFrameLimit` statements so the unoptimized frame stays
+under 253 bytes.
 
 With the INC / DEC fix of `361c2e7` undone, it finds that bug in 3
 of the first 150 seeds. In its first 3,000 seeds it found three

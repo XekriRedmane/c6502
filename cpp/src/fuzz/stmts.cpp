@@ -31,8 +31,8 @@ const std::vector<std::pair<std::string, int>> kTypeWeights = {
     {"long", 3},  {"ulong", 3}, {"llong", 1}, {"ullong", 1},
 };
 constexpr int kBitPreciseWeight = 3;
-constexpr int kStmtBudget = 12;
-constexpr std::size_t kMixPerFn = 4;
+constexpr int kStmtsPerFnUnderFrameLimit = 12;
+constexpr std::size_t kMixesPerFinUnderFrameLimit = 4;
 constexpr long kStepLimit = 200'000;
 constexpr int kZeroPageBytes = 40;
 constexpr int kAttempts = 200;
@@ -425,9 +425,9 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
     for (Lvalue& l : global_reads(g)) reads.push_back(std::move(l));
   }
   std::size_t fins = 0;
-  for (std::size_t i = 0; i < reads.size(); i += kMixPerFn, ++fins) {
+  for (std::size_t i = 0; i < reads.size(); i += kMixesPerFinUnderFrameLimit, ++fins) {
     lines.push_back("void fin" + std::to_string(fins) + "(void) {");
-    for (std::size_t j = i; j < std::min(reads.size(), i + kMixPerFn); ++j) {
+    for (std::size_t j = i; j < std::min(reads.size(), i + kMixesPerFinUnderFrameLimit); ++j) {
       lines.push_back("    mix(" + r.lv(reads[j]) + ");");
     }
     lines.push_back("}");
@@ -1042,7 +1042,7 @@ class Generator {
     fn_ = &fn;
     callees_ = &callees;
     counters_in_scope_.clear();
-    budget_ = kStmtBudget;
+    budget_ = kStmtsPerFnUnderFrameLimit;
     const int n = static_cast<int>(r.randint(3, 6));
     fn.body = block(n, Context{});
     if (!is_main) {

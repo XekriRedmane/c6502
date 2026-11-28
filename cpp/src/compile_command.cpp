@@ -295,7 +295,7 @@ argparse::Parser compile_parser(const std::string& prog) {
                      stages);
   ap.add_store_true({"-O"}, kOptimizeHelp, "optimize");
   ap.add_store({"-T"}, "script",
-               "linker script (a GNU ld subset; passes/link_script.py) that places each section "
+               "linker script (a GNU ld subset; docs/linker_scripts.md) that places each section "
                "at an address");
   ap.add_store({"--origin"}, "origin",
                "where .text starts in a link without a script (default $0800; -Ttext=ADDR also "

@@ -7,21 +7,25 @@ emission, the assembler, the linker, nm, objdump, the TAC interpreter,
 and the IR checks, all in one executable, `c6502cpp`. It was ported
 from the Python compiler stage by stage (docs/cpp_port.md), each stage
 checked to give the Python code's output byte for byte, and group R of
-step 8 removed the Python compiler on 25 Nov 2026. compile.py, nm.py,
-and objdump.py are shims over `c6502cpp compile`, `nm`, and `objdump`
-through cpp_backend.py ("The back end through c6502cpp" and
-"compile.py's command line"), and the simulator and the suite stay
-in Python until step 9 moves them and run c6502cpp the same way. The
-fuzzers moved in step 9's group G6 ("The fuzzers").
+step 8 removed the Python compiler on 25 Nov 2026. Step 9 moved the
+simulator, the games' machines, the fuzzers, and the tests to C++, and
+its group R removed the repository's last Python. `c6502cpp compile`,
+`c6502cpp nm`, and `c6502cpp objdump` are the command lines that
+compile.py, nm.py, and objdump.py had ("compile.py's command line"
+and "The object-file tools"), and their
+usage and messages name the programs `c6502`, `c6502-nm`, and
+`c6502-objdump`.
 
 The sections after "Layout" were written as the port went. They
 describe each part of the C++ code, the Python module it was ported
-from, and how it was checked against that module, and the Python
-modules and tools they name are the ones the removal took away. Where
-a section says what happens "under `C6502_CPP_BACKEND=1`", that is
-what every run does now, since the switch is gone. "The checks after
-Python" gives the checks that replaced the comparisons with Python:
-the golden files, the frozen captures, and the doctest cases.
+from, and how it was checked against that module. The Python modules,
+tests, and tools they name were removed in group R of step 8 or of
+step 9, and so were the c6502cpp commands that only Python ran, so the
+commands that made the captures can't be run again. Where a section
+says what happens "under `C6502_CPP_BACKEND=1`", that is what every
+run does now, since the switch is gone. "The checks after Python" gives
+the checks that replaced the comparisons with Python: the golden files,
+the frozen captures, and the doctest cases.
 
 ## Building
 
@@ -30,8 +34,8 @@ it uses the MSVC 2022 Build Tools through CMake's Visual Studio
 generator, which finds the Build Tools without `vcvars64.bat`. On this
 machine CMake 4.3.1 came with STM32CubeCLT and is on the PATH, and the
 Build Tools also install a CMake under
-`Common7\IDE\CommonExtensions\Microsoft\CMake`. `uv tool install cmake`
-or `winget install Kitware.CMake` installs one elsewhere.
+`Common7\IDE\CommonExtensions\Microsoft\CMake`. `winget install
+Kitware.CMake` installs one elsewhere.
 
 ```sh
 # Windows (Git Bash or cmd), from the repository's root
@@ -47,9 +51,7 @@ ctest --test-dir cpp/build --output-on-failure
 
 The executables go in `cpp/build/bin` with either generator, and a
 Debug build of the Visual Studio generator puts them in
-`cpp/build/bin/debug`. `cpp/build/` is ignored by git. The tests in
-`tests/` that use the CLI look for it in `cpp/build/bin`, or at the
-path in `C6502_CPP`, and are skipped when it isn't built.
+`cpp/build/bin/debug`. `cpp/build/` is ignored by git.
 
 On 19 Nov 2026 the build was clean with MSVC 19.36 (Build Tools 14.36),
 and with GCC 12.2 and Clang 14.0.6 on Debian 12 in WSL.
@@ -67,12 +69,16 @@ The build makes these targets.
   `src/passes/optimization_asm/`, `src/rtlib/`, or `src/sim/` is
   picked up the next time CMake runs.
 - `c6502_tests`, the unit tests in `tests/`, on doctest.
-- `c6502cpp`, the CLI (`src/main.cpp`): the compiler's commands that
-  compile.py, nm.py, and objdump.py run, and the checks below.
+- `c6502cpp`, the CLI (`src/main.cpp`): the compiler's commands
+  `compile`, `nm`, and `objdump`, the checks below, `fuzz`,
+  `game-run`, `helper-dump`, and `pass-order`.
 
 Warnings are on (`/W4`, `-Wall -Wextra`) and aren't errors yet.
 
 ## Layout
+
+A Python module named beside a C++ file is the one the file was ported
+from, and none of them is in the repository now.
 
 ```
 cpp/
@@ -90,14 +96,15 @@ cpp/
     json.*            the reader of the capture harness's JSON, and a
                       writer of Python's `json.dumps` text
     argparse.*        Python's argparse, as compile.py, nm.py, and
-                      objdump.py use it
+                      objdump.py used it
     compile_command.*   `c6502cpp compile`, compile.py's command line
     binutils/elf.*    binutils/elf.py, the ELF reader and writer (step 7)
     binutils/opcodes.*   binutils/opcodes.py, the 6502 opcode table
-    binutils/nm.*     nm.py
+    binutils/nm.*     nm.py, `c6502cpp nm`
+    binutils/objdump.*, disasm.*   objdump.py and binutils/disasm.py,
+                      `c6502cpp objdump`
     binutils/assembler.*   binutils/assembler.py
-    binutils/assemble_command.*   the `c6502cpp assemble` command
-    binutils/link_command.*   the `c6502cpp link` command
+    binutils/ld.*     binutils/ld.py, the generic half of linking
     binutils/checks.*    `c6502cpp check-binutils`, the checks of the
                       frozen binutils records
     golden.*          `c6502cpp check-golden`, the check of the golden
@@ -118,7 +125,6 @@ cpp/
     capture.*         the reader of capture files and their contexts
     helper_checks.*   `c6502cpp check-helpers`, the checks of the
                       helpers' records ("Checking the helpers")
-    backend.*         the `c6502cpp backend` command's request and response
     asm_emit.*        asm_emit.py, the asm2 program as dasm's text
     pyrepr.*          Python's repr and formatting, for messages and text
     ordered_map.h     OrderedMap, a map in the order of insertion, as a dict
@@ -134,7 +140,7 @@ cpp/
       codegen.*       the region through emission, the end of `_codegen`
       optimized_front.*   `_optimized_front` after the TAC optimizer
       codegen_stage.* the stage from the c99 program to the text, which
-                      the backend command runs
+                      `c6502cpp compile`, the simulator, and the tests run
       translate_for_codegen.*   compile.py's `translate_for_codegen`
                       and `_optimized_tac`
       text_stages.*   `--parse`, `--resolve`, and `--tac`, which print
@@ -149,7 +155,7 @@ cpp/
       runtime_library.*   passes/runtime_library.py, the helpers a link
                       takes and the text of runtime.o (step 7, group E)
       emission_args.* the decoders of the arguments of the work after the
-                      region, for the backend command and the registry
+                      region, for the registry
       asm_context.*   AsmContext, the compile's state the asm passes read
       asm_operands.h  for_each_operand, a walk over an instruction's operands
       optimization_asm/cfg.*   the asm CFG and its dominators
@@ -292,8 +298,8 @@ cpp/
                       the passes that measure branches read (step 9, G4)
     sim/cpu.*         the simulator's 6502, which executes as py65 1.2.0
                       does, with its trap table and callbacks (step 9, G3)
-    sim/cpu_run.*     the backend mode `cpu-run`, which runs it for
-                      sim/lockstep.py's comparison with py65
+    sim/cpu_run.*     zlib's CRC-32 and the digest of the CPU's state,
+                      for `game-run` and the tests
     sim/runtime.*     the simulator's runtime, from sim/runtime.py: the
                       boot stub, the helpers at $E000, `icall`, and the
                       hooks of the helpers with no 6502 code, which
@@ -324,10 +330,12 @@ cpp/
                       and the known optimizer divergences
     frozen/sim/       the Python models' expected values for the tests
                       ported in step 9's G4 (bitint_sim.txt)
-    frozen/py_random.txt   CPython 3.11's results of random.Random
+    frozen/py_random.txt   CPython 3.11's results of random.Random,
+                      which tools/py_random_vectors.py wrote
     frozen/cpu/       py65's single steps and decimal-mode results,
                       which tools/py65_cpu_vectors.py wrote, for
-                      test_cpu.cpp
+                      test_cpu.cpp (both tools are deleted, so neither
+                      file can be written again)
     asm_text.h        a test's program and expected instructions as dump text
     call_case.h       a recorded call of a function of emission, for the
                       tests recorded from the Python unit tests
@@ -354,8 +362,8 @@ compile time matters for a suite that will grow to cover every pass.
 ## The IR classes
 
 asdlgen (`tools/asdlgen.h`) writes `<name>_ast.h` and `<name>_ast.cpp`
-from `<name>.asdl`, in namespace `c6502::<name>_ast`. It is a port of
-the C++ half of asdl.py, made in step 9 of the port, and it wrote the
+from `<name>.asdl`, in namespace `c6502::<name>_ast`. It was ported
+from the C++ half of asdl.py in step 9 of the port, and it wrote the
 eight files byte for byte as `asdl.py --cpp` did. The build runs it on
 the four `.asdl` files at the root (`add_custom_command` in
 CMakeLists.txt) whenever one of them or the tool is newer than the
@@ -367,7 +375,8 @@ it would write without writing them, and the doctest case
 "regenerating the IR classes gives the checked-in files" does the
 same, so a hand edit of a generated file fails both.
 
-The names follow the Python modules. Each constructor is a struct with
+The names follow those of the Python modules that asdl.py generated.
+Each constructor is a struct with
 the constructor's name and its fields as members, in the `.asdl`'s
 order (`asm_ast::Mov{src, dst, is_volatile}`). A sum type is
 `Type_<name>`, a `std::variant` of its constructors' structs
@@ -416,12 +425,42 @@ up, so code that needs the bytes decodes the string.
 
 ## The dump format
 
-`ir_dump.py` describes the format and is its Python side. The C++ side
-is the generated `read` and `write` functions with `asdl::Reader` and
-`asdl::Writer`, through `asdl::dump(v)` and `asdl::load<T>(text)`. A
-dump names the constructor of every value and gives the fields in
-order, with each top-level item and each instruction on a line of its
-own:
+The dump format is a canonical text form of any value of the four IRs,
+which the frozen captures, the doctest cases, and tests/ir_dump/ hold.
+It is the generated `read` and `write` functions with `asdl::Reader`
+and `asdl::Writer` (src/asdl/runtime.h), through `asdl::dump(v)` and
+`asdl::load<T>(text)`, and a value read back is equal (`==`) to the one
+dumped. It was ir_dump.py's format, whose docstring gave this grammar,
+with `|` for alternatives.
+
+```
+value   = ctor | ctor "(" fields ")"       a sum type's value
+        | name "(" fields ")"              a product type's value
+        | int | bool | string | "None" | seq
+fields  = value (" " value)*               in the .asdl's field order
+seq     = "[" "]" | "[" value (" " value)* "]"
+int     = -?[0-9]+
+bool    = "true" | "false"
+string  = '"' ... '"'
+```
+
+A constructor with no fields is its bare name (`IndirectY`), and one
+with fields always has parentheses. A product type's value starts with
+the type's name (`var_decl(...)`), so every value names its type. A sum
+type's attributes, which no module uses, follow the constructor's own
+fields. An optional field holds `None` or its value. A string's
+characters are written as themselves when they are printable ASCII,
+other than `"` and `\`, which are written `\"` and `\\`. Every other
+character is `\xHH` when its code is below 0x100 and `\u{H...}` above,
+in lowercase hex.
+
+Every element of a sequence of top-level items, instructions,
+declarations, or block items goes on a line of its own, indented by two
+spaces for each such sequence it is in, and the closing `]` goes on a
+line of its own (`dump_line_type` in tools/asdlgen.cpp). Every other
+value is on one line, so a function's instructions are one per line. A
+dump ends with a newline, and the reader skips any whitespace between
+tokens.
 
 ```
 Program([
@@ -432,9 +471,9 @@ Program([
 ])
 ```
 
-`c6502cpp roundtrip <module> [<file>]` reads a dump and writes it again,
-and `tests/test_ir_dump.py` checks that it gives the Python dump's
-bytes for the four IRs of a compiled example.
+tests/test_ir_dump_files.cpp reads the dumps of tests/ir_dump/, the
+four IRs of examples/paint_hud_strip_p1.c that the Python compiler
+wrote, and checks that writing them again gives the same bytes.
 
 ## The captured calls
 
@@ -544,9 +583,7 @@ the text Python's `json.dumps(encode(v))` writes, byte for byte. The
 codecs of containers take their elements' codecs, so a
 `dict[str, list[int]]` is `DictOf<Str, ListOf<IntC>>`, and `SetOf`
 writes its elements sorted by their JSON text, as the harness does
-(`10` before `9`). A later step that runs the stage in C++ from
-compile.py, as `c6502cpp backend` runs the region, can send the tables
-in the same form.
+(`10` before `9`).
 
 ### The stage calls
 
@@ -563,12 +600,8 @@ it runs the C++ function and compares its result and the arguments it
 changed with the record. It reports `<name>: N calls, N round-trip`,
 and `M match, 0 differ` after it for a ported one.
 
-```sh
-uv run python tools/capture_passes.py --passes stage -j 14
-cpp/build/bin/c6502cpp check-captures captures
-```
-
-On 20 Nov 2026 the capture of the whole corpus took about 125 seconds
+The records were made with `tools/capture_passes.py --passes stage`
+and checked with `c6502cpp check-captures captures`. On 20 Nov 2026 the capture of the whole corpus took about 125 seconds
 with 14 processes and wrote 1.5 GB, most of it the symbol tables, one
 per call. Every value of the 30,273 distinct calls of the 24 entries
 made the trip, from 215 calls of `slot_aliases` to 3,798 of
@@ -1288,14 +1321,11 @@ declarations, and the names of its symbol table, and `front_values`
 gives each query's value on each type, on each pair of the promoted
 arithmetic types for `common_type`, and on 28 values for
 `coerce_int_to_type`. `check-helpers` computes them in
-`src/front_helper_checks.cpp`.
-
-```sh
-uv run python tools/capture_passes.py --passes front -j 12
-uv run python tools/capture_helpers.py --front-only --corpus examples,games,chapters,fuzz -j 12
-cpp/build/bin/c6502cpp check-captures captures
-cpp/build/bin/c6502cpp check-helpers captures/helpers
-```
+`src/front_helper_checks.cpp`. The records were made with
+`tools/capture_passes.py --passes front` and `tools/capture_helpers.py
+--front-only` over the examples, the games, the chapters, and the fuzz
+seeds, and checked with `c6502cpp check-captures` and `c6502cpp
+check-helpers`.
 
 - The type checker (group T), described below in "The type checker".
 
@@ -1406,9 +1436,10 @@ errors. Parts R2 and R3 write the descent on top of these headers.
   patterns and the keywords. Lark numbers states by iterating sets of
   strings, so the script numbers them canonically, by a breadth-first
   walk from the start states, and two processes with different hash
-  seeds write the same file. `tests/test_lalr_table.py` regenerates it
-  and fails when it differs, so after editing c99.lark, run `uv run
-  python tools/lalr_table.py`.
+  seeds write the same file. `tests/test_lalr_table.py` regenerated it
+  and failed when it differed. The script, c99.lark, and the test went
+  with the Python compiler in step 8, and the file is edited by hand
+  since then.
 - `py_regex.h` matches the terminals' patterns with the semantics of
   Python's `re`, in which an alternation takes the first alternative
   that matches, so a match needn't be the longest. It parses the
@@ -1450,15 +1481,9 @@ parser is given, the tokens Lark's parser was fed, the number of scopes
 open after each, and how the parse ended, with the positions of the
 identifiers the parser's scopes named as typedefs, which the record
 gives the C++ side in place of the declarations that R2's actions will
-make. As a pytest plugin it records the Python tests' calls of `parse`
-and `tokenize` too.
-
-```sh
-uv run python tools/capture_passes.py --passes parse -j 12
-uv run python tools/capture_parser_tokens.py captures
-C6502_TOKEN_CAPTURES=captures PYTHONPATH=tools uv run pytest -p capture_parser_tokens -n 12 -q
-cpp/build/bin/c6502cpp check-captures captures/parse_tokens captures/tokenize
-```
+make. As a pytest plugin it recorded the Python tests' calls of `parse`
+and `tokenize` too, and `c6502cpp check-captures` checked the
+`parse_tokens` and `tokenize` records.
 
 On 21 Nov 2026 the 1,788 distinct sources of the corpus and the 4,526
 more of the Python tests gave 6,314 `parse_tokens` records, of which
@@ -1633,13 +1658,14 @@ case under `(?i)`, which reads Python's simple case mappings and
 `re._casefix._EXTRA_CASES` from pcpp_unicode.h and keeps `_sre`'s
 quirks for characters outside the Basic Multilingual Plane. The matcher
 follows `_sre`'s order of backtracking, including the rule that ends a
-repeat when an iteration matches the empty string. compile.py doesn't
-catch `re.error`, so the class reaches `cpp_backend.py` as "error",
-which it raises as `re.error`.
+repeat when an iteration matches the empty string. compile.py didn't
+catch `re.error`, and `c6502cpp compile` doesn't either, so the command
+ends with the exception's class and message, as Python's traceback
+did.
 
 py_regex throws `Unsupported` for what it doesn't take, and the
-preprocessor turns that into a NotImplementedError, which compile.py
-reports as an error that names the construct. Those are
+preprocessor turns that into a NotImplementedError, which `c6502cpp
+compile` reports as an error that names the construct. Those are
 backreferences, conditionals, `\N{name}`, group names with non-ASCII
 characters, a class for which Python prints a FutureWarning on stderr
 (`[[`, or `--`, `&&`, `~~`, or `||` inside a class), and a possessive
@@ -1649,7 +1675,7 @@ the minimum fails, so the rest of the pattern goes on from wherever the
 failed iteration's last step left it, and `(x|(?<=a))++` matches the
 empty string at the start of "x".
 
-`tools/py_regex_records.py` writes records of Python's `re` on
+`tools/py_regex_records.py` wrote records of Python's `re` on
 generated patterns and subjects, and `c6502cpp check-regex` compares
 py_regex with them, counting apart the patterns it reports as
 unsupported. On 21 Nov 2026 the 27,177 records of seeds 1 and 2 gave no
@@ -1658,11 +1684,6 @@ over 1,039,520 matches. `tests/test_py_regex_records.cpp` holds 589
 of those records and 52 recorded calls of `preprocess` with
 `--passthru-includes`, for headers that an `#include` opens and ones it
 skips as already seen.
-
-```sh
-uv run python tools/py_regex_records.py regex.jsonl --count 5000
-cpp/build/bin/c6502cpp check-regex regex.jsonl
-```
 
 pcpp's evaluator expands the escapes of a character constant with
 Python's `unicode-escape` codec, which reads Python's `\N{name}` too, so
@@ -1692,12 +1713,6 @@ tests leave out, is in `tests/test_preprocessor_calls.cpp`, and
 `tests/test_pcpp_lexer.cpp` and `tests/test_pcpp_text.cpp` compare the
 lexer and the text functions with Python's.
 
-```sh
-uv run python tools/capture_passes.py --passes preprocess -j 16
-cpp/build/bin/c6502cpp check-captures captures/preprocess
-cpp/build/bin/c6502cpp check-preprocess <directory of records>
-```
-
 On 21 Nov 2026 the C++ matched on all 2,088 distinct `preprocess` calls
 of the corpus, all 4,981 distinct calls of the Python unit tests, and
 2,205 calls on generated inputs, errors, warnings, and stderr included.
@@ -1717,7 +1732,7 @@ conversions ("The IR checks"), and the message names the pass by its
 class, as Python's `type(p).__name__` does, so both rule sets are
 `RuleSet`. After each check the driver calls the observer that
 `framework::set_observer` gives, Python's `PhaseDriver.observer`, which
-only the backend's mode `tac-observe` sets ("The TAC interpreter").
+only `tac_sim_modes::first_changing_pass` sets ("The TAC interpreter").
 
 `passes::tac_driver()` (`src/passes/optimization/optimizer.cpp`) is
 Python's `_DRIVER`, with every pass in its list and its order. A pass
@@ -1733,7 +1748,7 @@ driver matched Python's on all 4,054 distinct calls of
 `tac_optimize_function` of the corpus, the inliner's estimates of cost
 among them, and on all 1,146 of `optimize_tac`. `tests/test_tac_driver.cpp`
 checks the table's names against the signatures of tac_stage.cpp,
-which tests/test_capture_passes.py checks against Python's lists, and
+which tests/test_capture_passes.py checked against Python's lists, and
 runs a driver of the passes ported so far on three functions, with the
 results of Python's `PhaseDriver` of the same lists.
 
@@ -1905,11 +1920,11 @@ targets outside the function live in `cfg.extra`. SSA construction and
 destruction, which rewrite blocks in place, use `OwnedCfg`, whose
 blocks own their instructions ("The asm SSA round trip").
 
-`sim/assembler.py` stays in Python for the Python harness until
-step 9's R, and src/sim/assembler.h's `assemble` is its port, which
-the C++ simulator assembles with. `instruction_size` is the compiler's
-too, since six passes size code with it. It throws `InternalError` with Python's message (`AssemblerError:
-...`) for an instruction the assembler can't encode.
+src/sim/assembler.h's `assemble`, the port of sim/assembler.py, is
+what the simulator assembles with. `instruction_size` is the
+compiler's too, since six passes size code with it. It throws
+`InternalError` with Python's message (`AssemblerError: ...`) for an
+instruction the assembler can't encode.
 
 ## Checking the helpers
 
@@ -2012,7 +2027,7 @@ written in C++ from the start.
   insertion order, so a map that a pass iterates is a vector of pairs
   or an insertion-ordered map, never `std::unordered_map`. A Python
   set's iteration order depends on hashing, and a pass whose output
-  depends on one is a bug to fix in Python first.
+  depended on one was a bug to fix in Python first.
 - **Identity.** The C++ IR has value semantics, so a Python test of
   `is` between IR nodes, or a cache keyed by `id()`, needs another key,
   such as the instruction's index.
@@ -2141,14 +2156,14 @@ are those before the optimizer added the tables, as in `_codegen`, so
 Python sends them.
 
 A declaration may leave a parameter unnamed, which the Python c99
-program holds as None in `function_decl.params`, and the dump format
-has no form for None in an `identifier*`. `cpp_backend.py` sends such a
-program with the empty string there, which no C identifier spells, and
-`select_abi` and `fixed_address_layouts` spell that parameter's slot by
-its position, as Python does. The capture harness couldn't record
-those calls, since it dumps the program too, so the first run of the
-suite with the stage in C++ found them (tests/test_linker.py's unnamed
-parameters), and `tests/test_backend.cpp` holds such a request.
+program held as None in `function_decl.params`, and the dump format
+has no form for None in an `identifier*`. The C++ program holds the
+empty string there, which no C identifier spells, and `select_abi` and
+`fixed_address_layouts` spell that parameter's slot by its position,
+as Python did. The capture harness couldn't record those calls, since
+it dumps the program too, so the first run of the suite with the stage
+in C++ found them (tests/test_linker.py's unnamed parameters, whose
+cases are in tests/test_linker_source.cpp now).
 
 ## The back end through c6502cpp
 
@@ -2157,11 +2172,12 @@ compile.py's `_peephole_fixedpoint`: `peephole_sweep` lists the passes
 of the sweep in its order, each with its keyword arguments bound, and
 `run_to_fixed_point` repeats the sweep until a sweep leaves the program
 equal to what it started with, giving up with Python's message after
-16 sweeps. The Python memo (`passes/peephole_memo.py`) gives the
-results a run without it gives, so the C++ fixed point has none.
-`c6502cpp sweep-passes` lists the sweep, and `tests/test_cpp_backend.py`
-checks the list against `tools/capture_passes.SWEEP_PASSES`, which
-`tests/test_capture_passes.py` checks against compile.py.
+16 sweeps. The Python memo (`passes/peephole_memo.py`) gave the
+results a run without it gave, so the C++ fixed point has none.
+`c6502cpp sweep-passes` listed the sweep, which
+`tests/test_cpp_backend.py` checked against
+`tools/capture_passes.SWEEP_PASSES`, and `c6502cpp pass-order` lists
+it now.
 
 `c6502cpp pass-order` (src/pass_order.*) lists the passes of each of
 the optimizer's drivers in the order a compile runs them, one `<driver>
@@ -2205,176 +2221,124 @@ the program and its two tables. The preprocessor's warnings go to the
 caller's `diagnostics::Collecting` block, and what it writes to stderr
 is kept when a later pass throws.
 
-`c6502cpp backend` (`src/backend.*`) reads a request on stdin, runs
-`passes::front_end` on its source text and `passes::codegen` on the
-result ("The stage's driver", above), and writes the response.
-`src/backend.h` describes the request and the response. Every response
-begins with what the preprocessor wrote to stderr and the warnings, and
-a problem with the program (`CompileError`) ends the response with an
-`error` line, the Python class and the message, so that the warnings and
-stderr of a rejected program come back too. A bug the passes report
-(`InternalError`) exits with status 3.
+`c6502cpp compile` (src/compile_command.h, "compile.py's command line"
+below) runs `passes::front_end` on each C input's source text and
+`passes::codegen` on the result ("The stage's driver", above) in its
+own process. The preprocessor's stderr and the warnings come first, and
+a problem with the program (`CompileError`) is reported with its Python
+class and message, after the warnings and stderr of the rejected
+program. A bug the passes report (`InternalError`) is reported as an
+`AssertionError` with the C++ message, as compile.py let one out. Under
+`C6502_CHECK_IR=1` the command turns the IR checks on ("The IR
+checks").
 
-The backend's modes `objects` and `link` take every input of one run of
-`compile.py -c` or of a link, so that one process serves the run. The
-request lists each input's kind and names, with its text or bytes in a
-section of its own, and for a link the script's path, the origin, the
-`--defsym`s, and the output's path. `respond_inputs` compiles each C
-input with the metadata block (as `compile._object` does) and assembles
-its text, assembles each `.asm` input, and reads each object, in the
-command line's order, stopping at the first error, and for `-c` returns
-each object's bytes. A link gives the assembled objects to
-`passes::linker::link_objects` as they are, as compile.py gives the
-Python linker, reads the script after the inputs, and writes the
-executable itself. Each part of the response names its input, so
-`compile._cpp_build` can write what each C input's preprocessor wrote
-and its warnings, raise its error, and write its object in the order
-the Python path does. `elf::write` (src/binutils/elf.h) gives the
-`struct.error` that Python's `elf.write` raises for an addend or a size outside its field, now typed
-`struct.error`, which cpp_backend.py imports from `struct` and keeps
-apart from `re.error`, and compile.py opens the output before raising
-it, as Python's `open` comes before its `elf.write`. An executable that
-can't be opened or written gives the errno and the C library's message,
-which compile.py raises as the OSError Python's `open` raises.
-
-With `C6502_CPP_BACKEND=1`, compile.py's `_compile_c` hands the source
-text of each C input of `-S` to `c6502cpp backend` through
-`cpp_backend.compile_source`, one process per compile, with the
-preprocessor's arguments and the file name (None for stdin), and the
-`-S` text comes back. `-c` and a link went through `cpp_backend.build`,
-one process for the run, until group G2 of step 8 moved the whole
-command line to `c6502cpp compile` ("compile.py's command line",
-below), whose code sends the same requests. The process inherits
-Python's current directory, so the paths in the preprocessor's messages
-are the same. `--lex` goes
-through `cpp_backend.lex_source` and the backend's mode `lex`, which
-runs the preprocessor and `lexer::format_tokens` (compile.py's
-`_format_tokens`) and returns the text `--lex` prints, with the same
-`stderr`, `warnings`, and `error` lines. `--parse`, `--resolve`, and
-`--tac` go through `cpp_backend.stage_source` and the modes `parse`,
-`resolve`, and `tac` (`passes::run_text_stage`, src/passes/text_stages.h),
-which run the parser, `passes::resolved` (compile.py's `_resolved`, with
-the unroller under `-O`), or `_resolved`, the type checker, and
-`c99_to_tac` followed under `-O` by the inliner and the TAC optimizer
-only, as `_run_stage` does, and return `asdl::py_pretty` of the tree.
-asdlgen generates a `pretty` for each struct and sum type of
-the four IRs, which writes pretty.py's text: the class name, a
+`--lex` runs the preprocessor and `lexer::format_tokens` (compile.py's
+`_format_tokens`). `--parse`, `--resolve`, and `--tac` run
+`passes::run_text_stage` (src/passes/text_stages.h), which runs the
+parser, `passes::resolved` (compile.py's `_resolved`, with the unroller
+under `-O`), or `_resolved`, the type checker, and `c99_to_tac`
+followed under `-O` by the inliner and the TAC optimizer only, as
+compile.py's `_run_stage` did, and prints `asdl::py_pretty` of the
+tree. asdlgen generates a `pretty` for each struct and sum type of the
+four IRs, which writes pretty.py's text: the class name, a
 `name=value,` line for each field with two spaces of indentation per
 level, in the order of `dataclasses.fields` (a sum type's attributes
 first, though no module has any), lists one item to a line, and
 Python's `repr` of each leaf, with a string through `pcpp::py_repr`,
 which escapes every code point that `str.isprintable()` rejects. The
 IRs hold no Python floats, since a floating constant is its bit
-pattern in an `int`. `c6502cpp roundtrip --pretty <module>` reads a
-dump and writes its pretty text, which tests/test_cpp_backend.py's
-`TestPretty` compares with pretty.py on each IR of three programs. Under
-`C6502_CHECK_IR=1` the TAC optimizer's driver checks the TAC of `tac
--O` after each pass ("The IR checks"). `_run_stage` sends the text of these
-stages with `preprocess` off, and the request says whether `-O`
-inlines.
-`_run_stage("codegen", text)`, which the tests call with the
-preprocessor's output, sends the text with `preprocess` off. The
-request says whether `-O`
-inlines, which is false when a test has set
-`compile.inline_small_functions` to False (tests/no_inlining.py,
-`compile._inlining`).
-The simulator harness sends the source text too and takes back the
-finished asm program, which it assembles. The program and its tables
-stay in C++, since Python reads nothing of them afterward.
-`cpp_backend.py` writes the preprocessor's stderr to `sys.stderr`,
-issues the warnings again through `diagnostics.warn`, and raises an
-`error` line as the Python exception of that class with that message
-(`_exception`, which makes a subclass of the same name for a class such
-as Lark's `UnexpectedToken` whose constructor takes other arguments, and
-which turns argparse's exit into `SystemExit(2)`). An exit status of 3
-is raised as an `AssertionError` with the C++ message. Under
-`C6502_CHECK_IR=1`, or after `ir_check.enable()`, the request's
-`check_ir` turns on the C++ IR checks for the request ("The IR
-checks"), and the response carries no dump for them. compile.py reads the variable at each compile
-and, without it, imports none of this. Run as a script with the
-variable set, compile.py stops before it imports its pipeline, and the
-runtime helpers' footprints come from the table compiled into
-c6502cpp, so no stage imports the parser, Lark, pcpp, rtlib, binutils/,
-`passes.linker` and its imports, the type checker, numpy, or any other
-module of passes/, with `C6502_CHECK_IR=1` or without it.
-tests/test_cpp_backend.py's `TestObjectsAndLinks` checks the
-imports, and compares `-c` and links of C, `.asm`, and `.o` inputs,
-with `-T`, `-Ttext`, and `--defsym`, and an error of each class, with
-the Python path's.
+pattern in an `int`. Under `C6502_CHECK_IR=1` the TAC optimizer's
+driver checks the TAC of `--tac -O` after each pass.
 
-`tools/compare_backends.py` compiles the corpus of the capture harness
+`-c` and a link take every input of the command line in one process.
+The command compiles each C input with the metadata block (as
+`compile._object` did) and assembles its text, assembles each `.asm`
+input, and reads each object, in the command line's order, stopping at
+the first error, and for `-c` writes each object. It writes what each C
+input's preprocessor wrote and its warnings, reports its error, and
+writes its object in that order. A link gives the assembled objects to
+`passes::linker::link_objects` as they are, as compile.py gave the
+Python linker, reads the script after the inputs, and writes the
+executable. `elf::write` (src/binutils/elf.h) gives the `struct.error`
+that Python's `elf.write` raised for an addend or a size outside its
+field, after the output file is opened, as Python's `open` came before
+its `elf.write`. An executable that can't be opened or written gives
+the errno and the C library's message, as the OSError of Python's
+`open` did.
+
+Until group R of step 9, compile.py, nm.py, and objdump.py were shims
+that ran these commands, and the Python tests and the simulator
+reached the compiler through `c6502cpp backend` (src/backend.*), a
+command that read a request on stdin and wrote a response with the
+preprocessor's stderr, the warnings, the text or the asm program, and
+an `error` line. cpp_backend.py sent those requests and raised each
+`error` line as the Python exception of its class. With
+`C6502_CPP_BACKEND=1`, compile.py's `_compile_c` handed the source
+text of each C input of `-S` to `c6502cpp backend`, and from group F of
+step 7 `-c` and a link went to the backend's modes `objects` and
+`link` in one request for the run, until group G2 of step 8 moved the
+whole command line to `c6502cpp compile`. `c6502cpp roundtrip --pretty
+<module>` wrote a dump's pretty text, which
+tests/test_cpp_backend.py's `TestPretty` compared with pretty.py on
+each IR of three programs. Group R of step 9 removed the backend and
+its modes with the Python that sent them.
+
+`tools/compare_backends.py` compiled the corpus of the capture harness
 with `-S`, `-S -O`, `-c`, and `-c -O`, once with the variable and once
-without, links each object alone with and without a script, links the
-three games as tools/capture_binutils.py does and from their sources in
-one command, and links damaged objects and bad command lines. It
-requires the same exit status, messages, warnings, and exceptions for
+without, linked each object alone with and without a script, linked
+the three games as tools/capture_binutils.py did and from their sources
+in one command, and linked damaged objects and bad command lines. It
+required the same exit status, messages, warnings, and exceptions for
 each command, and the same files left in the directory, byte for
 byte. Its modes `lex`, `parse`, `resolve`, `resolveO`, `tac`, and
-`tacO`, which aren't among the defaults, run `--lex`, `--parse`,
-`--resolve` and `--tac` without and with `-O` on each program.
+`tacO` ran `--lex`, `--parse`, `--resolve` and `--tac` without and
+with `-O` on each program. The golden files hold what the last of
+those comparisons gave ("The golden files").
 
 ## compile.py's command line
 
 `c6502cpp compile` (src/compile_command.h) takes compile.py's command
-line after the program's name and does what compile.py's `main` does
-under `C6502_CPP_BACKEND=1`, in one process. It reads the command line
-with compile.py's parser, built on src/argparse.h after
-`_rewrite_ttext`, with `parse_known_args`, whose leftovers go to the
-preprocessor. Then it makes compile.py's own checks of the stage and
-the inputs, sends each C input of `--lex`, `--parse`, `--resolve`,
-`--tac`, and `-S` to `backend::respond` in the request
-`cpp_backend.compile_source` or `stage_source` sent, and sends the
-inputs of `-c` or a link in the one request `cpp_backend.build` sent,
-replaying each response as compile.py replayed it. Every message says
-`compile.py:`, as Robert chose, until step 9. `compile_command::run`
-returns an `Outcome`: each write to stdout and stderr in its order,
-and the exit status, the code of a SystemExit (argparse's help and
-usage errors, and the C++ preprocessor's argparse), or the exception
-compile.py would let out of `main`, with an OSError's strerror for
-`_report`.
+line after the program's name and does what compile.py's `main` did,
+in one process. It reads the command line with compile.py's parser,
+built on src/argparse.h after `_rewrite_ttext`, with
+`parse_known_args`, whose leftovers go to the preprocessor. Then it
+makes compile.py's own checks of the stage and the inputs, compiles
+each C input of `--lex`, `--parse`, `--resolve`, `--tac`, and `-S`,
+and compiles, assembles, and links the inputs of `-c` or a link ("The
+back end through c6502cpp", above). Its usage line and messages name
+the program `c6502` (`usage: c6502 ...`, `c6502: link error: ...`),
+where they said `compile.py:` until group R of step 9.
+`compile_command::run` returns an `Outcome`: each write to stdout and
+stderr in its order, and the exit status, the code of a SystemExit
+(argparse's help and usage errors, and the C++ preprocessor's
+argparse), or the exception compile.py would have let out of `main`,
+with an OSError's strerror for `_report`.
 
-Under the variable, compile.py's `main` runs the command through
-`cpp_backend.run_tool("compile", argv, inline=_inlining())`, and the
-two sides talk in frames (`C6502CPP_FRAMES=1`), which
-compile_command.cpp's `framed` describes. Python sends a header line
-with the include directory, the terminal's width that `shutil` gives,
-whether `-O` inlines (tests/no_inlining.py's flag reaches C++ this
-way), and whether the IR checks are on. The C++ side sends each write
-as a frame, which Python writes to `sys.stdout` or `sys.stderr`, so the
-two streams keep their order in a test that sends both to one
-`StringIO`, and Python's own text streams do the newline translation
-and the encoding. A C input `-` makes the C++ side ask for stdin, which
-Python reads with `sys.stdin.read()` as `_read_source` does, so a test
-that patches `sys.stdin` gives the C++ side its text, and the exception
-of the read comes back to be reported where Python reported it. The
-last frame is the status, which `main` returns, the code of a
-SystemExit, which it raises, or the exception, which it raises as its
-Python class (`cpp_backend._exception`). `_run_stage` and `_compile_c`
-still send one request each, since the tests call them in-process.
-Run as a script with the variable set, compile.py stops before its
-pipeline's imports and imports no module of the repository but
-cpp_backend.py, and neither argparse nor shutil
-(tests/test_cpp_backend.py, `TestCommandLine`). diagnostics.py, which
-imports dataclasses, comes after the early exit, cpp_backend.py finds
-c6502cpp itself (`_cpp_cli`) rather than through
-tools/check_captures.py, which imports argparse, and it reads the
-terminal's width as `shutil.get_terminal_size` does
-(`_terminal_columns`). Each of those imports took a tenth to a third of
-the start.
-
-Run by hand, `c6502cpp compile` writes to its own stdout and stderr in
-text mode, which on Windows ends each line with CR LF, as Python's
-streams do, reads stdin as UTF-8 with Python's newlines, and finds
-c6502's include/ above the executable or else in the source tree it
-was built from (`C6502_SOURCE_ROOT`, set in CMakeLists.txt for
-compile_command.cpp alone). For ASCII text it writes compile.py's
-bytes. Python on Windows reads and writes a pipe in the ANSI code page,
-which the command doesn't, so other text can differ. An exception
-compile.py would let out of `main` ends the command with its last
+`c6502cpp compile` writes to its own stdout and stderr in text mode,
+which on Windows ends each line with CR LF, as Python's streams do,
+reads stdin as UTF-8 with Python's newlines, and finds c6502's include/
+above the executable or else in the source tree it was built from
+(`C6502_SOURCE_ROOT`, set in CMakeLists.txt for compile_command.cpp
+alone). A `-o` file with `.s` or `.asm` gets LF bytes, while `-o -` to
+stdout gets CR LF on Windows. For ASCII text it writes compile.py's
+bytes. Python on Windows read and wrote a pipe in the ANSI code page,
+which the command doesn't, so other text could differ. An exception
+compile.py would have let out of `main` ends the command with its last
 traceback line, `<type>: <message>`, and status 1.
 
+Until group R of step 9, compile.py's `main` was a shim that ran the
+command through `cpp_backend.run_tool`, and the two sides talked in
+frames (`C6502CPP_FRAMES=1`). Python sent a header line with the
+include directory, the terminal's width, whether `-O` inlined
+(tests/no_inlining.py's flag), and whether the IR checks were on. The
+C++ side sent each write as a frame for Python to write to its own
+streams, and a C input `-` made the C++ side ask Python for stdin.
+Group R removed the frames with the shims. The help wraps to the width
+that `argparse::terminal_columns` reads as `shutil.get_terminal_size`
+did, from `COLUMNS` or else from the terminal.
+
 src/argparse.h is now the part of Python 3.11's argparse that the three
-tools use. compile.py's parser takes options that store a value
+command lines use. compile.py's parser takes options that store a value
 (`-o`, `-T`), `store_const` options in a mutually exclusive group (the
 six stage flags, whose conflict is `argument -S: not allowed with
 argument --lex`), `type=_number` on `--origin` (`invalid _number value:
@@ -2392,9 +2356,9 @@ sign, a prefix, underscores, leading zeros, and the whitespace around
 it, in 128 bits. A wider number is an InternalError, and the digits
 and spaces of other scripts, which Python takes, are no number here.
 
-tools/compare_backends.py's corpus `cli` has a job for each terminal
+tools/compare_backends.py's corpus `cli` had a job for each terminal
 width of `_CLI_COLUMNS` (1, 20, 41, 80, 132, and 200, which cover each
-way argparse wraps the usage and help), and each job runs the 83
+way argparse wraps the usage and help), and each job ran the 83
 command lines of `_cli_command_lines` with `COLUMNS` set to its width:
 the help, each pair of stage flags apart and run together, a bad
 `--origin` in each way `_number` rejects one, each option without its
@@ -2428,14 +2392,15 @@ names an instruction or an operand by its constructor
 skeleton, at most 512 of them, as Python's `_SHAPES` does.
 
 The checks are off unless `ir_check::enable()` or an `ir_check::Enabled`
-turns them on for the process. `backend::respond` turns them on for a
-request whose `check_ir` is set, which cpp_backend.py sets from
-`C6502_CHECK_IR=1`, and the fuzzers' runner (src/fuzz/runner.h) turns
-them on for every path. A failed check throws `InternalError` with the
-message of Python's `IRCheckError`, which ends `c6502cpp backend` with
-status 3, and cpp_backend.py raises it as an `AssertionError`, of which
-`IRCheckError` is a subclass. Each check runs where the Python pipeline
-runs it.
+turns them on for the process. `c6502cpp compile` turns them on under
+`C6502_CHECK_IR=1`, the tests' compiles and their runs in the
+simulator (tests/compile_case.h and tests/sim_case.h) unless a case
+turns them off, and
+the fuzzers' runner (src/fuzz/runner.h) for every path. A failed check
+throws `InternalError` with the message of Python's `IRCheckError`,
+which `c6502cpp compile` reports as an `AssertionError`, of which
+`IRCheckError` was a subclass. Each check runs where the Python
+pipeline ran it.
 
 | After | Python | C++ |
 |---|---|---|
@@ -2574,10 +2539,10 @@ in src/binutils/ and src/argparse.*.
   pointer.
 - `binutils::opcodes` (`opcodes.h`) is binutils/opcodes.py, the 151
   documented opcodes in the Python table's order, with `decode`,
-  `opcode`, `size`, and `zp_form`. `c6502cpp opcodes` lists it, and
-  tests/test_cpp_binutils.py compares the list with Python's.
+  `opcode`, `size`, and `zp_form`. `c6502cpp opcodes` listed it for
+  tests/test_cpp_binutils.py, which compared the list with Python's.
 - `argparse` (`argparse.h`) is the part of Python 3.11's argparse that
-  nm.py and objdump.py use, and since step 8 compile.py too ("compile.py's
+  nm.py and objdump.py used, and since step 8 compile.py's too ("compile.py's
   command line", above): options that store true or append, one
   positional of one or more values, the help action, abbreviations and
   combined short flags, every error message, and the usage and help
@@ -2588,10 +2553,10 @@ in src/binutils/ and src/argparse.*.
 - `binutils::nm` (`nm.h`) is nm.py, the first tool ported end to end.
   `c6502cpp nm` takes nm.py's command line, reading it as UTF-8 on
   Windows from the wide command line, and writes the listing's bytes,
-  the help in text mode, and stderr with LF. Under `C6502_CPP_BACKEND=1`,
-  nm.py's `main` runs it through `cpp_backend.run_tool`, which passes
-  the terminal's width as `COLUMNS` and writes the output to Python's
-  streams, so a test that redirects them gets it.
+  the help in text mode, and stderr with LF. Its usage and messages
+  name the program `c6502-nm`. Until group R of step 9, nm.py's `main`
+  ran it through `cpp_backend.run_tool`, which wrote the output to
+  Python's streams.
 - `binutils::disasm` (`disasm.h`) is binutils/disasm.py, the listing in
   dasm's syntax that `objdump.py -d` and `-D` print. Python keys the
   labels, mapping symbols, relocations, and an executable's symbols by
@@ -2606,10 +2571,8 @@ in src/binutils/ and src/argparse.*.
   objdump`, on the same argparse, `read_path`, and output conventions
   as nm. The section contents are lowercase hex in groups of four
   bytes, and the alignment is `2**(align.bit_length() - 1)`. A command
-  line that asks for nothing returns 2 with objdump.py's own message,
-  and `cpp_backend.run_tool` returns that status where it raises
-  SystemExit(2) for argparse's errors, which it tells apart by the
-  usage argparse writes before each of them.
+  line that asks for nothing returns 2 with objdump.py's own message.
+  Its usage and messages name the program `c6502-objdump`.
 
 Group A of step 7 ported the parser of the link metadata and the
 assembler.
@@ -2637,19 +2600,19 @@ assembler.
   (`kMaxDepth`), short of where Python's recursion limit stops it, so
   the port never takes a text Python doesn't. The values c6502 writes
   take at most 32 bits.
-- `c6502cpp assemble` reads a request with the text, the file name,
-  `keep_source`, and the link symbols, and writes the object's bytes or
-  the error (src/binutils/assemble_command.h). It
-  gives the `struct.error` Python's `elf.write` raises for an addend or
-  a size outside its field, where the C++ writer would keep the low 32
-  bits, with the type `struct.error`. tests/test_cpp_binutils.py's
-  `TestAssemble` compares it with Python. compile.py doesn't call it,
-  since the backend assembles `-c`'s text in the process that compiles
-  it ("The back end through c6502cpp").
+- `c6502cpp assemble` read a request with the text, the file name,
+  `keep_source`, and the link symbols, and wrote the object's bytes or
+  the error, for tests/test_cpp_binutils.py's `TestAssemble`, which
+  compared it with Python. Group R of step 9 removed it. `c6502cpp
+  compile -c` assembles each unit's text in the process that compiles
+  it ("The back end through c6502cpp"), and `elf::write` gives the
+  `struct.error` that Python's `elf.write` raised for an addend or a
+  size outside its field, where the C++ writer would keep the low 32
+  bits.
 
 `check-binutils` runs both on the records: every `assemble` record
 gives the recorded object's bytes or its error, and every
-`parse_metadata` record, which tools/capture_binutils.py now writes
+`parse_metadata` record, which tools/capture_binutils.py wrote
 for each call, gives the recorded `LinkMetadata` in tagged JSON and the
 lines `format_metadata` writes of it. tests/test_link_metadata.cpp
 has a case for each of `parse_metadata`'s 13 ValueError messages, and
@@ -2662,27 +2625,19 @@ Python's results for its Unicode text and its integers.
 `json.dumps` does, with `json::quote` for its strings, which
 `registry::json_quote` now calls.
 
-`tools/capture_binutils.py` records the Python tools over the corpus
-and, as a pytest plugin, during the Python tests (its docstring gives
-the records, and docs/cpp_port.md, "The captures" under step 7, the
-numbers), and `c6502cpp check-binutils <capture dir>...` checks them
+`tools/capture_binutils.py` recorded the Python tools over the corpus
+and, as a pytest plugin, during the Python tests (docs/cpp_port.md,
+"The captures" under step 7, gives the numbers), and `c6502cpp
+check-binutils <capture dir>...` checks such records
 (src/binutils/checks.h): every record's JSON makes the trip to C++ and
 back, every object and executable a record holds is read and written
 again byte for byte, every `elf_read` record's file is read with the
 recorded rewrite or error, every `disassemble` record's file is
 disassembled with the recorded options and compared line for line, and
 every `nm` and `objdump` record is run, comparing stdout, stderr, and
-the exit status. Each group of step 7 adds its
-tool's run to the checker. `tools/binutils_errors.py` lists the errors
-a capture holds, grouped by the shape of their message.
-
-```sh
-uv run python tools/capture_binutils.py -j 12
-C6502_BINUTILS_CAPTURES=captures/binutils_suite PYTHONPATH=tools \
-    uv run pytest -p capture_binutils -n 12 -q
-cpp/build/bin/c6502cpp check-binutils captures/binutils captures/binutils_suite
-uv run python tools/binutils_errors.py captures/binutils
-```
+the exit status. Each group of step 7 added its
+tool's run to the checker. `check-frozen` runs it on the frozen
+binutils records ("The frozen captures").
 
 ### The runtime library
 
@@ -2691,8 +2646,9 @@ the builders that several share (`negate_n_inplace`, `copy_n_via_a`,
 `shift_wide`, `sdivmod_wide`) and a comment on each that gives its
 `HARGS` layout and its algorithm. `rtlib::all_helper_functions` builds
 them on the first call, and `rtlib::helper_dump` gives their program in
-the dump format, which `c6502cpp helper-dump` writes for the simulator
-(`cpp_backend.helper_program`). The call edges between the helpers are
+the dump format, which `c6502cpp helper-dump` writes, so that
+cpp/tests/frozen/rtlib_helpers.txt can be written again after a change
+made on purpose to a helper. The call edges between the helpers are
 found in the functions' `Call` and `Jump` instructions, and
 `rtlib::check_acyclic`, which `all_helper_functions` runs, refuses
 helpers that call each other in a cycle, since a footprint counts the
@@ -2708,19 +2664,20 @@ footprints Python measured.
 
 `passes::helper_footprints` (src/passes/zp_globals.h, beside
 `hargs_need`) measures each helper's footprint on the functions.
-`c6502cpp helper-footprints` lists it, which is where
-`passes.runtime_layout.helper_footprints` reads it for the tests.
+`c6502cpp helper-footprints` listed it for
+`passes.runtime_layout.helper_footprints`, until group R of step 9
+removed both.
 
 `passes::needed`, `closure`, `helper_names`, and `library_text`
 (src/passes/runtime_library.h) are passes/runtime_library.py on the
-table. `library_text` is the text Python's `library_object` assembles,
-which Python now computes in a function of that name. It lowers the
+table. `library_text` is the text Python's `library_object`
+assembled, which Python computed in a function of that name. It lowers the
 helpers with `lower_to_asm2` and writes them with `asm_emit` after the
 metadata block of `format_metadata`, and the linker of group D
 assembles it with group A's assembler as `runtime.o`, at the place the
 comment at the end of runtime_library.cpp marks. `helper_sizes`, which
-only the Python tests read, assembles each helper and is left to the
-assembler's port. tools/capture_binutils.py records each call of
+only the Python tests read, assembled each helper and was left to the
+assembler's port. tools/capture_binutils.py recorded each call of
 `needed` that a link makes as a `runtime_library` record, with the
 objects, the defined names, the helpers it returned, and Python's text
 for them, and `c6502cpp check-binutils` runs `needed` and
@@ -2982,20 +2939,19 @@ These are the places where the port follows Python.
   the OSError of `Path.write_bytes`, it throws `InternalError` with a
   message that says so.
 
-`c6502cpp link` (src/binutils/link_command.h) reads a request with the
+`c6502cpp link` (src/binutils/link_command.h) read a request with the
 objects' bytes and names, the script's path, the origin, and the
-`--defsym`s, reads the objects and then the script as compile.py does,
-links them, and writes the executable's bytes or the error with its
+`--defsym`s, read the objects and then the script as compile.py did,
+linked them, and wrote the executable's bytes or the error with its
 Python class, its message, and the position of the object `elf.read`
-rejected. compile.py links through the backend's `link` mode, which
-compiles a link's C inputs in the same process, and `c6502cpp link`
-stays for the tests and for timing a link alone. An origin or a
-`--defsym` past 64 bits, which compile.py reads with Python's integers,
-throws `InternalError`. tests/test_cpp_binutils.py's `TestLink` compares
-it with Python's link of a compiled program without a script, with
-`--defsym` and another origin, with a script of ROM and RAM regions,
-and with a script that isn't there, and `--repeat <n>` links n times and
-writes the shortest time to stderr.
+rejected. tests/test_cpp_binutils.py's `TestLink` compared it with
+Python's link of a compiled program without a script, with `--defsym`
+and another origin, with a script of ROM and RAM regions, and with a
+script that isn't there, and `--repeat <n>` linked n times and wrote
+the shortest time to stderr. Group R of step 9 removed it, and
+`c6502cpp compile` links in the process that compiles a link's C
+inputs. An origin or a `--defsym` past 64 bits, which compile.py read
+with Python's integers, throws `InternalError`.
 
 `c6502cpp check-binutils` links each `link` record in C++, from the
 objects' bytes, the script's text through `parse_script`, the origin,
@@ -3060,27 +3016,28 @@ of six programs gives the instruction it is named for after
 `optimize_program` and the same result as before, and a loop's SSA form
 from `to_ssa` has a Phi and gives the result of the TAC before it.
 tests/test_tac_sim_optimized_source.cpp holds that module's other
-three tests, which step 9 ported: `tac-observe` names no step for
-three programs that the TAC optimizer compiles correctly.
+three tests, which step 9 ported: `first_changing_pass` names no step
+for three programs that the TAC optimizer compiles correctly.
 
-The backend's modes `tac-run`, `tac-observe`, and `tac-falls-off`
-(`src/tac_sim_modes.h`) run the front end of
-`tests.test_sim_chapters._run_program` and `c99_to_tac` on a source and
-then the interpreter, and the fuzzers (src/fuzz/) call the functions
-under them, `run_plain_and_optimized`, `first_changing_pass`, and
-`falls_off_end`. `tac-run` gives `main`'s result on the TAC, and
-on request on the TAC after `optimize_program` too, as fuzz/reduce.py's
-`_tac_results` did. `tac-observe` is fuzz/tac_passes.py's
-`first_changing_pass`: the TAC optimizer's driver calls an observer
+`tac_sim_modes::translate` (`src/tac_sim_modes.h`) runs the front end
+of `tests.test_sim_chapters._run_program` and `c99_to_tac` on a
+source, and `run_plain_and_optimized`, `first_changing_pass`, and
+`falls_off_end` run the interpreter on the result, for the fuzzers
+(src/fuzz/), the `tacsim` jobs of `check-golden`, and the tests. Until
+group R of step 9 they were also the backend's modes `tac-run`,
+`tac-observe`, and `tac-falls-off`. `run_plain_and_optimized` gives
+`main`'s result on the TAC, and on request on the TAC after
+`optimize_program` too, as fuzz/reduce.py's `_tac_results` did.
+`first_changing_pass` is fuzz/tac_passes.py's function of that name:
+the TAC optimizer's driver calls an observer
 after every pass and after SSA construction and destruction
 (`framework::set_observer`, Python's `PhaseDriver.observer`), which runs
 `main` on the program with the function at that step and names the
 first step after which the result changes, by the Python class of its
 pass (`NamedPass::class_name`, which tests/test_tac_sim_backend.py
-checks against Python's `_DRIVER`). With the request's `check_ir`, the
-driver also checks the TAC after each pass, as the fuzzers' runner
-does. `tac-falls-off` is fuzz/reduce.py's
-`falls_off_end`: it appends a call of `__reduce_fell_off` to each
+checked against Python's `_DRIVER`). With the IR checks on, the driver
+also checks the TAC after each pass, as the fuzzers' runner does.
+`falls_off_end` is fuzz/reduce.py's function of that name: it appends a call of `__reduce_fell_off` to each
 function that returns a value, other than `main`, after the parser and
 before identifier resolution, and reports whether the run reached one.
 
@@ -3096,15 +3053,15 @@ went with the Python fuzzers in step 9's group G6.
 had before step 9, broke a Python pass, so it was skipped under the
 variable. The same
 breakage in C++, `var_unchanged` of src/passes/optimization/
-narrow_widened_arith.cpp returning true, made `tac-observe` give that
+narrow_widened_arith.cpp returning true, made `first_changing_pass` give that
 test's `("main", "NarrowWidenedArith", 12, 79)` on its program. That
 check was made by hand on 23 Nov 2026 and the breakage removed.
 
-`tools/compare_tac_sim.py` runs each program of
+`tools/compare_tac_sim.py` ran each program of
 tools/compare_backends.py's corpus through both interpreters, with its
-file name and `-I` arguments, and compares the front end's error, or
+file name and `-I` arguments, and compared the front end's error, or
 `main`'s result on the unoptimized TAC and on the optimized TAC, and the
-observer's result, which must be None for every program.
+observer's result, which had to be None for every program.
 
 ## The checks after Python
 
@@ -3128,10 +3085,10 @@ games' units, the chapters' programs, and seeds 0 to 99 of
 `O`, `unopt`, `cO`, `c`, `lex`, `parse`, `resolve`, `resolveO`, `tac`,
 `tacO`, and `tacsim`, the `links` jobs, which compile and link the
 three games and link the damaged files and the bad command lines, and
-the `cli` jobs, which run compile.py's help, usage errors, and
+the `cli` jobs, which run the compiler's help, usage errors, and
 spellings of `-Ttext` at six terminal widths. A job's `columns` step
 sets the width for the commands after it, which is 80 before one. They
-are under `golden/`, which is checked in raw, as examples/*.asm are.
+are under `golden/`, which is checked in raw.
 Each mode has a manifest, `golden/<mode>.txt`, with a block for each
 job that lists its steps, each command line with its exit status, its
 stdout, its stderr, and the exception it raised, and the SHA-256 of
@@ -3146,7 +3103,8 @@ src/golden.h gives the format.
 The mode `tacsim` holds the TAC interpreter's results on the corpus.
 For each program, `check-golden` runs `main` on the TAC, on the TAC
 after the TAC optimizer, and under `fuzz tac-passes`'s observer, with
-the backend's modes `tac-run` and `tac-observe`. The Python interpreter
+`tac_sim_modes::run_plain_and_optimized` and `first_changing_pass`.
+The Python interpreter
 that wrote them ran in a thread with a 128 MB stack and a high
 recursion limit, so a program that recurses past Python's default
 limit has its value in the golden file, which the C++ interpreter
@@ -3169,9 +3127,7 @@ the jobs among `-j` worker processes, which are c6502cpp started again
 with `--worker`, since a job changes the current directory. Each worker
 takes every job's steps in an empty directory. It runs each command
 line through `compile_command::run`, the code of `c6502cpp compile`,
-which reads it with compile.py's argparse and runs it as compile.py's
-`main` does, with each request answered by `backend::respond` in the
-same process. It writes the manifest's lines for what the job gave and
+in the same process. It writes the manifest's lines for what the job gave and
 compares them with the manifest's own, and each `-S` text with its
 file, and prints a `DIFFER` line for each job that differs, with the
 command and the first line that differs.
@@ -3180,8 +3136,7 @@ A change made on purpose that changes an output shows as `DIFFER` lines.
 To accept it, run `check-golden --update`, which writes the manifests
 and the `-S` texts again from what the C++ compiler gave and removes the
 texts that no job names any longer, and review the change with `git
-diff golden/` before committing it, as a change to examples/*.asm is
-reviewed. A change to a job's commands, or a new job, is an edit of
+diff golden/` before committing it. A change to a job's commands, or a new job, is an edit of
 the manifest by hand, after which `--update` fills in what the commands
 give. A new mode needs a step of its own in src/golden.cpp's `run_job`
 too, as `tacsim` has.
@@ -3311,7 +3266,7 @@ purpose. A few tests needed more than their records.
   `tests/test_asm_optimizer_calls.cpp`, so the Python test went without
   a new case.
 
-tests/link_helpers.py's `linked_text`, which 36 tests search, reads the
+tests/link_helpers.py's `linked_text`, which 36 tests searched, read the
 executable with `c6502cpp objdump -D --no-show-raw-insn --no-addresses`
 and `--link-metadata` in place of binutils/disasm.py, and its text was
 the same as before for two programs linked with and without the
@@ -3473,14 +3428,15 @@ tests/link_helpers.py did for the Python tests:
 - `compile` runs a source to one of the stages of compile.py's
   `_run_source` (`--lex`, `--parse`, `--resolve`, `--tac`, `-S`), with
   `-O`, inlining, link metadata, the preprocessor's arguments, and a
-  file name, through the functions the backend's modes call
+  file name, through the functions `c6502cpp compile` calls
   (`passes::front_end`, `passes::codegen`, `passes::run_text_stage`),
   and returns the text, what the preprocessor wrote to stderr, the
   warnings, and the error's Python class and message. The IR checks
   are on unless a case turns them off, since the Python suite ran with
   `C6502_CHECK_IR=1`. `run_source`, `codegen`, and `compile_error` throw
   when the result isn't the one the case expects.
-- `is_a` gives errors.py's hierarchy by name, so that a case accepts
+- `is_a` gives the hierarchy of errors.py's classes by name, so that a
+  case accepts
   the subclasses that `assertRaises` would.
 - `tac_program` returns the TAC that `--tac` prints, and `tac_main` /
   `run_program` what `main` returns in the TAC interpreter, through
@@ -3490,7 +3446,7 @@ tests/link_helpers.py did for the Python tests:
   give them a directory.
 - `compile_object`, `link` (with the `--defsym` pairs of the
   simulator's helpers, `sim::defsym_args`), `linked_text`, `listing`,
-  and `symbols` are tests/link_helpers.py's.
+  and `symbols` were tests/link_helpers.py's.
 - `function_body` returns one function's lines of the `-S` text.
 - tests/sim_case.h's `build_sim` compiles a source as sim/harness.py's
   `compile_to_asm` did and loads it in the simulator ("The simulator's
@@ -3516,10 +3472,11 @@ generator's.
 
 The tests find the checkout through `C6502_SOURCE_ROOT`, which
 CMakeLists.txt defines. src/py_random.h is CPython 3.11's
-`random.Random`, which tools/py_random_vectors.py checked against
-CPython's own results, frozen in tests/frozen/py_random.txt, so that a
-case or a fuzzer that draws operands at random draws the Python
-test's.
+`random.Random`, which was checked against CPython's own results,
+frozen in tests/frozen/py_random.txt, so that a case or a fuzzer that
+draws operands at random draws the Python test's. The file was written
+by tools/py_random_vectors.py, which group R of step 9 deleted, so it
+can't be written again.
 
 ## The simulator's CPU
 
@@ -3530,37 +3487,38 @@ expected values and cycle counts were all taken on py65. A step reads
 and writes memory in py65's order, so `set_io`'s callbacks on an address
 range see a read-modify-write's read before its write. `run` checks the
 cycles, an instruction count, the trap table, and BRK before each
-instruction, in the order of sim/harness.py's step loop, and then calls
+instruction, in the order of the Python harness's step loop, and then calls
 `before_instruction`, which the game machines' decoding of each
 instruction's soft-switch access can use.
 
-The CPU is checked against py65 in two ways while py65 is installed.
+The CPU was checked against py65 in two ways while py65 was installed.
 
-- tools/py65_cpu_vectors.py writes cpp/tests/frozen/cpu/vectors.txt,
+- tools/py65_cpu_vectors.py wrote cpp/tests/frozen/cpu/vectors.txt,
   2,971 single steps of py65 from random states, with the cases of each
   addressing mode forced (a page crossed and not, an index that wraps
   in page 0, a pointer at $FF, branches taken across a page, the stack
   pointer at each end, and the instruction at the end of memory). Each
   gives the bytes read before written, every read address in order, the
-  state and cycles after, and every write. It also writes
+  state and cycles after, and every write. It also wrote
   decimal.txt, a CRC-32 of the A and P that ADC and SBC give in decimal
   mode for each operand, per accumulator and carry. test_cpu.cpp runs
-  the CPU on all of them, and they stay the reference once py65 is gone.
-- With `C6502_SIM_LOCKSTEP=1`, sim/lockstep.py runs each simulation
+  the CPU on all of them. The tool and py65 went in group R of step 9,
+  so the files can't be written again, and they stay the reference.
+- With `C6502_SIM_LOCKSTEP=1`, sim/lockstep.py ran each simulation
   of the Python harness on py65 and then on the C++ CPU, through the
-  backend mode `cpu-run` (src/sim/cpu_run.h), and compares a digest of
-  the state and the writes after each instruction.
+  backend mode `cpu-run`, and compared a digest of the state and the
+  writes after each instruction (`cpu_run::digest` in
+  src/sim/cpu_run.h, which `game-run` writes for each event).
 
 ## The simulator's harness
 
 src/sim/harness.h and src/sim/runtime.h are the simulator that the C++
 tests run programs on (step 9, G4), ported from sim/harness.py,
-sim/linked.py, and sim/runtime.py, which stay in Python for the
-comparison of the games' machines until R.
+sim/linked.py, and sim/runtime.py, which group R of step 9 removed.
 
 - `build_sim` assembles a finished asm program at $0800 with
   src/sim/assembler.h's `assemble`, which lays every function and
-  static down in source order as sim/assembler.py does, with the
+  static down in source order as sim/assembler.py did, with the
   runtime for the layout that the program's SSP, FP, HARGS, and DPTR
   give. `build_linked_sim` loads an executable at its segments' load
   addresses instead, and checks that the helpers it gives absolute
@@ -3581,8 +3539,8 @@ comparison of the games' machines until R.
 - The hooks (the 64-bit helpers, the conversions, `fadd` to `ddiv`,
   and the orderings) compute with src/fp_arith.h, as the TAC
   interpreter and constant folding do (decision 1 of step 9). A
-  division by zero of a 64-bit helper fails with sim/runtime.py's
-  `RuntimeError`, and a conversion of a NaN or an infinity to an
+  division by zero of a 64-bit helper fails with the `RuntimeError`
+  that sim/runtime.py raised, and a conversion of a NaN or an infinity to an
   integer with the TAC interpreter's `ValueError` or `OverflowError`,
   each as a `HookError` that carries the Python class's name.
 
@@ -3611,7 +3569,7 @@ the Python machines ran py65's step, and decodes each instruction's
 soft-switch access before it runs (`game::soft_switch_access`), as the
 Python machines did, rather than through the CPU's read and write
 callbacks, which would also see accesses such as `JMP ($C0xx)` that
-the Python decoding leaves out. src/sim/games.h holds the scripts the
+the Python decoding left out. src/sim/games.h holds the scripts the
 games are played with and the setups the tests play them in.
 cpp/tests/test_zork_interpreter_sim.cpp, test_lode_runner_sim.cpp, and
 test_ali_baba_sim.cpp play them, and they run only where ZORK_DSK,
@@ -3627,21 +3585,16 @@ reach, which `python -m tests.test_ali_baba coverage` did.
 
 The machines were checked against the Python ones in two ways.
 
-- With `C6502_SIM_LOCKSTEP=1`, the Python machines' loops record each
+- With `C6502_SIM_LOCKSTEP=1`, the Python machines' loops recorded each
   stretch of instructions between two of their own writes or changes
-  of the registers as a segment, and the C++ CPU runs the same segments
+  of the registers as a segment, and the C++ CPU ran the same segments
   through `cpu-run`, each for as many instructions as on py65
   (sim/lockstep.py's `MachineRecorder`).
-- tools/compare_game_machines.py plays every script on the original
-  and on the C programs on the Python machine, writes the same text as
-  `game-run`, and compares the two. At a difference it runs both sides
+- tools/compare_game_machines.py played every script on the original
+  and on the C programs on the Python machine, wrote the same text as
+  `game-run`, and compared the two. At a difference it ran both sides
   again with a `step` line for each instruction after the last event
-  that matched. It runs again while sim/'s machines are in the
-  repository:
-
-  ```sh
-  C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_game_machines.py -j 10
-  ```
+  that matched. Group R of step 9 removed it with sim/'s machines.
 
 ## The fuzzers
 
@@ -4015,3 +3968,12 @@ own.
   format. The C++ tests (9,874 cases) pass in fresh builds with MSVC
   19.36 and GCC 12.2, and `check-golden` and `check-frozen` match every
   job and record.
+- 27 Nov 2026: group R of step 9 removed the repository's last Python:
+  compile.py, nm.py, objdump.py, cpp_backend.py, the IR modules and
+  asdl.py, sim/, the Python tests, and the tools that compared the C++
+  with them, and with them the commands of c6502cpp that only Python
+  ran (`backend` and its modes, `roundtrip`, `assemble`, `link`,
+  `opcodes`, `helper-footprints`, and `sweep-passes`). `c6502cpp
+  compile`, `nm`, and `objdump` are the command lines, and their usage
+  and messages name the programs `c6502`, `c6502-nm`, and
+  `c6502-objdump`.

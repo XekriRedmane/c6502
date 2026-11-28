@@ -38,10 +38,8 @@ helper-dump`, after the change has been checked in the simulator.
 The simulator's runtime (cpp/src/sim/runtime.h) assembles every
 helper at `$E000` with `sim::assemble`, lays `icall` (`JMP (DPTR)`)
 after them, and runs a helper with no 6502 code (the 64-bit and
-floating-point ones) as a hook at a trap address after that. Its
-Python copy, sim/runtime.py, reads the helpers through
-`cpp_backend.helper_program` (`c6502cpp helper-dump`) for the games and
-the fuzzers' runner. cpp/tests/test_runtime_helpers_sim.cpp tests the
+floating-point ones) as a hook at a trap address after that.
+cpp/tests/test_runtime_helpers_sim.cpp tests the
 helpers through the harness, cpp/tests/test_runtime_library_sim.cpp
 through linked C, and cpp/tests/test_bin_to_bcd_sim.cpp runs
 `bin16_to_bcd` on the C++ CPU for all 65536 inputs, with its cycles.

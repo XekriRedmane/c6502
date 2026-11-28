@@ -147,9 +147,11 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
   and V are dead at L: the 1-byte form of
   `optimization/compare_subtract.h`.
 - `ir_check.h` — checks the IR between passes. The checks run inside
-  c6502cpp when `C6502_CHECK_IR=1` is set, and always in the fuzzers'
-  runner (cpp/src/fuzz/runner.h), and a failed check reaches Python as
-  an AssertionError.
+  `c6502cpp compile` when `C6502_CHECK_IR=1` is set, in the tests'
+  compiles unless a case turns them off, and always in the fuzzers'
+  runner (cpp/src/fuzz/runner.h). A failed check throws
+  `InternalError`, which `c6502cpp compile` reports as an
+  AssertionError.
   `check_tac` runs after every TAC optimizer pass (from
   `PhaseDriver::apply`): labels unique and jumped to, names in the
   symbol table, and in SSA form one definition per SSA name that
@@ -315,7 +317,7 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
   the RHS stages through a local before the LDA-LHS / CMP-tmp;
   IndexedData on the right is exactly the addressing mode CMP can
   consume directly once `Emitter::compare` (cpp/src/asm_emit.cpp) and
-  the simulator's `_emit_compare` (sim/assembler.py) dispatch
+  the simulator's assembler (cpp/src/sim/assembler.cpp) dispatch
   IndexedData (added alongside this pass).
   An `ADC` / `SBC` / `AND` / `ORA` / `EOR` of the temporary folds the
   same way for an immediate, `Data` / `ZP`, `IndexedData`, or
@@ -557,7 +559,8 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
   don't define, and that `--defsym` doesn't give, come from the
   runtime library (`runtime_library`, `runtime_library.h`) as one
   more unit, `runtime.o`, after the others, whose metadata's HARGS
-  need `choose_layout` counts. `sim/linked.py` runs an executable.
+  need `choose_layout` counts. `sim::build_linked_sim`
+  (cpp/src/sim/harness.h) runs an executable.
 - `link_script.h` — `parse_script`: the GNU ld subset `-T` reads
   (`MEMORY`, `SECTIONS`, output sections with `> region`, `AT>`,
   `NOLOAD`, `ALIGN`, assignments, and `ORIGIN` / `LENGTH` / `ADDR` /
@@ -1484,12 +1487,11 @@ exchange for a uniform "each Mov is self-contained" model where the
 same `Mov(Reg(A), Stack(off))` atom always emits its own LDY setup.
 That costs +1 byte per `FunctionPrologue` save-FP step and +2 bytes
 per non-trivial `Ret` restore-FP step versus the old emit.
-`prologue_size` / `ret_size` in cpp/src/sim/assembler.cpp, and
-`_emit_prologue` / `_emit_ret` in the simulator's sim/assembler.py,
-mirror the same naive lowering so `sim::instruction_size`
-(cpp/src/sim/assembler.h, used by `long_branches`) and
-sim/assembler.py's `assemble` (the in-process binary assembler) stay
-byte-aligned with what `asm_emit` produces.
+`prologue_size` / `ret_size` in cpp/src/sim/assembler.cpp mirror the
+same naive lowering, so that `sim::instruction_size`
+(cpp/src/sim/assembler.h, used by `long_branches`) and `sim::assemble`
+(the simulator's assembler) stay byte-aligned with what `asm_emit`
+produces.
 
 ## Peephole catalog
 

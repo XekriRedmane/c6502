@@ -403,14 +403,6 @@ bool is_link_error(std::string_view type) {
 
 Raised raised_of(const CompileError& e) { return Raised{e.python_type(), e.what(), ""}; }
 
-std::int64_t address(const asdl::Int& v, std::string_view what) {
-  if (v < asdl::Int(INT64_MIN) || v > asdl::Int(INT64_MAX)) {
-    throw InternalError("the C++ linker holds an address in 64 bits, and the " +
-                        std::string(what) + " " + asdl::int_to_string(v) + " is wider");
-  }
-  return static_cast<std::int64_t>(v);
-}
-
 passes::TextStage text_stage(std::string_view stage) {
   if (stage == "parse") return passes::TextStage::kParse;
   if (stage == "resolve") return passes::TextStage::kResolve;
@@ -744,22 +736,13 @@ class Compile {
     for (const auto& [name, value] : *defsyms) {
       names.insert_or_assign(name, value);
     }
-    const std::optional<asdl::Int> given =
-        args.origin ? number(*args.origin) : std::optional<asdl::Int>();
-    const bool wide_origin =
-        given && (*given < asdl::Int(INT64_MIN) || *given > asdl::Int(INT64_MAX));
-    const std::int64_t origin = !given        ? passes::linker::kDefaultOrigin
-                                : wide_origin ? 0
-                                              : address(*given, "origin");
+    const asdl::Int origin =
+        args.origin ? number(*args.origin).value() : asdl::Int(passes::linker::kDefaultOrigin);
     binutils::elf::ElfFile exe;
     try {
       std::optional<passes::link_script::Script> script;
       if (args.script && !args.script->empty()) {
         script = passes::link_script::read_script(*args.script);
-      }
-      if (wide_origin && !script) {
-        if (objects.empty()) throw CompileError("LinkError", "linking needs at least one object");
-        throw CompileError("LinkError", passes::linker::origin_message(*given));
       }
       exe = passes::linker::link_objects(std::move(objects), script, origin, names);
     } catch (const CompileError& e) {

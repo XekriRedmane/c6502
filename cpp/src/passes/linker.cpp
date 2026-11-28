@@ -76,16 +76,12 @@ ld::Names to_names(const SymbolAddrs& table) {
 
 }  // namespace
 
-std::string origin_message(asdl::Int origin) {
-  return "the origin " + link_layout::address_text(origin) +
-         " is outside the 6502's address space ($0000-$FFFF)";
-}
-
 elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::Script>& script,
-                          std::int64_t origin, const ld::Names& defsyms) {
+                          Int origin, const ld::Names& defsyms) {
   if (inputs.empty()) throw link_error("linking needs at least one object");
-  if (!script && !(0 <= origin && origin < link_layout::kAddressSpace)) {
-    throw link_error(origin_message(origin));
+  if (!script && !(Int(0) <= origin && origin < Int(link_layout::kAddressSpace))) {
+    throw link_error("the origin " + link_layout::address_text(origin) +
+                     " is outside the 6502's address space ($0000-$FFFF)");
   }
   std::vector<LinkMetadata> metas;
   ld::Objects objects;
@@ -297,8 +293,10 @@ elf::ElfFile link_objects(ld::Objects inputs, const std::optional<link_script::S
       return std::nullopt;
     };
     try {
-      placement = link_layout::lay_out(script ? *script : link_layout::default_script(units, origin),
-                                       units, lookup);
+      placement = link_layout::lay_out(
+          script ? *script
+                 : link_layout::default_script(units, static_cast<std::int64_t>(origin)),
+          units, lookup);
     } catch (const CompileError& e) {
       if (e.python_type() != "LayoutError") throw;
       throw link_error(e.what());

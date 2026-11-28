@@ -587,10 +587,10 @@ writes its elements sorted by their JSON text, as the harness does
 
 ### The stage calls
 
-`tools/capture_passes.py --passes stage` records the calls of
+`tools/capture_passes.py --passes stage` recorded the calls of
 `STAGE_PASSES`, the stage's entry points, with their arguments, their
 results, and the arguments they changed in place (the module docstring
-describes the records). `src/passes/stage_registry.cpp` gives each call
+described the records). `src/passes/stage_registry.cpp` gives each call
 a signature, the codec of each positional and keyword argument and of
 the result, and a runner when the call is ported. For each recorded
 call `c6502cpp check-captures` reads every value into its C++ type and
@@ -641,7 +641,7 @@ The harness records the five entry points under `compute_liveness`,
 `color_graph`, each a call that `_optimize_function` makes on one
 function in SSA form, whose dump the record holds as its input
 (`stage_checks.cpp` reads a `Function(` dump as a top-level item).
-`_CAPTURE_FORMS` in `tools/capture_passes.py` gives three classes
+`_CAPTURE_FORMS` in `tools/capture_passes.py` gave three classes
 fields of their own: a `Liveness` is recorded as the shape of its CFG
 (each block's id, number of instructions, and edges) and its sets by
 block, without the blocks' copies of the instructions or the cache of
@@ -693,7 +693,7 @@ from the source at an address names its slot), and the driver adds
 the coalesced names to it in the order of the coalescing's
 `representative`, as Python does.
 
-`tools/capture_passes.py` records `optimize_program` as `asm_optimizer`,
+`tools/capture_passes.py` recorded `optimize_program` as `asm_optimizer`,
 and four calls inside the driver as `optimize_function`,
 `apply_coloring`, `fold_const_statics`, and `dead_static_elimination`,
 where `optimize_program` reaches each through its module.
@@ -896,11 +896,11 @@ hand for the two errors and for the fallbacks of `local_slot_names`.
 ## The TAC optimizer's calls
 
 Step 5 (docs/cpp_port.md) ports `c99_to_tac`, the inliner, and the TAC
-optimizer. `tools/capture_passes.py --passes tac` records each call
+optimizer. `tools/capture_passes.py --passes tac` recorded each call
 that the optimizer's driver (`PhaseDriver.apply`) makes on one
 function, as `tac_<name>` for each pass and `tac_to_ssa` and
 `tac_from_ssa` for SSA construction and destruction, and `--passes
-tac-stage` records the program-level calls of its `TAC_STAGE_PASSES`,
+tac-stage` recorded the program-level calls of its `TAC_STAGE_PASSES`,
 `c99_to_tac` through `split_tables`, with `tac_optimize_function` for
 each function the optimizer is run on. Their signatures are in
 `src/passes/optimization/tac_stage.cpp`, which `stage_signatures`
@@ -1211,7 +1211,7 @@ doesn't have. The tests hold 142 calls.
 
 Step 6 (docs/cpp_port.md) ports the preprocessor, the parser, and the
 passes on the c99 program through the type checker.
-`tools/capture_passes.py --passes front` records the calls of its
+`tools/capture_passes.py --passes front` recorded the calls of its
 `FRONT_PASSES`, from `preprocess` to `type_checking`, and of its
 `FRONT_HELPERS`, the functions of pp_numbers.py, and
 `src/passes/front_stage.cpp` gives each a signature, which
@@ -1313,7 +1313,7 @@ These pieces of the front end are ported.
   `preprocessor` and `pcpp`), described below under "The preprocessor".
 
 The type queries and the repr are checked on what the type checker
-returns. `tools/capture_helpers.py --front-only` writes a `c99types`
+returns. `tools/capture_helpers.py --front-only` wrote a `c99types`
 record at each call of the type checker, with the dumps of every type of
 the program and its symbol table (and a set of bit-precise types and
 qualified pointers, which the corpus has few of), of its top-level
@@ -1428,8 +1428,8 @@ LALR table, parser.py's `_TypedefLexer` and scopes, and the syntax
 errors. Parts R2 and R3 write the descent on top of these headers.
 
 - `lark_table.h` declares the tables, which `cpp/generated/c99_lalr.cpp`
-  holds. `tools/lalr_table.py` writes that file from the parser Lark
-  builds of c99.lark with parser.py's four start rules: 976 states,
+  holds. `tools/lalr_table.py` wrote that file from the parser Lark
+  built of c99.lark with parser.py's four start rules: 976 states,
   55,242 actions and gotos over 112 terminals and 100 nonterminals, the
   715 rules with their origins, expansions, and aliases, and the 64
   terminals of the lexer in the order Lark tries them, with their
@@ -1476,7 +1476,7 @@ errors. Parts R2 and R3 write the descent on top of these headers.
   the note about `__attribute__`.
 
 The descent has no trees yet, so the pieces are checked on token
-streams. `tools/capture_parser_tokens.py` records, for each source the
+streams. `tools/capture_parser_tokens.py` recorded, for each source the
 parser is given, the tokens Lark's parser was fed, the number of scopes
 open after each, and how the parse ended, with the positions of the
 identifiers the parser's scopes named as typedefs, which the record
@@ -2507,7 +2507,7 @@ construction places a `Phi` for each pair in the order of the pair's
 first definition, which is the order of the Python dict, and so the
 order of the `Phi`s in a block and of the moves `from_ssa` writes.
 
-`tools/capture_passes.py` records the seven calls as stage calls under
+`tools/capture_passes.py` recorded the seven calls as stage calls under
 these names, with each function's dump as the input (`stage_checks`
 reads a dump that starts with `Function(` as a top-level item), and
 `order_parallel_copies` with its list of moves as tagged JSON and the
@@ -2725,7 +2725,7 @@ integers.
 - `can't use ...` prints Python's dataclass repr of the expression.
 
 `lay_out` and the other four functions take the linker's units and
-sections, which only a link builds, so tools/capture_binutils.py records
+sections, which only a link builds, so tools/capture_binutils.py recorded
 each call of `lay_out`, `default_script`, `fall_through`, `tail_jump`,
 and `startup_lines` with what it reads, in a JSON form of its own (its
 docstring), and `lay_out`'s record holds the names it asked the lookup
@@ -2793,7 +2793,7 @@ These are the places where the port follows Python.
   decides only which share is a group's root, and nothing reads the
   roots.
 
-tools/capture_binutils.py records each call of each of those functions,
+tools/capture_binutils.py recorded each call of each of those functions,
 with what it reads and what it returns, and the changes it makes to its
 arguments, as records of the kinds `link_merge`, `link_carry_conflict`,
 `link_arrivals`, `link_validate_eligibility`, `link_synthesize`,
@@ -2873,8 +2873,8 @@ and integers.
 
 The captures of the corpus call these functions only from inside
 `link_objects`, which changes the objects between the calls, so
-tools/capture_binutils.py records each call with the objects as they
-are at the call. A record names an object by the hash of a JSON form of
+tools/capture_binutils.py recorded each call with the objects as they
+were at the call. A record names an object by the hash of a JSON form of
 its sections, symbols, relocations, and segments, stored as a blob,
 which keeps the order of its symbols and the symbols and sections a
 relocation or a symbol names that the object's lists no longer hold.
@@ -3320,7 +3320,7 @@ interpreter (docs/cpp_port.md, "G7's modules"), for which the recorder
 gained these kinds of record.
 
 - A call of a pass of the TAC optimizer's driver is a `tac_<name>`
-  record, as tools/capture_passes.py records the driver's calls, with
+  record, as tools/capture_passes.py recorded the driver's calls, with
   the function, the symbols the call read, and the SSA names. The
   recorder wraps the `run` of each pass class, and takes a call as the
   test's when only frames of passes/optimization/ come between the test

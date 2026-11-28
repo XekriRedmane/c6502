@@ -1,18 +1,21 @@
 ---
 name: compile-example
-description: Compiles examples/<name>.c with -O into examples/<name>.asm
-  and checks the optimized build against the unoptimized one in the
-  simulator. Triggers: "compile example", "compile <name>",
-  /compile-example.
+description: Compiles examples/<name>.c with -O, compares the text with
+  golden/O/examples/<name>.s, and checks the optimized build against
+  the unoptimized one in the simulator. Triggers: "compile example",
+  "compile <name>", /compile-example.
 ---
 
 # Compile Example
 
 Takes a filename argument naming a source file in `examples/` and runs
-it through `compile.py -S -O`, writing the output to
-the matching `.asm` file in `examples/`. `-O` runs the optimizer,
-including the unrolling of `[[c6502::unroll]]` loops and the default
-zp_abi convention.
+it through `c6502cpp compile -S -O`, writing the output to a file
+under `fuzz_out/`, which git ignores, and compares it with the
+example's golden copy, `golden/O/examples/<base>.s`. `-O` runs the
+optimizer, including the unrolling of `[[c6502::unroll]]` loops and
+the default zp_abi convention. The examples' own `.asm` files were
+deleted in step 9 of the port, since each was byte for byte its
+golden copy.
 
 ## Input
 
@@ -22,26 +25,34 @@ The argument is the example's base name or filename. Accept any of:
 - `floor_enemy_draw.c`
 - `examples/floor_enemy_draw.c`
 
-Normalize to `examples/<base>.c` for input and `examples/<base>.asm`
+Normalize to `examples/<base>.c` for input and `fuzz_out/<base>.s`
 for output. If the input `.c` doesn't exist, report it and stop.
 
 ## Command
 
-From the repository root:
+From the repository root, with the compiler built (cpp/README.md,
+"Building"):
 
 ```sh
-uv run python compile.py examples/<base>.c -S -O -o examples/<base>.asm
+cpp/build/bin/c6502cpp compile examples/<base>.c -S -O -o fuzz_out/<base>.s
+diff golden/O/examples/<base>.s fuzz_out/<base>.s
 ```
 
-The `-o` path must end in `.s` or `.asm` (compile.py enforces this).
+The `-o` path must end in `.s` or `.asm` (`c6502cpp compile` enforces
+this). A file named with `-o` gets LF line endings, as the golden
+copies have, so `diff` shows only changes to the text.
 
 ## After compiling
 
-- If compile.py exits non-zero, the build hit a **compiler bug** —
-  the source is presumed correct (it's a checked-in example), so the
-  failure is in a c6502 pass. See "On compiler-bug failure" below.
-- On success, report the output path and the new file's size in one
-  line, then proceed to "Sim differential check" below.
+- If `c6502cpp compile` exits non-zero, the build hit a **compiler
+  bug** — the source is presumed correct (it's a checked-in example),
+  so the failure is in a c6502 pass. See "On compiler-bug failure"
+  below.
+- On success, report the output path, the new file's size, and
+  whether it differs from the golden copy, in one line, then proceed
+  to "Sim differential check" below. A difference is a change to the
+  compiler's output, which `cpp/build/bin/c6502cpp check-golden -j 12`
+  reports too.
 - Do NOT commit any result — leave that to the user.
 
 ## Sim differential check
@@ -71,12 +82,12 @@ cpp/build/bin/c6502_tests -tc="<base>_sim*"
   hand-computed expected, opt vs. expected, opt vs. unopt byte-
   for-byte). Then run it. Do not silently proceed to "On success"
   without the comparison; the comparison is the whole point.
-- If it fails on the `optimize=True` test OR the
-  `opt-matches-unopt` test: the optimizer mis-compiled this
-  example. Treat as a compiler bug — loop into "On compiler-bug
-  failure" starting at step 1 (the divergence IS the failure
-  signal; the test output names the diverging bytes / cycles).
-- If it fails on the `optimize=False` test only: the unoptimized
+- If it fails on the optimized test OR the opt-matches-unopt test:
+  the optimizer mis-compiled this example. Treat as a compiler bug —
+  loop into "On compiler-bug failure" starting at step 1 (the
+  divergence IS the failure signal; the test output names the
+  diverging bytes / cycles).
+- If it fails on the unoptimized test only: the unoptimized
   pipeline regressed, or the hand-computed expected state is
   stale. Investigate which.
 - If all three tests pass: proceed to "Measure code size and
@@ -90,35 +101,45 @@ total, AND the per-function cycle breakdown — the function under
 test is typically a small fraction of the sim total (the
 `record()` snapshot helper and the stubbed callees dominate), so
 the whole-program number dilutes the optimization-relevant delta.
-`Simulation.run_bucketed` attributes each step's cycles to the
-function whose entry-point address is the largest not exceeding
-the current PC; an `<other>` bucket collects boot-stub and
-runtime-hook cycles.
+The breakdown attributes each step's cycles to the function whose
+entry-point address is the largest not exceeding the current PC,
+and an `<other>` bucket collects the boot stub's, the runtime
+helpers', and the hooks' cycles.
 
-From the project root:
+Add this case to the end of `cpp/tests/test_<base>_sim.cpp`, inside
+its namespace, with `kProgram` replaced by the name of the test's
+program string, and `#include <cstdio>`, `<iterator>`, and `<map>` at
+the top if the file lacks them. Rebuild `c6502_tests` (step 5 of "On
+compiler-bug failure" gives the command), run it with
+`cpp/build/bin/c6502_tests -tc="<base>_sim: measure"`, and then take
+the case out again, since it checks nothing.
 
-`run_bucketed` is in the Python harness alone, which stays until
-step 9's G6 of the port. Write the program of the test (the example's
-source and its `main()` driver) to a scratch file, `prog.c` here, and
-run from the project root:
-
-```sh
-uv run python -c "
-from sim.harness import build_sim
-_PROGRAM = open('prog.c').read()
-for opt in (False, True):
-    sim = build_sim(_PROGRAM, optimize=opt)
-    res, by_fn = sim.run_bucketed(max_cycles=5_000_000)
-    assert not res.timed_out, f'timed out (optimize={opt})'
-    label = 'opt  ' if opt else 'unopt'
-    print(f'{label}: code={sim.code_end - sim.origin} bytes, '
-          f'cycles={res.cycles}')
-    for name, cyc in sorted(by_fn.items(), key=lambda kv: -kv[1]):
-        if cyc == 0:
-            continue
-        pct = 100 * cyc / res.cycles
-        print(f'    {name:30s} {cyc:6d}  ({pct:5.1f}%)')
-"
+```cpp
+TEST_CASE("<base>_sim: measure") {
+  for (const bool opt : {false, true}) {
+    sim::Simulation s = build_sim(kProgram, opt);
+    std::map<std::int64_t, std::string> entries;
+    for (const auto& name : s.function_names) entries[s.symbol(name)] = name;
+    std::map<std::string, std::uint64_t> by_fn;
+    std::uint64_t before = s.cpu.cycles;
+    while (s.cpu.cycles < 5'000'000) {
+      const std::int64_t pc = s.cpu.pc;
+      if (!s.step()) break;
+      const auto next = entries.upper_bound(pc);
+      const std::string name =
+          pc < s.origin || pc >= s.code_end || next == entries.begin() ? "<other>" : std::prev(next)->second;
+      by_fn[name] += s.cpu.cycles - before;
+      before = s.cpu.cycles;
+    }
+    CHECK_MESSAGE(s.cpu.cycles < 5'000'000, "timed out, optimize=" << opt);
+    std::printf("%s: code=%lld bytes, cycles=%llu\n", opt ? "opt  " : "unopt",
+                static_cast<long long>(s.code_end - s.origin), static_cast<unsigned long long>(s.cpu.cycles));
+    for (const auto& [fn, cycles] : by_fn) {
+      std::printf("    %-30s %6llu  (%5.1f%%)\n", fn.c_str(), static_cast<unsigned long long>(cycles),
+                  100.0 * static_cast<double>(cycles) / static_cast<double>(s.cpu.cycles));
+    }
+  }
+}
 ```
 
 If either pipeline times out at 5,000,000 cycles, the example's
@@ -137,17 +158,17 @@ function-under-test slice into the success report.
 
 ## On compiler-bug failure
 
-Don't silently overwrite a prior good `.asm` with nothing — leave the
-old file in place. Then:
+Leave `golden/` as it is. Then:
 
 1. **Diagnose.** Rerun the command with `C6502_CHECK_IR=1`. A failed
    IR check is reported as `after <pass>, function '<name>': ...`
    (cpp/src/passes/ir_check.cpp), which names the pass. An
-   `AssemblerError: unsupported Mov` from `sim/assembler.py` appears
-   only in the sim differential test, and means a pass produced an
-   atom the simulator's assembler can't encode. Find the pass that
-   produced the bad shape by grepping cpp/src/passes/ for the
-   constructor that built it (e.g. `IndexedData` for an
+   `AssemblerError` from the simulator's assembler
+   (cpp/src/sim/assembler.h), such as one for an unsupported `Mov`,
+   appears only in the sim differential test, and means a pass
+   produced an atom the simulator's assembler can't encode. Find the
+   pass that produced the bad shape by grepping cpp/src/passes/ for
+   the constructor that built it (e.g. `IndexedData` for an
    `IndexedData` operand). Read that
    pass's eligibility filter; the bug is almost always a missing
    case in the filter.
@@ -199,22 +220,22 @@ old file in place. Then:
    loop back to step 1.
 
 8. **Re-run the checks** to confirm no regressions:
-   `C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q`,
+   `cpp/build/bin/c6502_tests`,
    `ctest --test-dir cpp/build -C Release --output-on-failure`,
    `cpp/build/bin/c6502cpp check-golden -j 12` (and `--update`, after
    reading each changed job, when the output changed on purpose),
-   `cpp/build/bin/c6502cpp check-frozen`, and `uv run python -m
-   unittest tests.test_example_outputs`. Then re-run the original
-   `compile.py` command from "Command" above; it should now
-   succeed. golden/O.txt has a job for each example, so a new
-   example needs one added, modelled on its neighbours, and
-   `check-golden --update`.
+   and `cpp/build/bin/c6502cpp check-frozen`. Then re-run the
+   original `c6502cpp compile` command from "Command" above; it
+   should now succeed. golden/O.txt has a job for each example, so a
+   new example needs one added, modelled on its neighbours, and
+   `check-golden -j 12 --update`.
 
 9. Proceed to "On success".
 
 ## On success
 
-- Report the output path and the new `.asm` text-file size.
+- Report the output path, its size, and whether it differs from
+  `golden/O/examples/<base>.s`.
 - Report that the sim differential test passed (opt and unopt
   match).
 - Report the assembled user-code byte count, whole-program cycle
@@ -233,5 +254,6 @@ old file in place. Then:
   whole-program delta is diluted by the test instrumentation
   (`record`, stubbed callees) which is constant across iterations.
 
-- Do NOT commit. Leave the `.asm`, any new test, and any pass fix
-  staged in the working tree for the user to review.
+- Do NOT commit. Leave any new test, any pass fix, and any golden
+  files that `check-golden --update` rewrote in the working tree for
+  the user to review.

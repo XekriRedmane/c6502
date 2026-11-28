@@ -492,8 +492,16 @@ Namespace Parser::parse_known_args(const std::vector<std::string>& args, int col
       const auto dashes = std::find(values.begin(), values.end(), "--");
       if (dashes != values.end()) values.erase(dashes);
     }
-    if (a.type && !values.empty() && !a.type(values.front())) {
-      argument_error(a, "invalid " + a.type_name + " value: " + pyrepr::string(values.front()));
+    if (a.type && !values.empty()) {
+      bool valid = false;
+      try {
+        valid = a.type(values.front());
+      } catch (const ArgumentTypeError& e) {
+        argument_error(a, e.message);
+      }
+      if (!valid) {
+        argument_error(a, "invalid " + a.type_name + " value: " + pyrepr::string(values.front()));
+      }
     }
     seen.push_back(&a);
     if (a.group >= 0) {

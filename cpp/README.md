@@ -2355,8 +2355,10 @@ breaks a word too long for a line after its last hyphen that fits. The
 widths count bytes, which is Python's count for the tools' ASCII help.
 `compile_command::number` is `_number`, with Python's `int` rules for a
 sign, a prefix, underscores, leading zeros, and the whitespace around
-it, in 128 bits. A wider number is an InternalError, and the digits
-and spaces of other scripts, which Python takes, are no number here.
+it, in 128 bits. A wider number throws `argparse::ArgumentTypeError`,
+which argparse reports as `argument --origin: the number '...' is too
+wide`, and the digits and spaces of other scripts, which Python takes,
+are no number here.
 
 tools/compare_backends.py's corpus `cli` had a job for each terminal
 width of `_CLI_COLUMNS` (1, 20, 41, 80, 132, and 200, which cover each

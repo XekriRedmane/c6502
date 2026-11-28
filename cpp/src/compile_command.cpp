@@ -168,7 +168,10 @@ std::string_view py_strip(std::string_view t) {
 // base, or an optional `0x` for base 16) that one underscore may
 // follow, then digits with single underscores between them, and spaces
 // around it all. In base 0 a decimal number can't start with 0 unless
-// all its digits are 0.
+// all its digits are 0. Throws `TooWide` for a number whose magnitude
+// is past 2**127 - 1.
+struct TooWide {};
+
 std::optional<asdl::Int> py_int(std::string_view t, int base) {
   t = py_strip(t);
   bool negative = false;
@@ -205,6 +208,7 @@ std::optional<asdl::Int> py_int(std::string_view t, int base) {
   const asdl::Int max = ((asdl::Int(1) << 126) - 1) * 2 + 1;
   asdl::Int v = 0;
   bool nonzero = false;
+  bool too_wide = false;
   char prev = 0;
   for (char c : t) {
     if (c == '_') {
@@ -217,16 +221,14 @@ std::optional<asdl::Int> py_int(std::string_view t, int base) {
     if (c >= 'a' && c <= 'z') d = c - 'a' + 10;
     if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
     if (d >= base) return std::nullopt;
-    if (v > (max - asdl::Int(d)) / asdl::Int(base)) {
-      throw InternalError("the number " + pyrepr::string(t) +
-                          " is wider than the 128 bits the C++ port holds a number in");
-    }
-    v = v * asdl::Int(base) + asdl::Int(d);
+    if (v > (max - asdl::Int(d)) / asdl::Int(base)) too_wide = true;
+    if (!too_wide) v = v * asdl::Int(base) + asdl::Int(d);
     if (d != 0) nonzero = true;
     prev = c;
   }
   if (prev == '_') return std::nullopt;
   if (error_if_nonzero && nonzero) return std::nullopt;
+  if (too_wide) throw TooWide{};
   return negative ? -v : v;
 }
 
@@ -566,13 +568,18 @@ class Compile {
     for (const std::string& d : args.defsyms) {
       const std::size_t eq = d.find('=');
       const std::string name = d.substr(0, eq);
-      const std::optional<asdl::Int> v =
-          eq == std::string::npos ? std::nullopt : number(d.substr(eq + 1));
-      if (!v || name.empty()) {
+      std::optional<asdl::Int> v;
+      bool too_wide = false;
+      try {
+        if (eq != std::string::npos) v = number(d.substr(eq + 1));
+      } catch (const argparse::ArgumentTypeError&) {
+        too_wide = true;
+      }
+      if ((!v && !too_wide) || name.empty()) {
         eprint(prog_ + ": --defsym takes NAME=VALUE: " + d);
         return 2;
       }
-      if (*v < asdl::Int(INT64_MIN) || *v > asdl::Int(INT64_MAX)) {
+      if (too_wide || *v < asdl::Int(INT64_MIN) || *v > asdl::Int(INT64_MAX)) {
         eprint(prog_ + ": --defsym value is wider than 64 bits: " + d);
         return 2;
       }
@@ -840,8 +847,13 @@ std::string read_text(const std::string& path) {
 
 std::optional<asdl::Int> number(std::string_view text) {
   const std::string_view t = py_strip(text);
-  if (!t.empty() && t[0] == '$') return py_int(t.substr(1), 16);
-  return py_int(t, 0);
+  try {
+    if (!t.empty() && t[0] == '$') return py_int(t.substr(1), 16);
+    return py_int(t, 0);
+  } catch (const TooWide&) {
+    throw argparse::ArgumentTypeError{"the number " + pyrepr::string(std::string(text)) +
+                                      " is too wide"};
+  }
 }
 
 Outcome run(const std::vector<std::string>& argv, const Options& options) {

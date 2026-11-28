@@ -9,9 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "argparse.h"
 #include "compile_command.h"
 #include "doctest.h"
-#include "errors.h"
 
 namespace {
 
@@ -131,5 +131,33 @@ TEST_CASE("compile: _number reads numbers as Python's int does") {
   for (const char* bad : {"010", "1__0", "$_10", "0b2", "", "$", "0x", "12_"}) {
     CHECK_MESSAGE(!n(bad).has_value(), bad);
   }
-  CHECK_THROWS_AS(n("0x1000000000000000000000000000000000"), c6502::InternalError);
+  std::string message;
+  try {
+    n(" 0x1000000000000000000000000000000000");
+  } catch (const c6502::argparse::ArgumentTypeError& e) {
+    message = e.message;
+  }
+  CHECK(message == "the number ' 0x1000000000000000000000000000000000' is too wide");
+  // Python reads the digits after the limit too, so a bad one is still
+  // no number.
+  CHECK(!n("0x1000000000000000000000000000000000g").has_value());
+}
+
+TEST_CASE("compile: a number wider than 128 bits is a usage error") {
+  const std::string wide = "0x1000000000000000000000000000000000";
+  for (const std::vector<std::string>& args :
+       {std::vector<std::string>{"a.c", "--origin", wide}, {"a.c", "-Ttext=" + wide}}) {
+    const cc::Outcome o = run41(args);
+    CHECK(!o.raised);
+    CHECK(o.exited);
+    CHECK(o.status == 2);
+    CHECK(o.err() == std::string(kUsage41) + "c6502: error: argument --origin: the number '" +
+                         wide + "' is too wide\n");
+  }
+  const cc::Outcome o = run41({"a.c", "--defsym", "x=" + wide});
+  CHECK(!o.raised);
+  CHECK(o.status == 2);
+  CHECK(o.err() == "c6502: --defsym value is wider than 64 bits: x=" + wide + "\n");
+  CHECK(run41({"a.c", "--defsym", "=" + wide}).err() ==
+        "c6502: --defsym takes NAME=VALUE: =" + wide + "\n");
 }

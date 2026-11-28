@@ -106,10 +106,10 @@ std::string read_text(const std::string& path);
 
 // Returns compile.py's `_number(text)` (decimal, `0x` hex, or `$` hex,
 // with Python's `int` rules for signs, underscores, and spaces), or
-// nullopt where it raises ValueError. A number that doesn't fit in 127
-// bits and a sign is an InternalError, since the port holds a number in
-// 128 bits. Python also takes the digits and spaces of other scripts,
-// which this reads as no number.
+// nullopt where it raises ValueError. Throws `argparse::ArgumentTypeError`
+// for a number that doesn't fit in 127 bits and a sign, since the port
+// holds a number in 128 bits. Python also takes the digits and spaces of
+// other scripts, which this reads as no number.
 std::optional<asdl::Int> number(std::string_view text);
 
 }  // namespace c6502::compile_command

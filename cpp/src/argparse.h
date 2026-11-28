@@ -39,8 +39,14 @@ enum class ActionKind {
 
 // The check of a `type=` function: whether the function takes the text,
 // where Python's raises ValueError or TypeError for it. The value stays
-// a string in the Namespace, and the caller converts it.
+// a string in the Namespace, and the caller converts it. A check may
+// throw `ArgumentTypeError` instead, whose message the error gives in
+// place of "invalid <type> value: ...", as Python's argparse does.
 using TypeCheck = std::function<bool(const std::string&)>;
+
+struct ArgumentTypeError {
+  std::string message;
+};
 
 struct Action {
   ActionKind kind;

@@ -570,7 +570,7 @@ class Compile {
       }
       return build(args, nullptr);
     }
-    std::vector<std::pair<std::string, asdl::Int>> defsyms;
+    std::vector<std::pair<std::string, std::int64_t>> defsyms;
     for (const std::string& d : args.defsyms) {
       const std::size_t eq = d.find('=');
       const std::string name = d.substr(0, eq);
@@ -580,14 +580,18 @@ class Compile {
         eprint(prog_ + ": --defsym takes NAME=VALUE: " + d);
         return 2;
       }
+      if (*v < asdl::Int(INT64_MIN) || *v > asdl::Int(INT64_MAX)) {
+        eprint(prog_ + ": --defsym value is wider than 64 bits: " + d);
+        return 2;
+      }
       // A name given twice keeps its first place and its last value, as
       // a dict does.
       const auto it = std::find_if(defsyms.begin(), defsyms.end(),
                                    [&](const auto& p) { return p.first == name; });
       if (it == defsyms.end()) {
-        defsyms.emplace_back(name, *v);
+        defsyms.emplace_back(name, static_cast<std::int64_t>(*v));
       } else {
-        it->second = *v;
+        it->second = static_cast<std::int64_t>(*v);
       }
     }
     return build(args, &defsyms);
@@ -670,7 +674,7 @@ class Compile {
   // read ends the list, which compile.py reports after the inputs
   // before it.
   long long build(const Args& args,
-                  const std::vector<std::pair<std::string, asdl::Int>>* defsyms) {
+                  const std::vector<std::pair<std::string, std::int64_t>>* defsyms) {
     const bool link = defsyms != nullptr;
     std::vector<Input> inputs;
     std::optional<std::string> stop_object;
@@ -738,7 +742,7 @@ class Compile {
 
     binutils::ld::Names names;
     for (const auto& [name, value] : *defsyms) {
-      names.insert_or_assign(name, address(value, "--defsym value"));
+      names.insert_or_assign(name, value);
     }
     const std::optional<asdl::Int> given =
         args.origin ? number(*args.origin) : std::optional<asdl::Int>();

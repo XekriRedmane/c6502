@@ -2949,8 +2949,8 @@ and another origin, with a script of ROM and RAM regions, and with a
 script that isn't there, and `--repeat <n>` linked n times and wrote
 the shortest time to stderr. Group R of step 9 removed it, and
 `c6502cpp compile` links in the process that compiles a link's C
-inputs. An origin or a `--defsym` past 64 bits, which compile.py read
-with Python's integers, throws `InternalError`.
+inputs. A `--defsym` value past 64 bits is a usage error, which the
+command reports before it reads the inputs.
 
 `c6502cpp check-binutils` links each `link` record in C++, from the
 objects' bytes, the script's text through `parse_script`, the origin,

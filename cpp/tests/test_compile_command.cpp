@@ -84,6 +84,16 @@ TEST_CASE("compile: c6502's own checks, after argparse's") {
   CHECK(run41({"--lex", "x.o"}).err() == "c6502: x.o isn't a C source\n");
 }
 
+TEST_CASE("compile: a --defsym value wider than 64 bits is a usage error") {
+  for (const char* d : {"x=0x10000000000000000", "x=-0x8000000000000001"}) {
+    INFO(d);
+    const cc::Outcome o = run41({"a.c", "--defsym", d});
+    CHECK(!o.raised);
+    CHECK(o.status == 2);
+    CHECK(o.err() == std::string("c6502: --defsym value is wider than 64 bits: ") + d + "\n");
+  }
+}
+
 TEST_CASE("compile: a C source on stdin") {
   // The callback stands for Python's `sys.stdin.read()`, which a second
   // `-` reads again and finds empty.

@@ -1,6 +1,7 @@
 #include "fuzz/calls.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -102,26 +103,16 @@ std::vector<std::string> locals_of(const std::vector<std::string>& vars) {
 
 // Returns the functions that abi_selection leaves on the soft stack
 // under -O, where function i calls the functions `calls[i]`, and `rec`
-// when `calls_rec[i]`. The last function is called through a pointer
-// when `use_ptr_fn`, and `rec` has a private pool when `rec_has_pool`.
+// when `calls_rec[i]`. `rec` has a private pool when `rec_has_pool`.
 std::set<int> soft_stack_functions(const std::vector<std::vector<int>>& calls,
-                                   const std::vector<bool>& calls_rec, bool use_ptr_fn,
+                                   const std::vector<bool>& calls_rec,
+                                   const std::function<bool(int)>& pointer_called,
                                    bool rec_has_pool) {
   const int n = static_cast<int>(calls.size());
   std::set<int> soft;
-  auto calls_to = [&](int i, int j) {
-    return std::find(calls[i].begin(), calls[i].end(), j) != calls[i].end();
-  };
-  if (use_ptr_fn) {
-    soft.insert(n - 1);
-    for (int i = 0; i < n; ++i) {
-      if (calls_to(i, n - 1)) soft.insert(i);
-    }
-  }
-  if (!rec_has_pool) {
-    for (int i = 0; i < n; ++i) {
-      if (calls_rec[i]) soft.insert(i);
-    }
+  for (int i = 0; i < n; ++i) {
+    const bool calls_through_pointer = std::any_of(calls[i].begin(), calls[i].end(), pointer_called);
+    if (pointer_called(i) || calls_through_pointer || (calls_rec[i] && !rec_has_pool)) soft.insert(i);
   }
   for (int i = n - 1; i >= 0; --i) {
     for (int j : calls[i]) {
@@ -164,6 +155,7 @@ GeneratedProgram make_program(Int seed) {
   }
   const bool use_rec = rng.random() < 0.4;
   const bool use_ptr_fn = rng.random() < 0.4;
+  auto pointer_called = [&](int i) { return use_ptr_fn && i == n - 1; };
 
   std::vector<Signature> sigs(n);
   for (int i = 0; i < n; ++i) {
@@ -185,7 +177,7 @@ GeneratedProgram make_program(Int seed) {
   for (int i = 0; i < n; ++i) calls_rec[i] = use_rec && rng.random() < 0.5;
   std::set<int> carry;
   for (int i = 0; i < n; ++i) {
-    if (crng.random() < 0.3 && !(use_ptr_fn && i == n - 1)) carry.insert(i);
+    if (crng.random() < 0.3 && !pointer_called(i)) carry.insert(i);
   }
   for (int i : carry) sigs[i].ret = "bool";
   py_random::Random arng(seed * 15485863 + 5);
@@ -194,7 +186,7 @@ GeneratedProgram make_program(Int seed) {
     if (arng.random() < 0.5) marked.insert(i);
   }
 
-  const std::set<int> soft = soft_stack_functions(calls, calls_rec, use_ptr_fn, saved_rec);
+  const std::set<int> soft = soft_stack_functions(calls, calls_rec, pointer_called, saved_rec);
   auto reg_ok = [&](int i) { return soft.count(i) == 0; };
 
   std::vector<std::string> lines;
@@ -241,7 +233,7 @@ GeneratedProgram make_program(Int seed) {
       std::vector<std::string> args;
       for (const Param& p : cparams) args.push_back(p.type == kPointer ? "&" + box : gen.expr(vars, 1));
       std::string call = fj + "(" + join(args, ", ") + ")";
-      if (use_ptr_fn && j == n - 1) {
+      if (pointer_called(j)) {
         std::vector<std::string> ptypes;
         for (const Param& p : cparams) ptypes.push_back(p.type);
         body.push_back("    " + sigs[j].ret + " (*fp)(" + join(ptypes, ", ") + ") = " + fj + ";");

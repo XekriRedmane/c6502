@@ -280,8 +280,8 @@ constexpr const char* kOptimizeHelp =
 
 // Returns compile.py's argparse parser (`_parse_args`), action for
 // action in its order.
-argparse::Parser compile_parser() {
-  argparse::Parser ap("c6502", "Compile C for the 6502, assemble, and link.");
+argparse::Parser compile_parser(const std::string& prog) {
+  argparse::Parser ap(prog, "Compile C for the 6502, assemble, and link.");
   ap.add_positional("inputs", "C sources (- for stdin), .asm files, and .o objects");
   ap.add_store({"-o"}, "output", "output file, or - for stdout");
   const int stages = ap.add_mutually_exclusive_group();
@@ -306,6 +306,11 @@ argparse::Parser compile_parser() {
   return ap;
 }
 
+// The program's name, as Python's argparse takes it from `argv[0]`.
+std::string prog_name(const std::vector<std::string>& argv) {
+  return argv.empty() ? "" : argparse::path_name(argv[0]);
+}
+
 // Reads compile.py's command line `argv` (the program's name first) as
 // `_parse_args` does, or throws argparse's `Exit`.
 Args parse_args(const std::vector<std::string>& argv, int columns) {
@@ -313,7 +318,8 @@ Args parse_args(const std::vector<std::string>& argv, int columns) {
   const std::vector<std::string> rest(rewritten.begin() + (rewritten.empty() ? 0 : 1),
                                       rewritten.end());
   Args args;
-  const argparse::Namespace ns = compile_parser().parse_known_args(rest, columns, args.pcpp_args);
+  const argparse::Namespace ns =
+      compile_parser(prog_name(argv)).parse_known_args(rest, columns, args.pcpp_args);
   args.inputs = *ns.list("inputs");
   if (const std::string* v = ns.value("output")) args.output = *v;
   if (const std::string* v = ns.value("stage")) args.stage = *v;
@@ -473,6 +479,7 @@ class Compile {
  private:
   const Options& options_;
   Outcome outcome_;
+  std::string prog_;
 
   void write(Stream stream, std::string text) {
     if (text.empty()) return;
@@ -516,18 +523,19 @@ class Compile {
   }
 
   long long main(const std::vector<std::string>& argv) {
+    prog_ = prog_name(argv);
     const Args args = parse_args(argv, options_.columns);
     const std::string& stage = args.stage;
     if (stage == "lex" || stage == "parse" || stage == "resolve" || stage == "tac" ||
         stage == "codegen") {
       for (const std::string& p : args.inputs) {
         if (kind_of(p) != "c") {
-          eprint("c6502: " + p + " isn't a C source");
+          eprint(prog_ + ": " + p + " isn't a C source");
           return 2;
         }
       }
       if (args.output && args.inputs.size() > 1) {
-        eprint("c6502: -o with more than one input");
+        eprint(prog_ + ": -o with more than one input");
         return 2;
       }
       if (stage == "codegen" && args.output && *args.output != "-") {
@@ -536,7 +544,7 @@ class Compile {
           return o.size() >= s.size() && o.compare(o.size() - s.size(), s.size(), s) == 0;
         };
         if (!ends(".s") && !ends(".asm")) {
-          eprint("c6502: -S output must have a .s or .asm suffix: " + o);
+          eprint(prog_ + ": -S output must have a .s or .asm suffix: " + o);
           return 2;
         }
       }
@@ -563,12 +571,12 @@ class Compile {
     }
     if (stage == "object") {
       if (args.output && args.inputs.size() > 1) {
-        eprint("c6502: -o with -c and more than one input");
+        eprint(prog_ + ": -o with -c and more than one input");
         return 2;
       }
       if (std::find(args.inputs.begin(), args.inputs.end(), "-") != args.inputs.end() &&
           !args.output) {
-        eprint("c6502: -c on stdin needs -o");
+        eprint(prog_ + ": -c on stdin needs -o");
         return 2;
       }
       return build(args, nullptr);
@@ -580,7 +588,7 @@ class Compile {
       const std::optional<asdl::Int> v =
           eq == std::string::npos ? std::nullopt : number(d.substr(eq + 1));
       if (!v || name.empty()) {
-        eprint("c6502: --defsym takes NAME=VALUE: " + d);
+        eprint(prog_ + ": --defsym takes NAME=VALUE: " + d);
         return 2;
       }
       // A name given twice keeps its first place and its last value, as
@@ -748,7 +756,7 @@ class Compile {
       if (write_error) throw *write_error;
     }
     if (stop_object) {
-      eprint("c6502: " + *stop_object + " is already an object");
+      eprint(prog_ + ": " + *stop_object + " is already an object");
       return 2;
     }
     if (stop_error) {
@@ -787,7 +795,7 @@ class Compile {
       exe = passes::linker::link_objects(std::move(objects), script, origin, names);
     } catch (const CompileError& e) {
       if (!is_link_error(e.python_type())) throw raised_of(e);
-      eprint("c6502: link error: " + std::string(e.what()));
+      eprint(prog_ + ": link error: " + std::string(e.what()));
       return 1;
     }
     std::string data;

@@ -54,8 +54,9 @@ enum class Failure {
 bool falls_off_end(const Runner& runner, const std::string& src);
 
 // Returns main's result on the unoptimized TAC and on the TAC after the
-// TAC optimizer, or none when either run raised or the program is
-// rejected.
+// TAC optimizer, or none when either run raised an error of the
+// interpreter or the front end rejects the program. A compiler bug
+// throws its `InternalError`.
 struct TacResults {
   std::optional<asdl::Int> plain;
   std::optional<asdl::Int> optimized;

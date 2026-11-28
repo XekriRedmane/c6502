@@ -1,6 +1,5 @@
 #include "fuzz/reduce.h"
 
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -123,7 +122,7 @@ std::optional<TacResults> tac_results(const Runner& runner, const std::string& s
     const tac_sim_modes::PlainAndOptimized r = tac_sim_modes::run_plain_and_optimized(std::move(t));
     if (r.plain.error_type || !r.optimized || r.optimized->error_type) return std::nullopt;
     return TacResults{r.plain.value, r.optimized->value};
-  } catch (const std::exception&) {
+  } catch (const CompileError&) {
     return std::nullopt;
   }
 }

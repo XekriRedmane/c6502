@@ -62,9 +62,16 @@ compile` command line).
   — AST-level unroller (`[[c6502::unroll]]`).
 - [tests/CLAUDE.md](tests/CLAUDE.md) — test organization, chapter
   harnesses, where to look for status.
+- [cpp/src/binutils/CLAUDE.md](cpp/src/binutils/CLAUDE.md) — the
+  object-file tools: the ELF reader and writer, the opcode table, the
+  assembler `c6502cpp compile -c` runs, relocation and relaxation, and
+  the disassembler behind `c6502cpp nm` and `c6502cpp objdump`.
 - [cpp/src/rtlib/CLAUDE.md](cpp/src/rtlib/CLAUDE.md) — the runtime
   library, the 6502 helpers that the linker adds to a program that
   calls them and that the simulator runs.
+- [cpp/src/sim/CLAUDE.md](cpp/src/sim/CLAUDE.md) — the in-process
+  6502 simulator: the CPU, the assembler, the runtime with its boot
+  stub and hooks, the harness, and the games' machines.
 - [docs/CLAUDE.md](docs/CLAUDE.md) — design notes, walkthroughs,
   reference grammars, drafts.
 - [examples/CLAUDE.md](examples/CLAUDE.md) — real-world C sources,
@@ -498,7 +505,7 @@ Objects and linking:
   one section per function and object, symbols, `R_MOS_*`
   relocations for everything the linker places, the link metadata
   block in `.c6502.link`, and the text itself in `.c6502.asm`. See
-  [cpp/README.md](cpp/README.md), "The object-file tools".
+  [cpp/src/binutils/CLAUDE.md](cpp/src/binutils/CLAUDE.md).
 - `c6502cpp compile a.o b.o ... -o prog` links (cpp/src/passes/linker.h).
   It merges every unit's link metadata
   (cpp/src/passes/zp_link_metadata.h) and

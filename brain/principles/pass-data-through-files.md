@@ -9,6 +9,6 @@ Hand code and data between tools as files, written by the Write tool or by the t
 - Regenerate a checked-in file with the tool's own `-o` or `--update`, never by redirecting its stdout.
 - Send a long run's output to a file and read the file.
 - Where a channel can't be avoided, check the bytes that arrived, with `eol.py --style` for line endings or a count of what was expected.
-- Before adding a new channel, such as a subprocess protocol, decide how its bytes are framed. The shims' frame protocol (`C6502CPP_FRAMES=1`) lets Python write the command's bytes to its own streams, so the output never passes through a text-mode pipe.
+- Before adding a new channel, such as a subprocess protocol, decide how its bytes are framed. The frame protocol of compile.py's shim (`C6502CPP_FRAMES=1`, until group R of step 9) let Python write the command's bytes to its own streams, so the output never passed through a text-mode pipe.
 
 **Evidence:** [[codebase/git-bash-on-windows]], [[codebase/long-runs-and-scratch-scripts]], [[codebase/compile-command]], [[codebase/worktree-guard]].

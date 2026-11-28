@@ -129,8 +129,18 @@ std::string outcome_json(const tac_sim::Outcome& o) {
 
 std::string changing_pass_json(const std::optional<ChangingPass>& found) {
   if (!found) return "null";
-  return "[" + json::quote(found->function) + ", " + json::quote(found->pass) + ", " +
-         observed_json(found->expected) + ", " + observed_json(found->got) + "]";
+  // Appended piece by piece, since GCC 12 reports `"[" + std::string` as
+  // a -Wrestrict overlap that isn't there.
+  std::string out = "[";
+  out += json::quote(found->function);
+  out += ", ";
+  out += json::quote(found->pass);
+  out += ", ";
+  out += observed_json(found->expected);
+  out += ", ";
+  out += observed_json(found->got);
+  out += "]";
+  return out;
 }
 
 }  // namespace c6502::tac_sim_modes

@@ -143,7 +143,7 @@ std::string fn(const std::vector<std::string>& body, const std::string& name = "
 }  // namespace
 
 TEST_CASE("binutils: an assembled object reads back with the same sections and symbols") {
-  const std::string text = read_text(suite::repo_path("examples/apply_bobble.asm"));
+  const std::string text = read_text(suite::repo_path("golden/O/examples/apply_bobble.s"));
   const elf::ElfFile obj = assemble(text, "apply_bobble.asm");
   const std::string data = elf::write(obj);
   const elf::ElfFile back = elf::read(data, "file");
@@ -193,7 +193,7 @@ TEST_CASE("binutils: each damaged copy of an assembled object is an ElfError") {
   // Each of these raised struct.error, IndexError, or ValueError in
   // Python's reader, which nm.py, objdump.py, and compile.py printed as
   // a traceback.
-  const std::string text = read_text(suite::repo_path("examples/apply_bobble.asm"));
+  const std::string text = read_text(suite::repo_path("golden/O/examples/apply_bobble.s"));
   const std::string data = elf::write(assemble(text, "apply_bobble.asm"));
   const auto u32 = [&](std::size_t at) {
     std::uint32_t v = 0;
@@ -478,16 +478,16 @@ std::string hex4(std::int64_t v) {
 
 }  // namespace
 
-TEST_CASE("binutils: the assembler gives dasm's bytes for every checked-in example") {
+TEST_CASE("binutils: the assembler gives dasm's bytes for every example's -S -O text") {
   const auto dasm_path = find_dasm();
   if (!dasm_path) {
     MESSAGE("skipped: dasm isn't on the PATH");
     return;
   }
-  const std::set<std::string> linked = {"interpreter.asm", "instr_save.asm", "print_zstring.asm"};
   std::vector<fs::path> paths;
-  for (const auto& entry : fs::recursive_directory_iterator(suite::repo_path("examples"))) {
-    if (entry.is_regular_file() && entry.path().extension() == ".asm") {
+  for (const auto& entry :
+       fs::recursive_directory_iterator(suite::repo_path("golden/O/examples"))) {
+    if (entry.is_regular_file() && entry.path().extension() == ".s") {
       paths.push_back(entry.path());
     }
   }
@@ -495,7 +495,6 @@ TEST_CASE("binutils: the assembler gives dasm's bytes for every checked-in examp
   CHECK(!paths.empty());
   for (const fs::path& path : paths) {
     const std::string name = path.filename().string();
-    if (linked.count(name)) continue;
     INFO(name);
     const std::string text = read_text(path.string());
     const elf::ElfFile obj = assemble(text, name);

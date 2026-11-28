@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds YARPGen, patched for c6502, into fuzz_out/yarpgen-src, for the
-# fuzzer fuzz/yarpgen.py. Run it from the repository's root.
+# fuzzer `c6502cpp fuzz yarpgen` (cpp/src/fuzz/yarpgen.h). Run it from
+# the repository's root.
 #
 #   bash fuzz/build_yarpgen.sh
 #
@@ -34,7 +35,7 @@
 # distributions differ from libc++'s, and on 27 Nov 2026 none of seeds 1
 # to 100 gave the same programs as the Zig build. Switching to MSVC means
 # replacing the Zig steps below with that configure, copying
-# build/Release/yarpgen.exe to build/yarpgen.exe, where fuzz/yarpgen.py
+# build/Release/yarpgen.exe to build/yarpgen.exe, where the fuzzer
 # looks for it, and accepting that every seed then names a new program.
 #
 # CMake and Ninja come from the PATH. On Windows, when either is missing

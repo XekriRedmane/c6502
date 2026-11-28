@@ -1,6 +1,6 @@
 // The port of tac_sim.py, the TAC interpreter, which runs a TAC program
 // with its symbol table and type table. The fuzzers take its result as
-// the reference for both asm pipelines, and fuzz/tac_passes.py runs it
+// the reference for both asm pipelines, and `fuzz tac-passes` runs it
 // after each pass of the TAC optimizer to find the pass that changes a
 // program's result.
 //

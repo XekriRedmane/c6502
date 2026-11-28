@@ -12,11 +12,14 @@ which the C++ tests run programs on. G4 checked the C++ harness against
 this one on every run of the Python suite. G5 ported the games'
 machines to cpp/src/sim/ (apple2.h, lode_runner.h, ali_baba.h, and
 disk2.h, cpp/README.md, "The games' machines"), and the games' tests
-are doctest cases. What is here stays for the fuzzers' runner, which G6
-ports (assembler.py, harness.py, runtime.py, and lockstep.py), and the
-Python machines (apple2.py, lode_runner.py, ali_baba.py, disk2.py, and
-linked.py) stay for tools/compare_game_machines.py, which compares the
-C++ machines with them, until group R removes sim/. The C++ hooks
+are doctest cases. G6 ported the fuzzers' runner, which ran programs
+on harness.py, to cpp/src/fuzz/. What is here stays until group R
+removes sim/: the Python machines (apple2.py, lode_runner.py,
+ali_baba.py, disk2.py, and linked.py) for
+tools/compare_game_machines.py, which compares the C++ machines with
+them, and the modules they read (harness.py, assembler.py,
+runtime.py, and lockstep.py). The compile-example skill runs
+harness.py's `build_sim` and `run_bucketed` too. The C++ hooks
 compute with fp_arith, and the hooks of runtime.py differ from them for
 a float that overflows a single, a zero divisor, a NaN operand, and the
 conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
@@ -129,8 +132,8 @@ conversion of a NaN or an infinity to an integer (docs/cpp_port.md,
 
 - See `docs/sim_findings.md` for known divergences between the
   Python-trap runtime and the 6502-asm runtime.
-- fuzz/runner.py drives it, and tools/compare_game_machines.py drives
-  the games' machines.
+- tools/compare_game_machines.py drives the games' machines, and the
+  compile-example skill drives harness.py.
 - `build_sim(optimize=False)` runs the same passes as `compile.py
   -S`, including the peephole fixedpoint, so unoptimized sim
   tests execute the code the CLI emits.

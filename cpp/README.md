@@ -10,8 +10,9 @@ checked to give the Python code's output byte for byte, and group R of
 step 8 removed the Python compiler on 25 Nov 2026. compile.py, nm.py,
 and objdump.py are shims over `c6502cpp compile`, `nm`, and `objdump`
 through cpp_backend.py ("The back end through c6502cpp" and
-"compile.py's command line"), and the simulator, the suite, and the
-fuzzers stay in Python until step 9 and run c6502cpp the same way.
+"compile.py's command line"), and the simulator and the suite stay
+in Python until step 9 moves them and run c6502cpp the same way. The
+fuzzers moved in step 9's group G6 ("The fuzzers").
 
 The sections after "Layout" were written as the port went. They
 describe each part of the C++ code, the Python module it was ported
@@ -109,6 +110,9 @@ cpp/
                       fuzzers ("The tests of whole compiles")
     rtlib/helpers.*   the runtime helpers' asm functions ("The runtime
                       library")
+    fuzz/             the fuzzers and `c6502cpp fuzz` ("The fuzzers")
+    processes.*       child processes, for check-golden's workers and
+                      the fuzzers
     py_int.*          Python's `int()` of a string and its integer
                       operators, in 128 bits with an error past them
     capture.*         the reader of capture files and their contexts
@@ -1901,8 +1905,8 @@ targets outside the function live in `cfg.extra`. SSA construction and
 destruction, which rewrite blocks in place, use `OwnedCfg`, whose
 blocks own their instructions ("The asm SSA round trip").
 
-`sim/assembler.py` stays in Python for the fuzzers' runner until
-step 9's G6, and src/sim/assembler.h's `assemble` is its port, which
+`sim/assembler.py` stays in Python for the Python harness until
+step 9's R, and src/sim/assembler.h's `assemble` is its port, which
 the C++ simulator assembles with. `instruction_size` is the compiler's
 too, since six passes size code with it. It throws `InternalError` with Python's message (`AssemblerError:
 ...`) for an instruction the assembler can't encode.
@@ -2426,8 +2430,8 @@ skeleton, at most 512 of them, as Python's `_SHAPES` does.
 The checks are off unless `ir_check::enable()` or an `ir_check::Enabled`
 turns them on for the process. `backend::respond` turns them on for a
 request whose `check_ir` is set, which cpp_backend.py sets from
-`C6502_CHECK_IR=1` or from `ir_check.enable()` in Python, as
-fuzz/runner.py calls it. A failed check throws `InternalError` with the
+`C6502_CHECK_IR=1`, and the fuzzers' runner (src/fuzz/runner.h) turns
+them on for every path. A failed check throws `InternalError` with the
 message of Python's `IRCheckError`, which ends `c6502cpp backend` with
 status 3, and cpp_backend.py raises it as an `AssertionError`, of which
 `IRCheckError` is a subclass. Each check runs where the Python pipeline
@@ -3062,9 +3066,11 @@ three programs that the TAC optimizer compiles correctly.
 The backend's modes `tac-run`, `tac-observe`, and `tac-falls-off`
 (`src/tac_sim_modes.h`) run the front end of
 `tests.test_sim_chapters._run_program` and `c99_to_tac` on a source and
-then the interpreter. `tac-run` gives `main`'s result on the TAC, and
+then the interpreter, and the fuzzers (src/fuzz/) call the functions
+under them, `run_plain_and_optimized`, `first_changing_pass`, and
+`falls_off_end`. `tac-run` gives `main`'s result on the TAC, and
 on request on the TAC after `optimize_program` too, as fuzz/reduce.py's
-`_tac_results` does. `tac-observe` is fuzz/tac_passes.py's
+`_tac_results` did. `tac-observe` is fuzz/tac_passes.py's
 `first_changing_pass`: the TAC optimizer's driver calls an observer
 after every pass and after SSA construction and destruction
 (`framework::set_observer`, Python's `PhaseDriver.observer`), which runs
@@ -3072,19 +3078,20 @@ after every pass and after SSA construction and destruction
 first step after which the result changes, by the Python class of its
 pass (`NamedPass::class_name`, which tests/test_tac_sim_backend.py
 checks against Python's `_DRIVER`). With the request's `check_ir`, the
-driver also checks the TAC after each pass, as Python's does when
-fuzz/runner.py has turned the checks on. `tac-falls-off` is fuzz/reduce.py's
+driver also checks the TAC after each pass, as the fuzzers' runner
+does. `tac-falls-off` is fuzz/reduce.py's
 `falls_off_end`: it appends a call of `__reduce_fell_off` to each
 function that returns a value, other than `main`, after the parser and
 before identifier resolution, and reports whether the run reached one.
 
 Under `C6502_CPP_BACKEND=1`, `_run_program` (and so fuzz/runner.py's
 `tac` path and the tests that call it), `_tac_results`, `falls_off_end`,
-and `first_changing_pass` call cpp_backend.py's `tac_main`,
+and `first_changing_pass` called cpp_backend.py's `tac_main`,
 `tac_results`, `tac_falls_off_end`, and `tac_first_changing_pass`, and
-import none of the Python front end, `c99_to_tac`, the TAC optimizer,
-or tac_sim.py. The interpreter's `TacSimError` is then
-`cpp_backend.TacSimError`, a class of the same name.
+imported none of the Python front end, `c99_to_tac`, the TAC optimizer,
+or tac_sim.py. The interpreter's `TacSimError` was then
+`cpp_backend.TacSimError`, a class of the same name. Those functions
+went with the Python fuzzers in step 9's group G6.
 `TestTacPasses.test_names_the_pass`, which tests/test_tac_sim_optimized.py
 had before step 9, broke a Python pass, so it was skipped under the
 variable. The same
@@ -3132,13 +3139,13 @@ each file the job left. The `-S` texts of `O` and `unopt` are files of
 their own, `golden/O/examples/sfx_tone.s` for `examples/sfx_tone.c`,
 so that a change to one program's text shows in a diff as a diff of
 that text. The other modes' texts are kept as their hashes. The fuzz
-programs' sources are in `golden/fuzz/`, since the generators that
-make them are in Python, and the commands compile them from there.
+programs' sources are in `golden/fuzz/`, which the generators wrote
+when they were in Python, and the commands compile them from there.
 src/golden.h gives the format.
 
 The mode `tacsim` holds the TAC interpreter's results on the corpus.
 For each program, `check-golden` runs `main` on the TAC, on the TAC
-after the TAC optimizer, and under fuzz/tac_passes.py's observer, with
+after the TAC optimizer, and under `fuzz tac-passes`'s observer, with
 the backend's modes `tac-run` and `tac-observe`. The Python interpreter
 that wrote them ran in a thread with a 128 MB stack and a high
 recursion limit, so a program that recurses past Python's default
@@ -3548,8 +3555,8 @@ The CPU is checked against py65 in two ways while py65 is installed.
 
 src/sim/harness.h and src/sim/runtime.h are the simulator that the C++
 tests run programs on (step 9, G4), ported from sim/harness.py,
-sim/linked.py, and sim/runtime.py, which stay in Python for the games
-and the fuzzers until G5 and G6.
+sim/linked.py, and sim/runtime.py, which stay in Python for the
+comparison of the games' machines until R.
 
 - `build_sim` assembles a finished asm program at $0800 with
   src/sim/assembler.h's `assemble`, which lays every function and
@@ -3635,6 +3642,54 @@ The machines were checked against the Python ones in two ways.
   ```sh
   C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_game_machines.py -j 10
   ```
+
+## The fuzzers
+
+src/fuzz/ holds the fuzzers (step 9, G6), ported from fuzz/'s Python,
+and `c6502cpp fuzz` runs them (src/fuzz/command.h, and fuzz/CLAUDE.md
+for how to use them).
+
+- exprs.h, calls.h, and stmts.h are the generators, and
+  bit_precise_types.h the rules of the bit-precise types that exprs
+  and stmts model. They draw from src/py_random.h in the order the
+  Python generators drew from `random.Random`, so each writes the
+  program Python wrote for each seed, and compute with `asdl::Int`
+  where Python's integers had no bound. A product of two 64-bit values
+  is taken modulo 2^128 (`wrapping_mul`), which keeps its low 64 bits,
+  the bits an unsigned result keeps. A signed one fits in 128 bits.
+  stmts's interpreter throws `UndefinedBehavior`, `Returned`, `Broke`,
+  and `Continued` where Python raised its exceptions, and counts its
+  steps as Python's did, with the arms that `type_of` evaluates for
+  their type, so the same programs reach the limit.
+- runner.h runs a program on the three paths in process: the TAC
+  interpreter through tac_sim_modes.h, and the simulator through
+  src/sim/source_sim.h, which the test library's `build_sim` calls too.
+  An error result names the Python class cpp_backend.py would have
+  raised: a `CompileError`'s Python type without its module, an
+  `InternalError` as `AssertionError`, an assembler error as
+  `AssemblerError`, a hook's by its class, and the CPU's word read at
+  $FFFF as py65's `IndexError`.
+- reduce.h is fuzz/reduce.py, with its regex written as a matcher of
+  its own, since each repeat in it is followed by a character the
+  repeat can't take. yarpgen.h runs YARPGen through src/processes.h and
+  merges its three files.
+- command.h is the command line. `-j` starts a process per seed
+  (`fuzz worker`), each of which writes a record of its seed to a file
+  that the parent reads in seed order, since the switch of the IR
+  checks, the TAC optimizer's observer, and the caches in ir_check.cpp
+  and fnmatch.cpp are globals.
+
+The fuzzers were checked against the Python ones while Python was
+installed, with tools/compare_fuzzers.py, which went with fuzz/'s
+Python. The generators wrote the same program and expected return on
+seeds 0 to 2999 of each, the runner gave the same verdict and the same
+three results on seeds 0 to 299 of exprs, calls, and stmts and 0 to 99
+of yarpgen, and with a broken constant fold of a subtraction, the two
+reducers wrote the same reductions, with and without `--tac-opt`, and
+the two `tac-passes` named the same pass. cpp/tests/test_fuzz_generators.cpp
+checks the generators against golden/fuzz/, and test_fuzz.cpp holds
+the tests of tests/test_fuzz_tools.py and the runner's and reducer's
+own.
 
 ## Status
 

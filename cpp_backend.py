@@ -1,5 +1,5 @@
 """Runs the C++ port of the compiler, `c6502cpp`, for compile.py, nm.py,
-objdump.py, the simulator harness, the fuzzers, and the tests.
+objdump.py, the simulator harness, and the tests.
 
 `compile_source` sends `c6502cpp backend` the source text, the
 preprocessor's arguments, and the file name, and the C++ side runs the
@@ -10,7 +10,7 @@ checker, then `c99_to_tac`, under `-O` the inliner,
 page, code generation, the asm back end's region (or the unoptimized
 peephole fixed point and long branches), the work after it that reads
 the asm program, `asm_to_asm2`, and emission, and returns the `-S` text.
-Under `C6502_CHECK_IR=1`, or after `enable_ir_check()`, the request's
+Under `C6502_CHECK_IR=1`, the request's
 `check_ir` turns on the IR checks (cpp/src/passes/ir_check.h), which
 check the IR after each pass, and a failed check comes back as the
 AssertionError of an internal error, with the message of
@@ -23,11 +23,6 @@ the preprocessor and the lexer and returns the text `compile.py --lex`
 prints, and `stage_source` sends it in the modes `parse`, `resolve`, and
 `tac`, which return the tree `compile.py --parse`, `--resolve`, and
 `--tac` print.
-
-`tac_main`, `tac_results`, `tac_first_changing_pass`, and
-`tac_falls_off_end` run the TAC interpreter of the C++ port on a source,
-for `tests.test_sim_chapters._run_program`, fuzz/reduce.py, and
-fuzz/tac_passes.py.
 
 `run_tool` runs compile.py's whole command line in `c6502cpp compile`
 (cpp/src/compile_command.h), which reads it with compile.py's argparse
@@ -313,105 +308,8 @@ def compile_source(
     return sections["text"]
 
 
-class TacSimError(Exception):
-    """The error of the C++ TAC interpreter (cpp/src/tac_sim.h), such as
-    a read of a variable without a value. Its name and message are those
-    of the Python interpreter it was ported from."""
-
-
-def _tac_request(mode: str, source: str, **args) -> tuple[dict, dict]:
-    """Sends the TAC interpreter's `mode` (cpp/src/tac_sim_modes.h) the
-    source `source`, preprocessed with no arguments and no file name,
-    and returns the response's lines and sections. What the
-    preprocessor wrote to stderr goes to `sys.stderr` and its warnings
-    to `diagnostics.warn`, and the error of a rejected program is raised
-    as its Python exception. With the IR checks on (`_ir_check_enabled`),
-    the TAC optimizer's driver checks the TAC after each pass, and a
-    failed check comes back as an AssertionError."""
-    kwargs = json.dumps({
-        "pcpp_args": [], "filename": None, "include_dir": _INCLUDE_DIR,
-        "preprocess": True, "check_ir": _ir_check_enabled(), **args,
-    })
-    request = (
-        f"c6502-backend 3\nmode {mode}\nargs {kwargs}\n"
-        f"{_section('source', source)}"
-    )
-    lines, sections = _sections(_send(request))
-    _replay_front(lines, sections)
-    return lines, sections
-
-
-def _tac_value(text: str):
-    """The value of a `result` or `optimized` line, or the raise of the
-    exception that the interpreter raised, as its Python class."""
-    outcome = json.loads(text)
-    if "error" in outcome:
-        error = outcome["error"]
-        if error["type"] == "TacSimError":
-            raise TacSimError(error["message"])
-        raise _exception(error["type"], error["message"])
-    return outcome["value"]
-
-
-def tac_main(source: str) -> int | None:
-    """Returns what `main` of the C source `source` returns on its
-    unoptimized TAC, for `tests.test_sim_chapters._run_program`: an int,
-    signed when `main`'s type is, or None. The front end's error and the
-    interpreter's are raised with their Python classes, the latter's
-    `TacSimError` being this module's."""
-    lines, _ = _tac_request("tac-run", source)
-    return _tac_value(lines["result"])
-
-
-def tac_results(source: str) -> tuple:
-    """Returns `main`'s result on the unoptimized TAC of `source` and on
-    the TAC after the TAC optimizer, for fuzz/reduce.py's
-    `_tac_results`, raising as `tac_main` does."""
-    lines, _ = _tac_request("tac-run", source, optimized=True)
-    plain = _tac_value(lines["result"])
-    return plain, _tac_value(lines["optimized"])
-
-
-def tac_first_changing_pass(source: str):
-    """Returns fuzz/tac_passes.py's `first_changing_pass` of `source`:
-    `(function, pass, expected, got)` for the first step of the TAC
-    optimizer after which `main` returns something other than on the
-    unoptimized TAC, or None. A result is an int, None, or the text
-    `ERR <type>: <message>` of what the interpreter raised."""
-    lines, _ = _tac_request("tac-observe", source)
-    found = json.loads(lines["found"])
-    return None if found is None else tuple(found)
-
-
-def tac_falls_off_end(source: str) -> bool:
-    """Returns fuzz/reduce.py's `falls_off_end` of `source`: whether a
-    run of `main` on the TAC reaches the end of a function, other than
-    `main`, that returns a value. A program that the front end rejects
-    gives False."""
-    lines, _ = _tac_request("tac-falls-off", source)
-    return lines["fell"] == "true"
-
-
-# What `enable_ir_check` set, or None when nothing has called it.
-_check_ir: bool | None = None
-
-
-def enable_ir_check(on: bool = True) -> bool:
-    """Turns the IR checks on, or off, for the compiles that follow, and
-    returns whether they were on (`_ir_check_enabled`). The requests
-    carry the choice. The fuzzers call it, and so does a test that needs
-    the checks whatever `C6502_CHECK_IR` says."""
-    global _check_ir
-    was = _ir_check_enabled()
-    _check_ir = on
-    return was
-
-
 def _ir_check_enabled() -> bool:
-    """Whether the IR checks are on: what `enable_ir_check` set last, or
-    else whether `C6502_CHECK_IR` is 1."""
-    if _check_ir is not None:
-        return _check_ir
+    """Whether the IR checks are on, which `C6502_CHECK_IR=1` asks for."""
     return os.environ.get("C6502_CHECK_IR") == "1"
 
 

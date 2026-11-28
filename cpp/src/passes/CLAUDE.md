@@ -147,9 +147,9 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
   and V are dead at L: the 1-byte form of
   `optimization/compare_subtract.h`.
 - `ir_check.h` — checks the IR between passes. The checks run inside
-  c6502cpp when `C6502_CHECK_IR=1` is set or
-  `cpp_backend.enable_ir_check()` is called (the fuzzers do), and a
-  failed check reaches Python as an AssertionError.
+  c6502cpp when `C6502_CHECK_IR=1` is set, and always in the fuzzers'
+  runner (cpp/src/fuzz/runner.h), and a failed check reaches Python as
+  an AssertionError.
   `check_tac` runs after every TAC optimizer pass (from
   `PhaseDriver::apply`): labels unique and jumped to, names in the
   symbol table, and in SSA form one definition per SSA name that

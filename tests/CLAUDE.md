@@ -13,9 +13,8 @@ The suite runs the compiler in `c6502cpp`, so it needs the C++ build
 (cpp/README.md), and a test that compiles a program is skipped without
 it. `C6502_CHECK_IR=1` makes c6502cpp check the IR after every
 optimizer pass and at the asm stage boundaries
-(cpp/src/passes/ir_check.h), and a test that needs the checks whatever
-the variable says calls `cpp_backend.enable_ir_check()`. The fuzzers
-always run with them. `C6502_SIM_LOCKSTEP=1` runs the C++ CPU beside
+(cpp/src/passes/ir_check.h). The fuzzers (`c6502cpp fuzz`) always
+run with them. `C6502_SIM_LOCKSTEP=1` runs the C++ CPU beside
 py65 in every `Simulation.run` and every run of a game's machine, and
 fails a test at the first instruction where they differ
 (sim/lockstep.py).
@@ -26,12 +25,6 @@ sync` installs them):
 ```sh
 C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q
 ```
-
-A harness class that compiles a program is decorated with
-`tests.cpp_build.needs_c6502cpp`, which skips it when `c6502cpp` isn't
-built, since compile.py, nm.py, and objdump.py are shims over it. A
-test that skips itself, or combines the condition with another, reads
-`cpp_build.BUILT` and `cpp_build.REASON`.
 
 ## What is left here
 
@@ -47,16 +40,14 @@ cpp/tests/test_<topic>_sim.cpp, through `suite::build_sim`
 
 The modules left test Python code that a later group ports or removes.
 
-- `test_fuzz_tools.py` runs the Python fuzzers on a few seeds, for
-  group G6, and `test_sim_assembler.py` tests sim/assembler.py, which
-  the fuzzers' runner still uses.
+- `test_sim_assembler.py` tests sim/assembler.py, which the Python
+  harness that the games' machines and the compile-example skill run
+  still uses.
 - `test_asdl.py`, `test_ir_dump.py`, `test_type_checking.py`, and
   `test_binutils.py` test asdl.py, ir_dump.py, the IR classes'
   equality, and binutils/elf.py, which go in group R.
-- `test_sim_chapters.py` holds `_run_program`, the TAC interpreter's
-  run of a program, which fuzz/runner.py imports.
-- `cpp_build.py`, which test_fuzz_tools.py reads, and `no_inlining.py`
-  and `asm_compare.py`, which nothing imports, go in group R.
+- `no_inlining.py` and `asm_compare.py`, which nothing imports, go in
+  group R.
 
 ## The multi-unit examples
 

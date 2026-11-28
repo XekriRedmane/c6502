@@ -8,10 +8,10 @@ assembler and linker, which write ELF objects and executables.
 The compiler was written in Python and is now written in C++, in
 `cpp/`, which builds one executable, `c6502cpp`. `compile.py`,
 `nm.py`, and `objdump.py` stay as Python shims that run it, with the
-same command lines and messages as before, and so do the simulator,
-the tests, and the fuzzers, which are still in Python. They move to
-C++ in the next step of the port
-([docs/cpp_port.md](docs/cpp_port.md)).
+same command lines and messages as before, and so do the simulator
+and the tests that are still in Python. They move to C++ in the
+next step of the port ([docs/cpp_port.md](docs/cpp_port.md)). The
+fuzzers are C++ already.
 
 ## Status
 
@@ -534,16 +534,16 @@ the same result. They're worth running after changing a pass, the ABI
 selection, or the register allocator.
 
 ```sh
-uv run python -m fuzz.exprs --start 0 --count 300 -j 12   # expressions, in 12 processes
-uv run python -m fuzz.calls --start 0 --count 300         # calling conventions
-uv run python -m fuzz.stmts --start 0 --count 300         # control flow and storage
-uv run python -m fuzz.build_yarpgen                       # once, before the next line
-uv run python -m fuzz.yarpgen --start 0 --count 100       # YARPGen's programs
-uv run python -m fuzz.reduce fuzz_out/calls/calls534.c    # shrink a failing program
+cpp/build/bin/c6502cpp fuzz exprs --start 0 --count 300 -j 12  # expressions, in 12 processes
+cpp/build/bin/c6502cpp fuzz calls --start 0 --count 300        # calling conventions
+cpp/build/bin/c6502cpp fuzz stmts --start 0 --count 300        # control flow and storage
+bash fuzz/build_yarpgen.sh                                     # once, before the next line
+cpp/build/bin/c6502cpp fuzz yarpgen --start 0 --count 100      # YARPGen's programs
+cpp/build/bin/c6502cpp fuzz reduce fuzz_out/calls/calls534.c   # shrink a failing program
 ```
 
 Failing programs land in `fuzz_out/`. [fuzz/CLAUDE.md](fuzz/CLAUDE.md)
-describes each tool.
+describes each generator and the other forms of `c6502cpp fuzz`.
 
 ### Regenerating the AST modules
 

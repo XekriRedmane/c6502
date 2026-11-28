@@ -177,13 +177,12 @@ struct ElfFile {
 
 // Returns the bytes of `elf`. Local symbols are written first, as ELF
 // requires, and otherwise in the order of `elf.symbols`. Throws
-// `CompileError("struct.error", "argument out of range")` for a
-// relocation's offset outside 32 unsigned bits or its addend outside 32
-// signed bits, a symbol's or a section's size outside 32 unsigned bits,
-// or a section's address or alignment, the entry, or a segment's
-// addresses or size outside 32 unsigned bits (an executable linked from
-// an origin such as -1). Throws `CompileError("ElfError", ...)` for a
-// relocation that names a symbol the symbol table doesn't hold.
+// `CompileError("ElfError", ...)` for a relocation's offset outside 32
+// unsigned bits or its addend outside 32 signed bits, a symbol's or a
+// section's size outside 32 unsigned bits, a section's address or
+// alignment, the entry, or a segment's addresses or size outside 32
+// unsigned bits, and a relocation that names a symbol the symbol table
+// doesn't hold.
 std::string write(const ElfFile& elf);
 
 // Returns the `ElfFile` in `data`. `name` is for error messages. Throws

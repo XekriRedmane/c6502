@@ -24,10 +24,8 @@
 namespace c6502::compile_command {
 
 // An exception that compile.py lets out of `main`, or that it reports
-// with `_report`: its Python class (with its module in front for a
-// class such as `struct.error`, whose name a builtin has too), `str(e)`,
-// and for an OSError its `strerror`, which `_report` prints in place of
-// `str(e)`.
+// with `_report`: its Python class, `str(e)`, and for an OSError its
+// `strerror`, which `_report` prints in place of `str(e)`.
 struct Raised {
   std::string type;
   std::string message;

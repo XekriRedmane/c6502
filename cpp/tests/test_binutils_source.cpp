@@ -190,9 +190,6 @@ TEST_CASE("binutils: an assembled object's header, and a file that isn't ELF") {
 }
 
 TEST_CASE("binutils: each damaged copy of an assembled object is an ElfError") {
-  // Each of these raised struct.error, IndexError, or ValueError in
-  // Python's reader, which nm.py, objdump.py, and compile.py printed as
-  // a traceback.
   const std::string text = read_text(suite::repo_path("golden/O/examples/apply_bobble.s"));
   const std::string data = elf::write(assemble(text, "apply_bobble.asm"));
   const auto u32 = [&](std::size_t at) {

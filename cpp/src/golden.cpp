@@ -317,13 +317,7 @@ JobResult run_job(const Manifest& m, const Job& job, const Root& root, const fs:
       if (!out.empty()) r.lines.push_back("stdout " + json::quote(out));
       if (!err.empty()) r.lines.push_back("stderr " + json::quote(err));
       if (o.raised) {
-        // `type(e).__name__`, the name after a module's, so
-        // "struct.error" is "error".
-        std::string type = o.raised->type;
-        if (const std::size_t dot = type.rfind('.'); dot != std::string::npos) {
-          type = type.substr(dot + 1);
-        }
-        r.lines.push_back("raised [" + json::quote(type) + ", " +
+        r.lines.push_back("raised [" + json::quote(o.raised->type) + ", " +
                           json::quote(normalize(o.raised->message, root)) + "]");
       }
     } else {

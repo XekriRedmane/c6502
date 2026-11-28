@@ -704,8 +704,10 @@ class Compile {
     binutils::ld::Objects objects;
     for (const Input& in : inputs) {
       std::optional<binutils::elf::ElfFile> obj;
+      std::string bytes;
       try {
         obj = object_of(in, args);
+        if (!link) bytes = binutils::elf::write(*obj);
       } catch (const CompileError& e) {
         const Raised error = raised_of(e);
         if (!is_input_error(error.type)) throw error;
@@ -720,18 +722,9 @@ class Compile {
         objects.emplace_back(in.link_name, std::move(*obj));
         continue;
       }
-      std::string bytes;
-      std::optional<Raised> write_error;
-      try {
-        bytes = binutils::elf::write(*obj);
-      } catch (const CompileError& e) {
-        if (e.python_type() != "struct.error") throw;
-        write_error = raised_of(e);
-      }
       const std::string out_path =
           args.output && !args.output->empty() ? *args.output : stem_of(in.path) + ".o";
       if (const int e = write_bytes(out_path, bytes); e != 0) throw os_error(e, out_path);
-      if (write_error) throw *write_error;
     }
     if (stop_object) {
       eprint(prog_ + ": " + *stop_object + " is already an object");
@@ -774,10 +767,9 @@ class Compile {
     try {
       data = binutils::elf::write(exe);
     } catch (const CompileError& e) {
-      if (e.python_type() != "struct.error") throw;
-      // Python opens the executable's file before `elf.write` raises.
-      if (const int error = write_bytes(output, ""); error != 0) throw os_error(error, output);
-      throw raised_of(e);
+      if (e.python_type() != "ElfError") throw raised_of(e);
+      eprint(prog_ + ": link error: " + std::string(e.what()));
+      return 1;
     }
     if (const int error = write_bytes(output, data); error != 0) throw os_error(error, output);
     return 0;

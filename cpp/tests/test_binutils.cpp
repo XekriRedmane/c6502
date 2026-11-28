@@ -154,30 +154,33 @@ TEST_CASE("opcodes: the table and its decoding") {
   CHECK(!opcodes::is_mnemonic("BRA"));
 }
 
-TEST_CASE("elf: the fields elf.write packs in 32 unsigned bits") {
-  // A link from the origin -1 (`compile.py -Ttext=-1`) puts `.text` at
-  // -1 and enters there, which Python's `_SHDR.pack` and `_EHDR.pack`
-  // reject with struct.error. The C++ writer would keep the low bits.
-  const auto raises = [](const elf::ElfFile& f) {
+TEST_CASE("elf: a field outside its 32 bits is an ElfError") {
+  const auto error = [](const elf::ElfFile& f) -> std::string {
     try {
       elf::write(f);
     } catch (const CompileError& e) {
-      return e.python_type() == "struct.error" && std::string(e.what()) == "argument out of range";
+      return e.python_type() + ": " + e.what();
     }
-    return false;
+    return "";
   };
   elf::ElfFile f = sample();
-  CHECK(!raises(f));
+  CHECK(error(f).empty());
   f.sections[0]->addr = -1;
-  CHECK(raises(f));
+  CHECK(error(f) ==
+        "ElfError: the address of .text is -1, which doesn't fit in 32 unsigned bits");
   f.sections[0]->addr = 0x800;
   f.entry = 0x100000000;
-  CHECK(raises(f));
+  CHECK(error(f) ==
+        "ElfError: the entry point is 4294967296, which doesn't fit in 32 unsigned bits");
   f.entry = 0x800;
   f.segments.push_back(elf::Segment{.vaddr = -1, .paddr = -1, .data = "x", .memsz = 1});
-  CHECK(raises(f));
+  CHECK(error(f) ==
+        "ElfError: a segment's run address is -1, which doesn't fit in 32 unsigned bits");
   f.segments.back().vaddr = f.segments.back().paddr = 0xFFFF;
-  CHECK(!raises(f));
+  CHECK(error(f).empty());
+  f.sections[0]->relocs[0].addend = std::int64_t{1} << 31;
+  CHECK(error(f) == "ElfError: the addend of a relocation in .text is 2147483648, which "
+                    "doesn't fit in 32 signed bits");
 }
 
 TEST_CASE("argparse: nm's usage, errors, and combined flags") {

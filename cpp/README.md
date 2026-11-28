@@ -2259,12 +2259,12 @@ input's preprocessor wrote and its warnings, reports its error, and
 writes its object in that order. A link gives the assembled objects to
 `passes::linker::link_objects` as they are, as compile.py gave the
 Python linker, reads the script after the inputs, and writes the
-executable. `elf::write` (src/binutils/elf.h) gives the `struct.error`
-that Python's `elf.write` raised for an addend or a size outside its
-field, after the output file is opened, as Python's `open` came before
-its `elf.write`. An executable that can't be opened or written gives
-the errno and the C library's message, as the OSError of Python's
-`open` did.
+executable. `elf::write` (src/binutils/elf.h) throws an `ElfError` for
+an addend, an address, or a size outside its field, which the command
+reports as an error of the input for `-c` and as a link error for a
+link, before it opens the output file. An executable that can't be
+opened or written gives the errno and the C library's message, as the
+OSError of Python's `open` did.
 
 Until group R of step 9, compile.py, nm.py, and objdump.py were shims
 that ran these commands, and the Python tests and the simulator
@@ -2606,10 +2606,8 @@ assembler.
   the error, for tests/test_cpp_binutils.py's `TestAssemble`, which
   compared it with Python. Group R of step 9 removed it. `c6502cpp
   compile -c` assembles each unit's text in the process that compiles
-  it ("The back end through c6502cpp"), and `elf::write` gives the
-  `struct.error` that Python's `elf.write` raised for an addend or a
-  size outside its field, where the C++ writer would keep the low 32
-  bits.
+  it ("The back end through c6502cpp"), and `elf::write` throws an
+  `ElfError` for an addend or a size outside its field.
 
 `check-binutils` runs both on the records: every `assemble` record
 gives the recorded object's bytes or its error, and every

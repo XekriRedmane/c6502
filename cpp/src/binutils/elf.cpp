@@ -355,32 +355,29 @@ SymbolPtr ElfFile::symbol(std::string_view name) const {
 namespace {
 
 void check_fields(const ElfFile& obj) {
-  const auto out_of_range = [] { throw CompileError("struct.error", "argument out of range"); };
-  for (const auto& s : obj.sections) {
-    for (const auto& r : s->relocs) {
-      if (r.offset < 0 || r.offset > UINT32_MAX) out_of_range();
-      if (r.addend < INT32_MIN || r.addend > INT32_MAX) out_of_range();
+  const auto check_u32 = [](std::int64_t v, const std::string& what) {
+    if (v < 0 || v > UINT32_MAX) {
+      elf_error(what + " is " + std::to_string(v) + ", which doesn't fit in 32 unsigned bits");
     }
-  }
-  for (const bool locals : {true, false}) {
-    for (const auto& sym : obj.symbols) {
-      if (sym->is_global() == locals) continue;
-      if (sym->size < 0 || sym->size > UINT32_MAX) out_of_range();
-    }
-  }
-  const auto check_u32 = [&](std::int64_t v) {
-    if (v < 0 || v > UINT32_MAX) out_of_range();
   };
   for (const auto& s : obj.sections) {
-    check_u32(s->addr);
-    check_u32(s->size());
-    check_u32(s->align);
+    for (const auto& r : s->relocs) {
+      check_u32(r.offset, "the offset of a relocation in " + s->name);
+      if (r.addend < INT32_MIN || r.addend > INT32_MAX) {
+        elf_error("the addend of a relocation in " + s->name + " is " +
+                  std::to_string(r.addend) + ", which doesn't fit in 32 signed bits");
+      }
+    }
+    check_u32(s->addr, "the address of " + s->name);
+    check_u32(s->size(), "the size of " + s->name);
+    check_u32(s->align, "the alignment of " + s->name);
   }
-  check_u32(obj.entry);
+  for (const auto& sym : obj.symbols) check_u32(sym->size, "the size of `" + sym->name + "`");
+  check_u32(obj.entry, "the entry point");
   for (const auto& seg : obj.segments) {
-    check_u32(seg.vaddr);
-    check_u32(seg.paddr);
-    check_u32(seg.memsz);
+    check_u32(seg.vaddr, "a segment's run address");
+    check_u32(seg.paddr, "a segment's load address");
+    check_u32(seg.memsz, "a segment's size");
   }
 }
 

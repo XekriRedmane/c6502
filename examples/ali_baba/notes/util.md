@@ -196,7 +196,7 @@ loop of subtractions, 11 bytes, where the original's is 13.
 
 ## Size
 
-Code bytes in the `-S -O` output, from `objdump.py -t util.o`, against
+Code bytes in the `-S -O` output, from `c6502cpp objdump -t util.o`, against
 the original's bytes for the same routines (from the label to the next
 entry, as main.lst lays them out).
 
@@ -227,7 +227,7 @@ entry, as main.lst lays them out).
 | COLD_RESTART | 33 | cold_restart | 70 |
 | Total | 740 | | 791 |
 
-The C's bytes are the symbol sizes of `nm.py -S util.o`. Before the
+The C's bytes are the symbol sizes of `c6502cpp nm -S util.o`. Before the
 rewrite into plain C on 18 Nov 2026, the same routines came to 722
 bytes. They came to 824 after the rewrite, and to 791 once c6502
 divided a byte by a constant and shifted by a variable count inline.

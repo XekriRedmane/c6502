@@ -154,7 +154,7 @@ These were fixed on 19 Nov 2026 too, and weren't listed:
 
 ## Size
 
-From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
+From `c6502cpp objdump -t` of `text.o` (before linking), against `main.lst`.
 
 | Original | Bytes | C | Bytes |
 |---|---:|---|---:|
@@ -172,7 +172,7 @@ From `objdump.py -t` of `text.o` (before linking), against `main.lst`.
 | SET_TEXT_WINDOW_UPPER_LEFT_ALL, _LOW, SET_TEXT_WINDOW_UPPER_LEFT | 18 | set_text_window_upper_left | 11 |
 | **Total code** | **553** | | **605** |
 
-The C's bytes are the symbol sizes of `nm.py -S text.o`. Before the
+The C's bytes are the symbol sizes of `c6502cpp nm -S text.o`. Before the
 rewrite into plain C on 18 Nov 2026, the unit was 668 bytes of code
 and 10 of data. It was 729 bytes after the rewrite, and 692 once c6502
 shared one call of `udivmod16` between a `/` and a `%` and divided a

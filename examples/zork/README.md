@@ -44,7 +44,7 @@ call.
 | `prompts.c` | Asking for the save diskette and giving the game diskette back | 3467-3633 |
 | `save.c` | `save` and `restore` | 3634-3772 |
 | `interpreter.ld` | The linker script | |
-| `*.asm` | Each file compiled on its own, and `interpreter.asm`, the listing of the program the eleven link into by the script | |
+| `interpreter.asm` | The listing of the program the eleven link into by the script | |
 
 Each `.c` file's header lists where it departs from the original and
 then quotes the original code it translates.
@@ -54,20 +54,20 @@ then quotes the original code it translates.
 ```sh
 cd examples/zork
 for f in main decode objects numbers input pages zstring output disk prompts save; do
-    uv run python ../../compile.py $f.c -S -O -o $f.asm
-    uv run python ../../compile.py $f.c -c -O
+    ../../cpp/build/bin/c6502cpp compile $f.c -c -O
 done
-uv run python ../../compile.py -T interpreter.ld \
+../../cpp/build/bin/c6502cpp compile -T interpreter.ld \
     main.o decode.o objects.o numbers.o input.o pages.o \
     zstring.o output.o disk.o prompts.o save.o -o interpreter
-uv run python ../../objdump.py -D --no-show-raw-insn --no-addresses \
+../../cpp/build/bin/c6502cpp objdump -D --no-show-raw-insn --no-addresses \
     interpreter > interpreter.asm
 ```
 
-Each unit is compiled twice from the same source: to its `.asm`, which
-is checked in, and to its object, which the link reads. The link
+Each unit is compiled to its object, which the link reads. The link
 writes the ELF executable `interpreter`. Neither the objects nor the
-executable are checked in. `interpreter.asm` is the executable's
+executable are checked in. Each unit's `-S -O` text is in
+golden/O/examples/zork/, and `c6502cpp compile $f.c -S -O -o $f.s`
+writes it. `interpreter.asm` is the executable's
 listing in dasm's syntax, with a `SEG` and an `ORG` for each output
 section, and cpp/src/sim/harness.h's `build_linked_sim` loads the
 executable for the simulator. golden/O.txt and golden/links.txt check

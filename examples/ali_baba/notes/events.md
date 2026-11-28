@@ -185,7 +185,7 @@ compares both bytes of CHAR_PTR (6 bytes).
 ## Size
 
 The original's routines take 1,542 bytes (main.lst, the sizes in
-UNITS.md's table). The C takes 1,630 bytes in `events.asm`, 88 more.
+UNITS.md's table). The C takes 1,630 bytes in its `-S -O` text, 88 more.
 Before the rewrite to plain C it took 1,561 bytes with the same
 compiler.
 

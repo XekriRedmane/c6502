@@ -311,7 +311,7 @@ zero-page parameters where the original keeps one in $C2, and gap 3),
 `check_joystick`, whose zone tests compile to separate loads and
 compares where the original keeps the zone in A.
 
-Each function's code bytes in the `-c -O` object, from `nm.py -S`,
+Each function's code bytes in the `-c -O` object, from `c6502cpp nm -S`,
 before and after the rewrite of 18 Nov 2026 as plain C. The two
 `@run` routines hold code that the compiler moved out of several
 functions, the IOB's sector and track stores and the copy of

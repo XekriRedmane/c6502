@@ -1,29 +1,24 @@
+
 # examples/CLAUDE.md
 
-Real-world C sources used to exercise the compiler end-to-end. Each
-`<name>.c` has a matching `<name>.asm` checked in — the asm file is
-the expected output of
+Real-world C sources used to exercise the compiler end-to-end. The
+expected `-S -O` output of each `<name>.c` is
+golden/O/examples/<name>.s, which `c6502cpp check-golden` compares
+with the compiler's output. This command writes the same text.
 
 ```sh
-uv run python compile.py examples/<name>.c -S -O \
-    -o examples/<name>.asm
+cpp/build/bin/c6502cpp compile examples/<name>.c -S -O -o <name>.s
 ```
 
-The matched `.c` / `.asm` pairs serve two purposes:
-
-1. **Snapshots** — golden/O/examples/ holds the same `-S -O` text,
-   which `c6502cpp check-golden` compares with the compiler's output.
-   Until 26 Nov 2026 tests/test_example_outputs.py also compared each
-   `.asm` here with the compiler's output. Step 9 of the port dropped
-   it, since every `.asm` was byte for byte its golden copy, so
-   nothing checks the copies here now (docs/cpp_port.md, "Open
-   questions for Robert", question 5).
-2. **Hand-readable reference** — the `.asm` files are short enough
-   (typically <500 lines) that a reader can read them end-to-end and
-   see what `-O` produces on representative game code
-   (loop unrolling for `[[c6502::unroll]]` loops
-   is folded into `-O` — there is no separate `--unroll`
-   flag).
+Each `<name>.c` had a matching `<name>.asm` here until group R of
+step 9 of the port deleted them on 27 Nov 2026. Each was byte for
+byte its golden copy, and nothing had compared them with the
+compiler's output since 26 Nov (docs/cpp_port.md, "Open questions for
+Robert", question 5). The golden copies are short enough (typically
+under 500 lines) that a reader can read one end-to-end and see what
+`-O` produces on representative game code. Loop unrolling for
+`[[c6502::unroll]]` loops is part of `-O`, and there is no separate
+`--unroll` flag.
 
 The example corpus is biased toward Apple II / game-engine workloads:
 HUD strip painting, sprite blitting, audio tone generation, enemy AI
@@ -36,7 +31,8 @@ interpreter, in eleven C files and a shared header, linked by a linker
 script into a program that runs from `$0800` around DOS's RWTS and
 loads the story after itself. Its README compares it with Zork's code,
 and cpp/tests/test_zork_interpreter.cpp checks that the listing of the
-linked executable, `objdump.py -D`, is interpreter.asm. When `ZORK_DSK`
+linked executable, `c6502cpp objdump -D`, is interpreter.asm, which
+is the one `.asm` file left in examples/. When `ZORK_DSK`
 names the game's disk image, `Zork I r15 (4am crack).dsk` from that
 repository, cpp/tests/test_zork_interpreter_sim.cpp plays two
 sessions on it and on Zork's own interpreter (read from the same
@@ -96,7 +92,7 @@ their initial bytes are stored by the `__zp_init` the linker writes.
 The game starts from the reset vector at `cold_start`, or from `main`,
 and neither calls `__zp_init`, so the program is correct only when
 something runs `__zp_init` first. The harness calls it before `main`
-(`sim.lode_runner.program_machine`).
+(`lode_runner::program_machine` in cpp/src/sim/lode_runner.h).
 
 ## Translating Zork's code
 
@@ -158,7 +154,7 @@ compares the C with the original. Robert set two conventions for it:
 
 The `compile-example` skill (project-local) wraps the canonical
 compile command. Type `/compile-example <name>` to compile
-`examples/<name>.c` with `-O` and overwrite
-`examples/<name>.asm`. The golden files hold a job for each example
-in each mode (cpp/src/golden.h), and an example that has none isn't
-checked by `check-golden`.
+`examples/<name>.c` with `-O` and compare the text with
+golden/O/examples/<name>.s. The golden files hold a job for each
+example in each mode (cpp/src/golden.h), and an example that has none
+isn't checked by `check-golden`.

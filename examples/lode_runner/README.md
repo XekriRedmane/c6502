@@ -35,7 +35,6 @@ in `$9000`-`$9AFF`, which the original never touches.
 | `sound.c` | The speaker: the queue of notes, the falling tone, the beep, and the delays that pace the game | 6859-6901, 7222-7345 |
 | `wipe.c` | The iris wipe between levels, and the turning GAME OVER | 7440-8130 |
 | `lode_runner.ld` | The linker script | |
-| `*.asm` | Each file compiled on its own | |
 
 Each `.c` file's header lists where it departs from the original and
 then quotes the original code it translates.
@@ -45,19 +44,19 @@ then quotes the original code it translates.
 ```sh
 cd examples/lode_runner
 for f in main level player input guards timers screen hiscore editor sprites sound wipe; do
-    uv run python ../../compile.py $f.c -S -O -o $f.asm
-    uv run python ../../compile.py $f.c -c -O
+    ../../cpp/build/bin/c6502cpp compile $f.c -c -O
 done
-uv run python ../../compile.py -T lode_runner.ld \
+../../cpp/build/bin/c6502cpp compile -T lode_runner.ld \
     main.o level.o player.o input.o guards.o timers.o screen.o \
     hiscore.o editor.o sprites.o sound.o wipe.o -o lode_runner
 ```
 
-Each unit is compiled twice from the same source: to its `.asm`, which
-is checked in, and to its object, which the link reads. The link
+Each unit is compiled to its object, which the link reads. The link
 writes the ELF executable `lode_runner`. Neither the objects nor the
 executable are checked in, and there's no checked-in listing of the
-linked program.
+linked program. Each unit's `-S -O` text is in
+golden/O/examples/lode_runner/, and `c6502cpp compile $f.c -S -O -o
+$f.s` writes it.
 
 `lode_runner.ld` puts `main.o` and nine other units in `$6000`-`$8DFF`,
 `editor.c`'s `format_patch` at `$8E00`, where the game's DOS jumps

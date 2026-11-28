@@ -160,7 +160,7 @@ No compiler crash or wrong code.
 ## Size
 
 The bytes of code in `entities.c -c -O` (the `.text` sections, from
-`nm.py -S`), against the original's code bytes in `main.lst`. Before
+`c6502cpp nm -S`), against the original's code bytes in `main.lst`. Before
 the rewrite to plain C the unit took 1,049 bytes with the same
 compiler, and the only routine whose size changed is
 adjust_pc_count, by 2 bytes, for the comparison of both bytes of the

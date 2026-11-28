@@ -22,9 +22,9 @@ runs next.
 - Each `.c` file opens with a comment that says what it does, lists
   its departures from the original, and quotes the lines of
   `main.asm` it translates, as `examples/lode_runner/*.c` do. Compile
-  it with `uv run python ../../compile.py <unit>.c -c -O` from
+  it with `../../cpp/build/bin/c6502cpp compile <unit>.c -c -O` from
   `examples/ali_baba`, and write its listing with `-S -O -o
-  <unit>.asm`.
+  <unit>.s`.
 - A chain routine translates its exits this way. A JMP, branch, or
   fall into another chain routine is `return CHAIN_X;`. `LDX #>T; LDY
   #<T; JMP INPUT_LOOP` is `return input_loop(&T);`. A JMP to an
@@ -1362,7 +1362,7 @@ and the units follow the workaround given for each.
    void run(uint8_t n) { handler[n](); }
    ```
 
-   The link fails with `compile.py: link error: function(s) contain
+   The link fails with `c6502: link error: function(s) contain
    IndirectCall and can't be linked under the private-pool model`.
    Every table of routine addresses becomes a table of small numbers
    and a switch: the menu exits (`CHAIN_` states and `run_chain`), the

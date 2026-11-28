@@ -41,7 +41,6 @@ touches.
 | `sound.c` | The tune player and its tones | Sound |
 | `hrcg.c` | The HRCG, which draws text on the hi-res screen | The HRCG Text Engine |
 | `ali_baba.ld` | The linker script | |
-| `*.asm` | Each file compiled on its own | |
 | `UNITS.md` | Which routines and tables each unit has, and the decisions behind the header | |
 | `notes/*.md` | Each unit's departures from the original, the places its comments and code disagree, and its size by routine | |
 
@@ -53,17 +52,17 @@ then quotes the lines of `main.asm` it translates.
 ```sh
 cd examples/ali_baba
 for f in main init turn input combat ai events entities map display util text sound hrcg; do
-    uv run python ../../compile.py $f.c -S -O -o $f.asm
-    uv run python ../../compile.py $f.c -c -O
+    ../../cpp/build/bin/c6502cpp compile $f.c -c -O
 done
-uv run python ../../compile.py -T ali_baba.ld \
+../../cpp/build/bin/c6502cpp compile -T ali_baba.ld \
     main.o init.o turn.o input.o combat.o ai.o events.o entities.o \
     map.o display.o util.o text.o sound.o hrcg.o -o ali_baba
 ```
 
-Each unit is compiled twice from the same source: to its `.asm`,
-which is checked in, and to its object, which the link reads. Neither
-the objects nor the executable are checked in. The link needs no
+Each unit is compiled to its object, which the link reads. Neither
+the objects nor the executable are checked in. Each unit's `-S -O`
+text is in golden/O/examples/ali_baba/, and `c6502cpp compile $f.c -S
+-O -o $f.s` writes it. The link needs no
 `--defsym`. c6502 compiles most multiplications, divisions, and shifts
 by a variable count inline, and calls a runtime helper for the rest,
 and for the builtin `__c6502_bin_to_bcd`. The linker adds each helper
@@ -174,7 +173,7 @@ file's code and data together against the original's.
 | **Total** | **14551** | **2874** | **14836** | **2456** | **-0.8%** |
 
 The C counts are the symbol sizes of each unit's `-c -O` object
-(`nm.py -S`), and they leave out the `__zp_init` the linker writes.
+(`c6502cpp nm -S`), and they leave out the `__zp_init` the linker writes.
 The link also adds the runtime library's `bin16_to_bcd`, 46 bytes of
 code, which brings the C program's code to 14,882 bytes, 2.3% more
 than the original's. `hrcg.c` leaves out the HRCG's entry points and control

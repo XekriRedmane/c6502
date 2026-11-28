@@ -3,51 +3,36 @@
 ## Running
 
 ```sh
-uv run python -m unittest                                          # all
-uv run python -m unittest tests.test_ir_dump                        # one module
-uv run python -m unittest tests.test_binutils.TestElf               # one class
-C6502_CHECK_IR=1 uv run python -m unittest                         # with IR checks
+cpp/build/bin/c6502_tests                         # every doctest case
+cpp/build/bin/c6502_tests -tc="apply_bobble_sim*" # the cases whose names match
+ctest --test-dir cpp/build -C Release --output-on-failure   # the cases and the checks below
+cpp/build/bin/c6502cpp check-golden -j 12         # the corpus against golden/
+cpp/build/bin/c6502cpp check-frozen               # the passes against cpp/tests/frozen
 ```
 
-The suite runs the compiler in `c6502cpp`, so it needs the C++ build
-(cpp/README.md), and a test that compiles a program is skipped without
-it. `C6502_CHECK_IR=1` makes c6502cpp check the IR after every
-optimizer pass and at the asm stage boundaries
-(cpp/src/passes/ir_check.h). The fuzzers (`c6502cpp fuzz`) always
-run with them. `C6502_SIM_LOCKSTEP=1` runs the C++ CPU beside
-py65 in every `Simulation.run` and every run of a game's machine, and
-fails a test at the first instruction where they differ
-(sim/lockstep.py).
+The tests are doctest cases in cpp/tests, which need the whole C++
+build (cpp/README.md, "Building"). `C6502_CHECK_IR=1` makes
+`c6502cpp compile` check the IR after every optimizer pass and at the
+asm stage boundaries (cpp/src/passes/ir_check.h). The fuzzers
+(`c6502cpp fuzz`) always run with them.
 
-In parallel, with pytest and pytest-xdist (dev dependencies; `uv
-sync` installs them):
+## What is here
 
-```sh
-C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q
-```
-
-## What is left here
-
-Step 9 of the port moves the suite to C++ (docs/cpp_port.md). Its
-group G1 moved the tests that run no simulator, the TAC interpreter's
-among them, to doctest cases in cpp/tests (cpp/README.md, "The tests of
-whole compiles"), and group G4 moved the tests that run the simulator
-(cpp/README.md, "The simulator's harness"). A new test is a doctest
-case: of a compile's text, its errors, or its command line in
+tests/ holds no test code. It holds the chapter corpora, which
+check-golden compiles and the doctest cases read, STATUS.md, and
+ir_dump/, the four IRs of examples/paint_hud_strip_p1.c as the Python
+compiler dumped them, which cpp/tests/test_ir_dump_files.cpp reads and
+writes again. Step 9 of the port moved the Python suite to C++
+(docs/cpp_port.md). Its group G1 moved the tests that run no
+simulator, the TAC interpreter's among them, to doctest cases in
+cpp/tests (cpp/README.md, "The tests of whole compiles"), group G4
+moved the tests that run the simulator (cpp/README.md, "The
+simulator's harness"), and group R removed the Python modules that
+were left. A new test is a doctest case: of a
+compile's text, its errors, or its command line in
 cpp/tests/test_<topic>.cpp, and of a program's run in
 cpp/tests/test_<topic>_sim.cpp, through `suite::build_sim`
 (cpp/tests/sim_case.h).
-
-The modules left test Python code that a later group ports or removes.
-
-- `test_sim_assembler.py` tests sim/assembler.py, which the Python
-  harness that the games' machines and the compile-example skill run
-  still uses.
-- `test_asdl.py`, `test_ir_dump.py`, `test_type_checking.py`, and
-  `test_binutils.py` test asdl.py, ir_dump.py, the IR classes'
-  equality, and binutils/elf.py, which go in group R.
-- `no_inlining.py` and `asm_compare.py`, which nothing imports, go in
-  group R.
 
 ## The multi-unit examples
 
@@ -70,7 +55,8 @@ ALI_BABA_DIR=F:/Projects/ali_baba_reveng
 ```
 
 - cpp/tests/test_zork_interpreter.cpp compares the linked program's
-  `objdump.py -D` listing with its checked-in copy, and
+  `c6502cpp objdump -D` listing with its checked-in copy,
+  examples/zork/interpreter.asm, and
   test_zork_interpreter_sim.cpp plays two sessions on the C interpreter
   and on Zork's own, read from the disk image, and compares every
   Monitor and RWTS call.

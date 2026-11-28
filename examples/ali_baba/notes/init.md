@@ -219,7 +219,7 @@ None.
 
 ## Size
 
-Bytes of code in the `-c -O` object (`nm.py -S`) against main.lst's
+Bytes of code in the `-c -O` object (`c6502cpp nm -S`) against main.lst's
 bytes for the same routines (`__zp_init`, 11 bytes, is the linker's and
 not counted). The last column is the C before it was rewritten as plain
 C on 18 Nov 2026.

@@ -117,7 +117,7 @@ preserves. Two more gaps come from the rewrite as plain C.
 
 ## Size
 
-Code bytes, from the `-c -O` object (`nm.py -S`), against the
+Code bytes, from the `-c -O` object (`c6502cpp nm -S`), against the
 original's instruction bytes, counted from `main.lst`. The last column
 is the C before it was rewritten as plain C on 18 Nov 2026.
 

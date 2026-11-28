@@ -92,7 +92,7 @@ did.
 ## Size
 
 The original's routines take 381 bytes (main.lst, the sizes in
-UNITS.md's table). The C takes 396 bytes in `main.asm`.
+UNITS.md's table). The C takes 396 bytes in its `-S -O` text.
 
 | Routine | Original | C |
 |---|---|---|

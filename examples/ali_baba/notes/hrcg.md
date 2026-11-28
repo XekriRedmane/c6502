@@ -105,7 +105,7 @@ bytes in all, where the old C's 16-bit add was 50.
 
 ## Size
 
-From `objdump.py -t` of `hrcg.o` (before linking), against `main.lst`.
+From `c6502cpp objdump -t` of `hrcg.o` (before linking), against `main.lst`.
 
 | | Original | C |
 |---|---:|---:|
@@ -119,7 +119,7 @@ The original's 846 bytes are the chunks that hold the translated paths
 $94E6-$94FD, $9519-$9544, $9561-$956E, $957C-$95D0, $95D3-$95F7,
 $95FA-$9732, and $9737-$9784), including the few shifted variants
 inside them. The unit's whole code is 1141 bytes. The C's are the
-symbol sizes of `nm.py -S hrcg.o`, and its code was 835 bytes before
+symbol sizes of `c6502cpp nm -S hrcg.o`, and its code was 835 bytes before
 the rewrite into plain C on 18 Nov 2026. It was 901 bytes after the
 rewrite, and 877 once c6502 divided a byte by 8 without `sdivmod16`.
 
@@ -127,11 +127,12 @@ rewrite, and 877 once c6502 divided a byte by 8 without `sdivmod16`.
 
 A differential test in the scratchpad
 (`C:/Users/rober/AppData/Local/Temp/claude/b40883e6c3b1e075/7b225eef-0a6c-4700-af61-411f046928b9/scratchpad/tr/link/diff.py`)
-links hrcg.c and text.c at $A900 with stubs that call the original's
+linked hrcg.c and text.c at $A900 with stubs that call the original's
 RENDER_FONT_CHAR, DISPLAY_STATUS_BAR, DELAY_WITH_ANIMATION, and
-TUNE_PLAYER, loads both programs on `sim/ali_baba.py`'s machine over
-main.bin, and runs the original's HRCG_COUT and the C's hrcg_cout side
-by side. After each character it compares the events (soft switches
+TUNE_PLAYER, loaded both programs on the Python simulator's machine
+(sim/ali_baba.py, which group R of step 9 removed) over main.bin, and
+ran the original's HRCG_COUT and the C's hrcg_cout side by side.
+After each character it compared the events (soft switches
 and Monitor calls with A where the routine reads it, and hi-res page
 1's CRC at each one), $20-$29, the text page, hi-res page 1, and page
 $5A. A scripted run of every live code, the font selectors '0'-'9' and
@@ -140,7 +141,8 @@ random runs of 1500 characters each, matched in every compared byte
 and event. $2A/$2B differ, because the C keeps the row pointer in a
 local, and the ROM's SCROLL sets them before it reads them. The test
 ran on the C as it was before the rewrite into plain C on 18 Nov 2026,
-and the rewrite was checked only with the six scripts of TestRuns.
+and the rewrite was checked only with the six scripts of TestRuns,
+which are now cpp/tests/test_ali_baba_sim.cpp.
 
 ## Where the original's comments and code disagree
 

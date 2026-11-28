@@ -229,7 +229,7 @@ These don't stop the unit from compiling. Each costs bytes.
 
 ## Size
 
-Code bytes in the `-S -O` output, from `nm.py -S map.o`, against the
+Code bytes in the `-S -O` output, from `c6502cpp nm -S map.o`, against the
 original's bytes for the same routines.
 
 | Original | Bytes | C | Bytes |

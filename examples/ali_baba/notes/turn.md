@@ -175,7 +175,7 @@ No compiler crash or wrong code.
 
 ## Size
 
-The bytes of code in `turn.c -c -O` (`nm.py -S`), against the
+The bytes of code in `turn.c -c -O` (`c6502cpp nm -S`), against the
 original's code bytes in `main.lst`. The last column is the C before
 it was rewritten as plain C on 18 Nov 2026.
 

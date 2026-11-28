@@ -54,7 +54,7 @@ The runner turns on the IR checks (cpp/src/passes/ir_check.h), which
 check the IR after every TAC optimizer pass, at the asm stage
 boundaries, and after each peephole sweep. A pass that leaves the IR
 inconsistent, such as one that drops the definition of a temporary
-something still reads, then fails right there with `AssertionError:
+something still reads, then fails right there with `InternalError:
 after <pass>, function '<f>': ...`, even when the program's result
 would have come out right. The error is an `ERR` result like any
 other, so the program is saved.
@@ -70,8 +70,12 @@ Every program runs three ways, and main()'s return is compared:
   private pools, `register` placement).
 
 A result is an int, or a string starting with `ERR` or `TIMEOUT`.
-An error names the Python class the error stands for and gives the
-first 120 characters of its message, as the Python runner wrote it.
+An error is `ERR <class>: <message>`, with the first 120 characters of
+the message. A rejection by the compiler is named by the Python class
+it stands for (`TypeCheckError`, `ZpLocalAllocationError`, ...), a
+failed IR check or another compiler bug is `InternalError`, an
+assembler error `AssemblerError`, a hook's error its class, and the
+simulated CPU's error, such as a read of a word at $FFFF, `CpuError`.
 `disagreements` names the wrong paths. When a program states its
 correct result (`exprs` does, and a hand-written file can with a
 `// expect: N` line), every path is checked against it. Otherwise the

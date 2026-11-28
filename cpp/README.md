@@ -3665,11 +3665,10 @@ for how to use them).
 - runner.h runs a program on the three paths in process: the TAC
   interpreter through tac_sim_modes.h, and the simulator through
   src/sim/source_sim.h, which the test library's `build_sim` calls too.
-  An error result names the Python class cpp_backend.py would have
-  raised: a `CompileError`'s Python type without its module, an
-  `InternalError` as `AssertionError`, an assembler error as
-  `AssemblerError`, a hook's by its class, and the CPU's word read at
-  $FFFF as py65's `IndexError`.
+  An error result names a `CompileError` by its Python type without
+  its module, an `InternalError` as `InternalError`, an assembler
+  error as `AssemblerError`, a hook's by its class, and the CPU's
+  error, such as its word read at $FFFF, as `CpuError`.
 - reduce.h is fuzz/reduce.py, with its regex written as a matcher of
   its own, since each repeat in it is followed by a character the
   repeat can't take. yarpgen.h runs YARPGen through src/processes.h and

@@ -34,13 +34,6 @@ std::string first_chars(const std::string& s, std::size_t n) {
   return s.substr(0, std::min(i, s.size()));
 }
 
-std::string strip(const std::string& s) {
-  const char* ws = " \t\n\r\v\f";
-  const std::size_t b = s.find_first_not_of(ws);
-  if (b == std::string::npos) return "";
-  return s.substr(b, s.find_last_not_of(ws) - b + 1);
-}
-
 std::string unqualified_class_name(const std::string& python_type) {
   const std::size_t dot = python_type.rfind('.');
   return dot == std::string::npos ? python_type : python_type.substr(dot + 1);
@@ -48,16 +41,6 @@ std::string unqualified_class_name(const std::string& python_type) {
 
 Result error_result(const std::string& python_type, const std::string& message) {
   return "ERR " + unqualified_class_name(python_type) + ": " + first_chars(message, kMessageChars);
-}
-
-Result internal_error_result(const InternalError& e) {
-  std::string m = strip(std::string("internal error: ") + e.what());
-  m.erase(0, std::string("internal error: ").size());
-  return error_result("AssertionError", m);
-}
-
-Result backend_failure_result(const std::string& stderr_line) {
-  return error_result("RuntimeError", "c6502cpp backend failed: " + strip(stderr_line));
 }
 
 passes::FrontEndOptions front_options(const std::string& include_dir) {
@@ -97,20 +80,16 @@ Result Runner::run_tac(const std::string& src) const {
     }
     std::cerr << err;
     err.clear();
-    try {
-      o = tac_sim::run_main(t.tac, t.symbols, &t.types);
-    } catch (const CompileError& e) {
-      return backend_failure_result(std::string("error: ") + e.what());
-    }
+    o = tac_sim::run_main(t.tac, t.symbols, &t.types);
   } catch (const CompileError& e) {
     std::cerr << err;
     return error_result(e.python_type(), e.what());
   } catch (const InternalError& e) {
     std::cerr << err;
-    return internal_error_result(e);
+    return error_result("InternalError", e.what());
   } catch (const std::exception& e) {
     std::cerr << err;
-    return backend_failure_result(std::string("c6502cpp: ") + e.what());
+    return error_result("std::exception", e.what());
   }
   if (o.error_type) return error_result(*o.error_type, o.error_message);
   if (!o.value) return std::string("ERR non-int result None");
@@ -134,18 +113,18 @@ Result Runner::run_asm(const std::string& src, bool optimize) const {
     return error_result(e.python_type(), e.what());
   } catch (const InternalError& e) {
     std::cerr << err;
-    return internal_error_result(e);
+    return error_result("InternalError", e.what());
   } catch (const sim::AssemblerError& e) {
     return error_result("AssemblerError", e.what());
   } catch (const sim::HookError& e) {
     return error_result(e.python_type(), e.what());
-  } catch (const sim::CpuError&) {
-    return error_result("IndexError", "bytearray index out of range");
+  } catch (const sim::CpuError& e) {
+    return error_result("CpuError", e.what());
   } catch (const std::invalid_argument& e) {
     return error_result("ValueError", e.what());
   } catch (const std::exception& e) {
     std::cerr << err;
-    return backend_failure_result(std::string("c6502cpp: ") + e.what());
+    return error_result("std::exception", e.what());
   }
   if (result.timed_out) return std::string("TIMEOUT");
   return result.return_int_signed();

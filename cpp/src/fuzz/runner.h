@@ -8,8 +8,10 @@
 // Each result is main's return as a signed 16-bit int, or the text
 // `ERR <class>: <message>` when the path raised (a rejection by the
 // compiler, an assembler error, a failed IR check, or a hook's or the
-// CPU's error), with the class named as Python names it and the message
-// cut to 120 characters, or `TIMEOUT`. The IR checks are on in every
+// CPU's error), with the message cut to 120 characters, or `TIMEOUT`. A
+// rejection is named by the Python class it stands for, a failed IR
+// check or another compiler bug is `InternalError`, and the CPU's error
+// is `CpuError`. The IR checks are on in every
 // path, so a pass that breaks the IR fails there even when the
 // program's result comes out right.
 #pragma once

@@ -58,8 +58,9 @@ std::string routine_at(const std::map<std::int64_t, std::string>& routines, std:
 // that the subroutine's RTS goes to `back` + 1.
 void push_return(Cpu& cpu, std::uint16_t back);
 
-// These tokenize the reverse-engineering projects' main.asm and
-// main.sym, which hold no control character other than tab, CR, and LF.
+// These tokenize text that holds no control character other than tab,
+// CR, and LF, such as the reverse-engineering projects' main.asm and
+// main.sym and the C programs that fuzz reduce reads.
 // The whitespace is space, tab, CR, and LF, and `split_lines` splits at
 // LF and drops a CR before it.
 bool is_space(char c);

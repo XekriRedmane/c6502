@@ -6,6 +6,7 @@
 #include "diagnostics.h"
 #include "errors.h"
 #include "passes/ir_check.h"
+#include "sim/game_machine.h"
 #include "tac_sim_modes.h"
 
 namespace c6502::fuzz {
@@ -18,31 +19,8 @@ passes::FrontEndOptions front_options(const Runner& runner) {
   return o;
 }
 
-std::vector<std::string> split_lines(const std::string& text) {
-  std::vector<std::string> out;
-  std::string line;
-  for (std::size_t i = 0; i < text.size(); ++i) {
-    const char c = text[i];
-    std::size_t skip = 0;
-    if (c == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
-      skip = 1;
-    } else if (c == '\n' || c == '\r' || c == '\v' || c == '\f' || c == '\x1c' || c == '\x1d' ||
-               c == '\x1e') {
-    } else if (text.compare(i, 2, "\xC2\x85") == 0) {
-      skip = 1;
-    } else if (text.compare(i, 3, "\xE2\x80\xA8") == 0 || text.compare(i, 3, "\xE2\x80\xA9") == 0) {
-      skip = 2;
-    } else {
-      line += c;
-      continue;
-    }
-    out.push_back(std::move(line));
-    line.clear();
-    i += skip;
-  }
-  if (!line.empty()) out.push_back(std::move(line));
-  return out;
-}
+using sim::game::is_space;
+using sim::game::split_lines;
 
 std::string join_lines(const std::vector<std::string>& lines) {
   std::string out;
@@ -61,8 +39,6 @@ struct Binary {
 };
 
 bool is_paren(char c) { return c == '(' || c == ')'; }
-
-bool is_space(char c) { return c == ' ' || (c >= '\t' && c <= '\r') || (c >= '\x1c' && c <= '\x1f'); }
 
 std::optional<Binary> match_binary(const std::string& s, std::size_t pos) {
   std::size_t i = pos;

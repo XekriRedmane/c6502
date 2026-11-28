@@ -144,7 +144,12 @@ Predicate make_predicate(const Runner& runner, const std::string& src, Failure f
   };
   const auto original = signature(runner.run_all(src));
   return [&runner, signature, original](const std::string& cand) {
-    if (falls_off_end(runner, cand)) return false;
+    try {
+      if (falls_off_end(runner, cand)) return false;
+    } catch (const InternalError&) {
+      // The failure may be this compiler bug, which run_all reports as
+      // the result of the tac path.
+    }
     return signature(runner.run_all(cand)) == original;
   };
 }

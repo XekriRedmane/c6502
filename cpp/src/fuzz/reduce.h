@@ -50,7 +50,7 @@ enum class Failure {
 // Returns whether a run of `src` on the TAC interpreter reaches the end
 // of a function, other than `main`, whose return type isn't `void`. A
 // program the front end rejects, or that the interpreter can't run,
-// gives false.
+// gives false, and a compiler bug throws its `InternalError`.
 bool falls_off_end(const Runner& runner, const std::string& src);
 
 // Returns main's result on the unoptimized TAC and on the TAC after the

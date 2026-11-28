@@ -141,15 +141,8 @@ bool falls_off_end(const std::string& source, const passes::FrontEndOptions& opt
     t = translate("void " + std::string(kFellOff) + "(void);\n" + source, options, err, true);
   } catch (const CompileError&) {
     return false;
-  } catch (const InternalError&) {
-    return false;
   }
-  tac_sim::Outcome o;
-  try {
-    o = tac_sim::run_main(t->tac, t->symbols, &t->types);
-  } catch (const InternalError&) {
-    return false;
-  }
+  const tac_sim::Outcome o = tac_sim::run_main(t->tac, t->symbols, &t->types);
   return o.error_type == "TacSimError" && o.error_message.find(kFellOff) != std::string::npos;
 }
 

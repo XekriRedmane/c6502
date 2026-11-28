@@ -392,13 +392,20 @@ int reduce_file(const std::vector<std::string>& args, const Setup& setup) {
   const fs::path path = compile_command::utf8_path(paths[0]);
   const std::string src = compile_command::read_text(paths[0]);
   const bool tac_opt = ns.flag("tac_opt");
-  const Predicate still_fails =
-      make_predicate(setup.runner, src, tac_opt ? Failure::kTacOptimizer : Failure::kPaths);
-  if (!still_fails(src)) {
-    err("the input doesn't fail\n");
-    return 1;
+  std::string reduced;
+  try {
+    const Predicate still_fails =
+        make_predicate(setup.runner, src, tac_opt ? Failure::kTacOptimizer : Failure::kPaths);
+    if (!still_fails(src)) {
+      err("the input doesn't fail\n");
+      return 1;
+    }
+    reduced = reduce(src, still_fails);
+  } catch (const InternalError& e) {
+    err("c6502cpp fuzz reduce: internal error while checking a candidate: " + std::string(e.what()) +
+        "\n");
+    return 3;
   }
-  const std::string reduced = reduce(src, still_fails);
   fs::path dst = path;
   dst.replace_extension(".min.c");
   if (compile_command::write_bytes(compile_command::path_text(dst), reduced) != 0) {

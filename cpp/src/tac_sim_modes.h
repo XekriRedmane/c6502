@@ -52,7 +52,9 @@ std::optional<ChangingPass> first_changing_pass(Translated& t);
 
 // Returns whether a run of `main` on the TAC of `source` reaches the end
 // of a function, other than `main`, that returns a value. A program that
-// the front end rejects, or that raises any other error, gives false.
+// the front end rejects, or whose run raises another of the
+// interpreter's errors, gives false, and a compiler bug throws its
+// `InternalError`.
 bool falls_off_end(const std::string& source, const passes::FrontEndOptions& options,
                    std::string& err);
 
@@ -106,9 +108,9 @@ bool is_tac_mode(const std::string& mode);
 //
 // which is true when the run raised the interpreter's error for the
 // call of `__reduce_fell_off`, a function that no program defines. A
-// program that a pass rejects, or that raises any other error, gives
-// false with no `error` line, since reduce.py treats it as an invalid
-// candidate.
+// program that a pass rejects, or whose run raises another of the
+// interpreter's errors, gives false with no `error` line, since
+// reduce.py treats it as an invalid candidate.
 std::string respond(const std::string& mode, const json::Value& kwargs, const std::string& source);
 
 }  // namespace c6502::tac_sim_modes

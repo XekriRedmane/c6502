@@ -149,8 +149,8 @@ The generator predicts which functions end up on the soft stack (any
 function that reaches `rec` or the pointer call) and only puts
 `register` on the others, because `register` needs zp_abi and the
 compiler rejects it otherwise. If the ABI eligibility rules in
-cpp/src/passes/abi_selection.cpp change, update `soft` in
-cpp/src/fuzz/calls.cpp to match, or the fuzzer reports rejections as
+cpp/src/passes/abi_selection.cpp change, update `soft_stack_functions`
+in cpp/src/fuzz/calls.cpp to match, or the fuzzer reports rejections as
 failures.
 
 ## `stmts`

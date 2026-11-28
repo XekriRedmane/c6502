@@ -100,6 +100,40 @@ std::vector<std::string> locals_of(const std::vector<std::string>& vars) {
   return out;
 }
 
+// Returns the functions that abi_selection leaves on the soft stack
+// under -O, where function i calls the functions `calls[i]`, and `rec`
+// when `calls_rec[i]`. The last function is called through a pointer
+// when `use_ptr_fn`, and `rec` has a private pool when `rec_has_pool`.
+std::set<int> soft_stack_functions(const std::vector<std::vector<int>>& calls,
+                                   const std::vector<bool>& calls_rec, bool use_ptr_fn,
+                                   bool rec_has_pool) {
+  const int n = static_cast<int>(calls.size());
+  std::set<int> soft;
+  auto calls_to = [&](int i, int j) {
+    return std::find(calls[i].begin(), calls[i].end(), j) != calls[i].end();
+  };
+  if (use_ptr_fn) {
+    soft.insert(n - 1);
+    for (int i = 0; i < n; ++i) {
+      if (calls_to(i, n - 1)) soft.insert(i);
+    }
+  }
+  if (!rec_has_pool) {
+    for (int i = 0; i < n; ++i) {
+      if (calls_rec[i]) soft.insert(i);
+    }
+  }
+  for (int i = n - 1; i >= 0; --i) {
+    for (int j : calls[i]) {
+      if (soft.count(j) != 0) {
+        soft.insert(i);
+        break;
+      }
+    }
+  }
+  return soft;
+}
+
 }  // namespace
 
 GeneratedProgram make_program(Int seed) {
@@ -160,29 +194,7 @@ GeneratedProgram make_program(Int seed) {
     if (arng.random() < 0.5) marked.insert(i);
   }
 
-  std::set<int> soft;
-  auto calls_to = [&](int i, int j) {
-    return std::find(calls[i].begin(), calls[i].end(), j) != calls[i].end();
-  };
-  if (use_ptr_fn) {
-    soft.insert(n - 1);
-    for (int i = 0; i < n; ++i) {
-      if (calls_to(i, n - 1)) soft.insert(i);
-    }
-  }
-  if (!saved_rec) {
-    for (int i = 0; i < n; ++i) {
-      if (calls_rec[i]) soft.insert(i);
-    }
-  }
-  for (int i = n - 1; i >= 0; --i) {
-    for (int j : calls[i]) {
-      if (soft.count(j) != 0) {
-        soft.insert(i);
-        break;
-      }
-    }
-  }
+  const std::set<int> soft = soft_stack_functions(calls, calls_rec, use_ptr_fn, saved_rec);
   auto reg_ok = [&](int i) { return soft.count(i) == 0; };
 
   std::vector<std::string> lines;

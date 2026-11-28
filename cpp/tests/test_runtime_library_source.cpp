@@ -34,7 +34,7 @@ std::set<std::string> helper_names() {
 c6502::compile_command::Outcome link(const std::vector<std::string>& paths,
                                      const std::string& out,
                                      const std::vector<std::string>& extra = {}) {
-  std::vector<std::string> argv{"compile.py"};
+  std::vector<std::string> argv{"c6502"};
   argv.insert(argv.end(), paths.begin(), paths.end());
   argv.push_back("-o");
   argv.push_back(out);

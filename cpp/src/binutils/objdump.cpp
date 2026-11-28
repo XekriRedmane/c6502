@@ -186,7 +186,7 @@ std::vector<std::string> full_contents(const elf::ElfFile& elf, const std::set<s
 int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, int columns,
          std::string& out, std::string& err, bool* help) {
   if (help != nullptr) *help = false;
-  argparse::Parser ap("objdump.py", "Show what's in c6502 objects and executables.", false);
+  argparse::Parser ap("c6502-objdump", "Show what's in c6502 objects and executables.", false);
   ap.add_help({"--help"}, "show this message and exit");
   ap.add_positional("files");
   ap.add_store_true({"-d", "--disassemble"});
@@ -221,7 +221,7 @@ int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, in
   const bool link_metadata = args.flag("link_metadata");
   if (!(disassemble || disassemble_all || file_headers || section_headers_ || syms || reloc ||
         contents || all_headers || link_metadata)) {
-    err += "objdump.py: give at least one of -d -D -f -h -t -r -s -x --link-metadata\n";
+    err += "c6502-objdump: give at least one of -d -D -f -h -t -r -s -x --link-metadata\n";
     return 2;
   }
   std::set<std::string> sections;
@@ -235,11 +235,11 @@ int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, in
     try {
       elf = elf::read(read_file(path), path);
     } catch (const nm::FileError& e) {
-      err += "objdump.py: " + e.message + "\n";
+      err += "c6502-objdump: " + e.message + "\n";
       status = 1;
       continue;
     } catch (const CompileError& e) {
-      err += std::string("objdump.py: ") + e.what() + "\n";
+      err += std::string("c6502-objdump: ") + e.what() + "\n";
       status = 1;
       continue;
     }

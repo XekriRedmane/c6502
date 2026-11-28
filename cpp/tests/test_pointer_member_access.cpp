@@ -23,7 +23,7 @@ extern struct node *N [[c6502::zeropage(0xF6)]];
 
 // Returns `compile.py - -S -O -o -` of `source`.
 std::string asm_of(const std::string& source) {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O", "-o", "-"}, source);
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O", "-o", "-"}, source);
   REQUIRE(o.status.has_value());
   REQUIRE(*o.status == 0);
   return o.out();

@@ -18,7 +18,7 @@ namespace ir = c6502::tac_ast;
 
 // compile.py's `-S` output for `src`.
 std::string compile_s(const std::string& src, const std::vector<std::string>& flags = {}) {
-  std::vector<std::string> argv{"compile.py", "-", "-S", "-o", "-"};
+  std::vector<std::string> argv{"c6502", "-", "-S", "-o", "-"};
   argv.insert(argv.end(), flags.begin(), flags.end());
   const auto o = suite::compile_main(argv, src);
   REQUIRE(o.status.has_value());

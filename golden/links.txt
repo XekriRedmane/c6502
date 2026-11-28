@@ -1,39 +1,39 @@
 c6502-golden 1
 define @sim_defsyms ["--defsym=asl16=0xE338", "--defsym=asl32=0xE377", "--defsym=asl64=0xE440", "--defsym=asl8=0xE30F", "--defsym=asr16=0xE34C", "--defsym=asr32=0xE397", "--defsym=asr64=0xE450", "--defsym=asr8=0xE31C", "--defsym=bin16_to_bcd=0xE3DA", "--defsym=d2f=0xE600", "--defsym=d2i=0xE590", "--defsym=d2l=0xE5B0", "--defsym=d2ll=0xE5D0", "--defsym=d2u=0xE5A0", "--defsym=d2ul=0xE5C0", "--defsym=d2ull=0xE5E0", "--defsym=dadd=0xE650", "--defsym=ddiv=0xE680", "--defsym=dle=0xE6C0", "--defsym=dlt=0xE6B0", "--defsym=dmul=0xE670", "--defsym=dsub=0xE660", "--defsym=f2d=0xE5F0", "--defsym=f2i=0xE530", "--defsym=f2l=0xE550", "--defsym=f2ll=0xE570", "--defsym=f2u=0xE540", "--defsym=f2ul=0xE560", "--defsym=f2ull=0xE580", "--defsym=fadd=0xE610", "--defsym=fdiv=0xE640", "--defsym=fle=0xE6A0", "--defsym=flt=0xE690", "--defsym=fmul=0xE630", "--defsym=fsub=0xE620", "--defsym=i2d=0xE4D0", "--defsym=i2f=0xE470", "--defsym=icall=0xE408", "--defsym=l2d=0xE4F0", "--defsym=l2f=0xE490", "--defsym=ll2d=0xE510", "--defsym=ll2f=0xE4B0", "--defsym=lsr16=0xE363", "--defsym=lsr32=0xE3BA", "--defsym=lsr64=0xE460", "--defsym=lsr8=0xE32B", "--defsym=mul16=0xE01F", "--defsym=mul32=0xE052", "--defsym=mul64=0xE410", "--defsym=mul8=0xE000", "--defsym=sdivmod16=0xE142", "--defsym=sdivmod32=0xE227", "--defsym=sdivmod64=0xE430", "--defsym=sdivmod8=0xE0CB", "--defsym=u2d=0xE4E0", "--defsym=u2f=0xE480", "--defsym=udivmod16=0xE111", "--defsym=udivmod32=0xE1CA", "--defsym=udivmod64=0xE420", "--defsym=udivmod8=0xE0AD", "--defsym=ul2d=0xE500", "--defsym=ul2f=0xE4A0", "--defsym=ull2d=0xE520", "--defsym=ull2f=0xE4C0"]
 job game zork
-run ["compile.py", "examples/zork/main.c", "-c", "-O", "-o", "main.o"]
+run ["c6502", "examples/zork/main.c", "-c", "-O", "-o", "main.o"]
 status 0
-run ["compile.py", "examples/zork/decode.c", "-c", "-O", "-o", "decode.o"]
+run ["c6502", "examples/zork/decode.c", "-c", "-O", "-o", "decode.o"]
 status 0
-run ["compile.py", "examples/zork/objects.c", "-c", "-O", "-o", "objects.o"]
+run ["c6502", "examples/zork/objects.c", "-c", "-O", "-o", "objects.o"]
 status 0
-run ["compile.py", "examples/zork/numbers.c", "-c", "-O", "-o", "numbers.o"]
+run ["c6502", "examples/zork/numbers.c", "-c", "-O", "-o", "numbers.o"]
 status 0
-run ["compile.py", "examples/zork/input.c", "-c", "-O", "-o", "input.o"]
+run ["c6502", "examples/zork/input.c", "-c", "-O", "-o", "input.o"]
 status 0
-run ["compile.py", "examples/zork/pages.c", "-c", "-O", "-o", "pages.o"]
+run ["c6502", "examples/zork/pages.c", "-c", "-O", "-o", "pages.o"]
 status 0
-run ["compile.py", "examples/zork/zstring.c", "-c", "-O", "-o", "zstring.o"]
+run ["c6502", "examples/zork/zstring.c", "-c", "-O", "-o", "zstring.o"]
 status 0
-run ["compile.py", "examples/zork/output.c", "-c", "-O", "-o", "output.o"]
+run ["c6502", "examples/zork/output.c", "-c", "-O", "-o", "output.o"]
 status 0
-run ["compile.py", "examples/zork/disk.c", "-c", "-O", "-o", "disk.o"]
+run ["c6502", "examples/zork/disk.c", "-c", "-O", "-o", "disk.o"]
 status 0
-run ["compile.py", "examples/zork/prompts.c", "-c", "-O", "-o", "prompts.o"]
+run ["c6502", "examples/zork/prompts.c", "-c", "-O", "-o", "prompts.o"]
 status 0
-run ["compile.py", "examples/zork/save.c", "-c", "-O", "-o", "save.o"]
+run ["c6502", "examples/zork/save.c", "-c", "-O", "-o", "save.o"]
 status 0
-run ["compile.py", "-T", "examples/zork/interpreter.ld", "main.o", "decode.o", "objects.o", "numbers.o", "input.o", "pages.o", "zstring.o", "output.o", "disk.o", "prompts.o", "save.o", "-o", "zork"]
+run ["c6502", "-T", "examples/zork/interpreter.ld", "main.o", "decode.o", "objects.o", "numbers.o", "input.o", "pages.o", "zstring.o", "output.o", "disk.o", "prompts.o", "save.o", "-o", "zork"]
 status 0
-run ["compile.py", "main.o", "decode.o", "objects.o", "numbers.o", "input.o", "pages.o", "zstring.o", "output.o", "disk.o", "prompts.o", "save.o", "-o", "zork_default"]
+run ["c6502", "main.o", "decode.o", "objects.o", "numbers.o", "input.o", "pages.o", "zstring.o", "output.o", "disk.o", "prompts.o", "save.o", "-o", "zork_default"]
 status 1
-stderr "compile.py: link error: main.o: undefined symbol `__story`\n"
+stderr "c6502: link error: main.o: undefined symbol `__story`\n"
 mkdir all
 cd all
-run ["compile.py", "-c", "-O", "examples/zork/main.c", "examples/zork/decode.c", "examples/zork/objects.c", "examples/zork/numbers.c", "examples/zork/input.c", "examples/zork/pages.c", "examples/zork/zstring.c", "examples/zork/output.c", "examples/zork/disk.c", "examples/zork/prompts.c", "examples/zork/save.c"]
+run ["c6502", "-c", "-O", "examples/zork/main.c", "examples/zork/decode.c", "examples/zork/objects.c", "examples/zork/numbers.c", "examples/zork/input.c", "examples/zork/pages.c", "examples/zork/zstring.c", "examples/zork/output.c", "examples/zork/disk.c", "examples/zork/prompts.c", "examples/zork/save.c"]
 status 0
 cd .
-run ["compile.py", "-O", "-T", "examples/zork/interpreter.ld", "examples/zork/main.c", "examples/zork/decode.c", "examples/zork/objects.c", "examples/zork/numbers.c", "examples/zork/input.c", "examples/zork/pages.c", "examples/zork/zstring.c", "examples/zork/output.c", "examples/zork/disk.c", "examples/zork/prompts.c", "examples/zork/save.c", "-o", "zork_sources"]
+run ["c6502", "-O", "-T", "examples/zork/interpreter.ld", "examples/zork/main.c", "examples/zork/decode.c", "examples/zork/objects.c", "examples/zork/numbers.c", "examples/zork/input.c", "examples/zork/pages.c", "examples/zork/zstring.c", "examples/zork/output.c", "examples/zork/disk.c", "examples/zork/prompts.c", "examples/zork/save.c", "-o", "zork_sources"]
 status 0
 file all/decode.o sha256 424ed64a0484e96b627552cb3c1bba69c6ab6b4a7739ed47d3220b9cb90bb7de 68220
 file all/disk.o sha256 1e800f7c780c7219f2627169276cbea2a8f2f755b6a4e27621a050f1408e79d7 22092
@@ -61,40 +61,40 @@ file zork_sources sha256 81e175aae01ea5d031c9ec40eb6c2967fad8ad369a6f66f7218cd29
 file zstring.o sha256 5068e9f4f01f346a5c3dcee063770a1aa9559fd22418d547c0193fa06f1a35ca 24280
 end
 job game lode_runner
-run ["compile.py", "examples/lode_runner/main.c", "-c", "-O", "-o", "main.o"]
+run ["c6502", "examples/lode_runner/main.c", "-c", "-O", "-o", "main.o"]
 status 0
-run ["compile.py", "examples/lode_runner/level.c", "-c", "-O", "-o", "level.o"]
+run ["c6502", "examples/lode_runner/level.c", "-c", "-O", "-o", "level.o"]
 status 0
-run ["compile.py", "examples/lode_runner/player.c", "-c", "-O", "-o", "player.o"]
+run ["c6502", "examples/lode_runner/player.c", "-c", "-O", "-o", "player.o"]
 status 0
-run ["compile.py", "examples/lode_runner/input.c", "-c", "-O", "-o", "input.o"]
+run ["c6502", "examples/lode_runner/input.c", "-c", "-O", "-o", "input.o"]
 status 0
-run ["compile.py", "examples/lode_runner/guards.c", "-c", "-O", "-o", "guards.o"]
+run ["c6502", "examples/lode_runner/guards.c", "-c", "-O", "-o", "guards.o"]
 status 0
-run ["compile.py", "examples/lode_runner/timers.c", "-c", "-O", "-o", "timers.o"]
+run ["c6502", "examples/lode_runner/timers.c", "-c", "-O", "-o", "timers.o"]
 status 0
-run ["compile.py", "examples/lode_runner/screen.c", "-c", "-O", "-o", "screen.o"]
+run ["c6502", "examples/lode_runner/screen.c", "-c", "-O", "-o", "screen.o"]
 status 0
-run ["compile.py", "examples/lode_runner/hiscore.c", "-c", "-O", "-o", "hiscore.o"]
+run ["c6502", "examples/lode_runner/hiscore.c", "-c", "-O", "-o", "hiscore.o"]
 status 0
-run ["compile.py", "examples/lode_runner/editor.c", "-c", "-O", "-o", "editor.o"]
+run ["c6502", "examples/lode_runner/editor.c", "-c", "-O", "-o", "editor.o"]
 status 0
-run ["compile.py", "examples/lode_runner/sprites.c", "-c", "-O", "-o", "sprites.o"]
+run ["c6502", "examples/lode_runner/sprites.c", "-c", "-O", "-o", "sprites.o"]
 status 0
-run ["compile.py", "examples/lode_runner/sound.c", "-c", "-O", "-o", "sound.o"]
+run ["c6502", "examples/lode_runner/sound.c", "-c", "-O", "-o", "sound.o"]
 status 0
-run ["compile.py", "examples/lode_runner/wipe.c", "-c", "-O", "-o", "wipe.o"]
+run ["c6502", "examples/lode_runner/wipe.c", "-c", "-O", "-o", "wipe.o"]
 status 0
-run ["compile.py", "-T", "examples/lode_runner/lode_runner.ld", "main.o", "level.o", "player.o", "input.o", "guards.o", "timers.o", "screen.o", "hiscore.o", "editor.o", "sprites.o", "sound.o", "wipe.o", "-o", "lode_runner"]
+run ["c6502", "-T", "examples/lode_runner/lode_runner.ld", "main.o", "level.o", "player.o", "input.o", "guards.o", "timers.o", "screen.o", "hiscore.o", "editor.o", "sprites.o", "sound.o", "wipe.o", "-o", "lode_runner"]
 status 0
-run ["compile.py", "main.o", "level.o", "player.o", "input.o", "guards.o", "timers.o", "screen.o", "hiscore.o", "editor.o", "sprites.o", "sound.o", "wipe.o", "-o", "lode_runner_default"]
+run ["c6502", "main.o", "level.o", "player.o", "input.o", "guards.o", "timers.o", "screen.o", "hiscore.o", "editor.o", "sprites.o", "sound.o", "wipe.o", "-o", "lode_runner_default"]
 status 0
 mkdir all
 cd all
-run ["compile.py", "-c", "-O", "examples/lode_runner/main.c", "examples/lode_runner/level.c", "examples/lode_runner/player.c", "examples/lode_runner/input.c", "examples/lode_runner/guards.c", "examples/lode_runner/timers.c", "examples/lode_runner/screen.c", "examples/lode_runner/hiscore.c", "examples/lode_runner/editor.c", "examples/lode_runner/sprites.c", "examples/lode_runner/sound.c", "examples/lode_runner/wipe.c"]
+run ["c6502", "-c", "-O", "examples/lode_runner/main.c", "examples/lode_runner/level.c", "examples/lode_runner/player.c", "examples/lode_runner/input.c", "examples/lode_runner/guards.c", "examples/lode_runner/timers.c", "examples/lode_runner/screen.c", "examples/lode_runner/hiscore.c", "examples/lode_runner/editor.c", "examples/lode_runner/sprites.c", "examples/lode_runner/sound.c", "examples/lode_runner/wipe.c"]
 status 0
 cd .
-run ["compile.py", "-O", "-T", "examples/lode_runner/lode_runner.ld", "examples/lode_runner/main.c", "examples/lode_runner/level.c", "examples/lode_runner/player.c", "examples/lode_runner/input.c", "examples/lode_runner/guards.c", "examples/lode_runner/timers.c", "examples/lode_runner/screen.c", "examples/lode_runner/hiscore.c", "examples/lode_runner/editor.c", "examples/lode_runner/sprites.c", "examples/lode_runner/sound.c", "examples/lode_runner/wipe.c", "-o", "lode_runner_sources"]
+run ["c6502", "-O", "-T", "examples/lode_runner/lode_runner.ld", "examples/lode_runner/main.c", "examples/lode_runner/level.c", "examples/lode_runner/player.c", "examples/lode_runner/input.c", "examples/lode_runner/guards.c", "examples/lode_runner/timers.c", "examples/lode_runner/screen.c", "examples/lode_runner/hiscore.c", "examples/lode_runner/editor.c", "examples/lode_runner/sprites.c", "examples/lode_runner/sound.c", "examples/lode_runner/wipe.c", "-o", "lode_runner_sources"]
 status 0
 file all/editor.o sha256 faf759d59a8f8b9ec41d98e6fbf00d042ca9b5c4c382049a65253b9bb8c98d76 68732
 file all/guards.o sha256 3ab97312cccc84a0b79b67163f8ab99e7c075ebe7d15b228370adbe1aacddf45 96960
@@ -125,46 +125,46 @@ file timers.o sha256 30c54fa0cf9132b3378c07b221199dadcd6852a8425526a8fc5ad33d861
 file wipe.o sha256 b14ca32ee0f589148158d4ec66738107e1ef07c57a8dc3349d6a38b2cd9dafd0 55440
 end
 job game ali_baba
-run ["compile.py", "examples/ali_baba/main.c", "-c", "-O", "-o", "main.o"]
+run ["c6502", "examples/ali_baba/main.c", "-c", "-O", "-o", "main.o"]
 status 0
-run ["compile.py", "examples/ali_baba/init.c", "-c", "-O", "-o", "init.o"]
+run ["c6502", "examples/ali_baba/init.c", "-c", "-O", "-o", "init.o"]
 status 0
-run ["compile.py", "examples/ali_baba/turn.c", "-c", "-O", "-o", "turn.o"]
+run ["c6502", "examples/ali_baba/turn.c", "-c", "-O", "-o", "turn.o"]
 status 0
-run ["compile.py", "examples/ali_baba/input.c", "-c", "-O", "-o", "input.o"]
+run ["c6502", "examples/ali_baba/input.c", "-c", "-O", "-o", "input.o"]
 status 0
-run ["compile.py", "examples/ali_baba/combat.c", "-c", "-O", "-o", "combat.o"]
+run ["c6502", "examples/ali_baba/combat.c", "-c", "-O", "-o", "combat.o"]
 status 0
-run ["compile.py", "examples/ali_baba/ai.c", "-c", "-O", "-o", "ai.o"]
+run ["c6502", "examples/ali_baba/ai.c", "-c", "-O", "-o", "ai.o"]
 status 0
-run ["compile.py", "examples/ali_baba/events.c", "-c", "-O", "-o", "events.o"]
+run ["c6502", "examples/ali_baba/events.c", "-c", "-O", "-o", "events.o"]
 status 0
-run ["compile.py", "examples/ali_baba/entities.c", "-c", "-O", "-o", "entities.o"]
+run ["c6502", "examples/ali_baba/entities.c", "-c", "-O", "-o", "entities.o"]
 status 0
-run ["compile.py", "examples/ali_baba/map.c", "-c", "-O", "-o", "map.o"]
+run ["c6502", "examples/ali_baba/map.c", "-c", "-O", "-o", "map.o"]
 status 0
-run ["compile.py", "examples/ali_baba/display.c", "-c", "-O", "-o", "display.o"]
+run ["c6502", "examples/ali_baba/display.c", "-c", "-O", "-o", "display.o"]
 status 0
-run ["compile.py", "examples/ali_baba/util.c", "-c", "-O", "-o", "util.o"]
+run ["c6502", "examples/ali_baba/util.c", "-c", "-O", "-o", "util.o"]
 status 0
-run ["compile.py", "examples/ali_baba/text.c", "-c", "-O", "-o", "text.o"]
+run ["c6502", "examples/ali_baba/text.c", "-c", "-O", "-o", "text.o"]
 status 0
-run ["compile.py", "examples/ali_baba/sound.c", "-c", "-O", "-o", "sound.o"]
+run ["c6502", "examples/ali_baba/sound.c", "-c", "-O", "-o", "sound.o"]
 status 0
-run ["compile.py", "examples/ali_baba/hrcg.c", "-c", "-O", "-o", "hrcg.o"]
+run ["c6502", "examples/ali_baba/hrcg.c", "-c", "-O", "-o", "hrcg.o"]
 status 0
-run ["compile.py", "-T", "examples/ali_baba/ali_baba.ld", "main.o", "init.o", "turn.o", "input.o", "combat.o", "ai.o", "events.o", "entities.o", "map.o", "display.o", "util.o", "text.o", "sound.o", "hrcg.o", "-o", "ali_baba"]
+run ["c6502", "-T", "examples/ali_baba/ali_baba.ld", "main.o", "init.o", "turn.o", "input.o", "combat.o", "ai.o", "events.o", "entities.o", "map.o", "display.o", "util.o", "text.o", "sound.o", "hrcg.o", "-o", "ali_baba"]
 status 0
-run ["compile.py", "main.o", "init.o", "turn.o", "input.o", "combat.o", "ai.o", "events.o", "entities.o", "map.o", "display.o", "util.o", "text.o", "sound.o", "hrcg.o", "-o", "ali_baba_default"]
+run ["c6502", "main.o", "init.o", "turn.o", "input.o", "combat.o", "ai.o", "events.o", "entities.o", "map.o", "display.o", "util.o", "text.o", "sound.o", "hrcg.o", "-o", "ali_baba_default"]
 status 0
-run ["compile.py", "-T", "examples/ali_baba/ali_baba.ld", "@sim_defsyms", "main.o", "init.o", "turn.o", "input.o", "combat.o", "ai.o", "events.o", "entities.o", "map.o", "display.o", "util.o", "text.o", "sound.o", "hrcg.o", "-o", "ali_baba_sim"]
+run ["c6502", "-T", "examples/ali_baba/ali_baba.ld", "@sim_defsyms", "main.o", "init.o", "turn.o", "input.o", "combat.o", "ai.o", "events.o", "entities.o", "map.o", "display.o", "util.o", "text.o", "sound.o", "hrcg.o", "-o", "ali_baba_sim"]
 status 0
 mkdir all
 cd all
-run ["compile.py", "-c", "-O", "examples/ali_baba/main.c", "examples/ali_baba/init.c", "examples/ali_baba/turn.c", "examples/ali_baba/input.c", "examples/ali_baba/combat.c", "examples/ali_baba/ai.c", "examples/ali_baba/events.c", "examples/ali_baba/entities.c", "examples/ali_baba/map.c", "examples/ali_baba/display.c", "examples/ali_baba/util.c", "examples/ali_baba/text.c", "examples/ali_baba/sound.c", "examples/ali_baba/hrcg.c"]
+run ["c6502", "-c", "-O", "examples/ali_baba/main.c", "examples/ali_baba/init.c", "examples/ali_baba/turn.c", "examples/ali_baba/input.c", "examples/ali_baba/combat.c", "examples/ali_baba/ai.c", "examples/ali_baba/events.c", "examples/ali_baba/entities.c", "examples/ali_baba/map.c", "examples/ali_baba/display.c", "examples/ali_baba/util.c", "examples/ali_baba/text.c", "examples/ali_baba/sound.c", "examples/ali_baba/hrcg.c"]
 status 0
 cd .
-run ["compile.py", "-O", "-T", "examples/ali_baba/ali_baba.ld", "examples/ali_baba/main.c", "examples/ali_baba/init.c", "examples/ali_baba/turn.c", "examples/ali_baba/input.c", "examples/ali_baba/combat.c", "examples/ali_baba/ai.c", "examples/ali_baba/events.c", "examples/ali_baba/entities.c", "examples/ali_baba/map.c", "examples/ali_baba/display.c", "examples/ali_baba/util.c", "examples/ali_baba/text.c", "examples/ali_baba/sound.c", "examples/ali_baba/hrcg.c", "-o", "ali_baba_sources"]
+run ["c6502", "-O", "-T", "examples/ali_baba/ali_baba.ld", "examples/ali_baba/main.c", "examples/ali_baba/init.c", "examples/ali_baba/turn.c", "examples/ali_baba/input.c", "examples/ali_baba/combat.c", "examples/ali_baba/ai.c", "examples/ali_baba/events.c", "examples/ali_baba/entities.c", "examples/ali_baba/map.c", "examples/ali_baba/display.c", "examples/ali_baba/util.c", "examples/ali_baba/text.c", "examples/ali_baba/sound.c", "examples/ali_baba/hrcg.c", "-o", "ali_baba_sources"]
 status 0
 file ai.o sha256 250deb20f82e7d3d294a13e590198ec832001a3c15d639f2c4a7caf52570b9d7 67168
 file ali_baba sha256 99be2b8356d46ae1904e5ff5b1df37f45986370194a04575cfc407f66ff91905 148920
@@ -200,7 +200,7 @@ file turn.o sha256 3ced83400936b865aa2c2831aaed4d2b7ff07e2ab27ffd6151a739f8bc11f
 file util.o sha256 541d914e88a2c5d0cacc63a9f64c968dc06d0a827e8270e7ecd8d4598dcaee5e 61584
 end
 job errors damaged files and bad links
-run ["compile.py", "examples/apply_bobble.c", "-c", "-O", "-o", "good.o"]
+run ["c6502", "examples/apply_bobble.c", "-c", "-O", "-o", "good.o"]
 status 0
 write a.c text "int main(void) { return 0; }\n"
 write b.c text "int f(void) { return 1; }\n"
@@ -219,123 +219,123 @@ write short.o blob ab03f993dbf52f2666e2d9549b6e87d90b5776508874e395d762d5e94146c
 write shstrndx.o blob 4fd85dc4203a5a42b72e10f82f9703c139eb52870561a55caad80a64b8625d20
 write small.ld text "MEMORY { ram : ORIGIN = 0x0800, LENGTH = 4 }\nSECTIONS { .text : { *(.text) } > ram }\n"
 write undefined.asm text "main:\n JSR nowhere\n RTS\n"
-run ["compile.py", "short.o", "-o", "prog"]
+run ["c6502", "short.o", "-o", "prog"]
 status 1
 stderr "short.o: error: short.o: not an ELF file\n"
-run ["compile.py", "good.o", "short.o", "-o", "prog"]
+run ["c6502", "good.o", "short.o", "-o", "prog"]
 status 1
 stderr "short.o: error: short.o: not an ELF file\n"
-run ["compile.py", "half.o", "-o", "prog"]
+run ["c6502", "half.o", "-o", "prog"]
 status 1
 stderr "half.o: error: half.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "good.o", "half.o", "-o", "prog"]
+run ["c6502", "good.o", "half.o", "-o", "prog"]
 status 1
 stderr "half.o: error: half.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "cut.o", "-o", "prog"]
+run ["c6502", "cut.o", "-o", "prog"]
 status 1
 stderr "cut.o: error: cut.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "good.o", "cut.o", "-o", "prog"]
+run ["c6502", "good.o", "cut.o", "-o", "prog"]
 status 1
 stderr "cut.o: error: cut.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "notelf.o", "-o", "prog"]
+run ["c6502", "notelf.o", "-o", "prog"]
 status 1
 stderr "notelf.o: error: notelf.o: not an ELF file\n"
-run ["compile.py", "good.o", "notelf.o", "-o", "prog"]
+run ["c6502", "good.o", "notelf.o", "-o", "prog"]
 status 1
 stderr "notelf.o: error: notelf.o: not an ELF file\n"
-run ["compile.py", "class64.o", "-o", "prog"]
+run ["c6502", "class64.o", "-o", "prog"]
 status 1
 stderr "class64.o: error: class64.o: not a little-endian 32-bit ELF file\n"
-run ["compile.py", "good.o", "class64.o", "-o", "prog"]
+run ["c6502", "good.o", "class64.o", "-o", "prog"]
 status 1
 stderr "class64.o: error: class64.o: not a little-endian 32-bit ELF file\n"
-run ["compile.py", "machine.o", "-o", "prog"]
+run ["c6502", "machine.o", "-o", "prog"]
 status 1
 stderr "machine.o: error: machine.o: ELF file for machine 62, not the 6502 (6502)\n"
-run ["compile.py", "good.o", "machine.o", "-o", "prog"]
+run ["c6502", "good.o", "machine.o", "-o", "prog"]
 status 1
 stderr "machine.o: error: machine.o: ELF file for machine 62, not the 6502 (6502)\n"
-run ["compile.py", "shstrndx.o", "-o", "prog"]
+run ["c6502", "shstrndx.o", "-o", "prog"]
 status 1
 stderr "shstrndx.o: error: shstrndx.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "good.o", "shstrndx.o", "-o", "prog"]
+run ["c6502", "good.o", "shstrndx.o", "-o", "prog"]
 status 1
 stderr "shstrndx.o: error: shstrndx.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "secsize.o", "-o", "prog"]
+run ["c6502", "secsize.o", "-o", "prog"]
 status 1
 stderr "secsize.o: error: secsize.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "good.o", "secsize.o", "-o", "prog"]
+run ["c6502", "good.o", "secsize.o", "-o", "prog"]
 status 1
 stderr "secsize.o: error: secsize.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "meta.o", "-o", "prog"]
+run ["c6502", "meta.o", "-o", "prog"]
 status 1
 stderr "meta.o: error: meta.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "good.o", "meta.o", "-o", "prog"]
+run ["c6502", "good.o", "meta.o", "-o", "prog"]
 status 1
 stderr "meta.o: error: meta.o: the ELF file is truncated or damaged\n"
-run ["compile.py", "missing.o"]
+run ["c6502", "missing.o"]
 status 1
 stderr "missing.o: error: No such file or directory\n"
-run ["compile.py", "good.o", "missing.o"]
+run ["c6502", "good.o", "missing.o"]
 status 1
 stderr "missing.o: error: No such file or directory\n"
-run ["compile.py", "missing.c"]
+run ["c6502", "missing.c"]
 status 1
 stderr "missing.c: error: No such file or directory\n"
-run ["compile.py", "good.o", "missing.asm"]
+run ["c6502", "good.o", "missing.asm"]
 status 1
 stderr "missing.asm: error: No such file or directory\n"
-run ["compile.py", "good.o", "-T", "missing.ld"]
+run ["c6502", "good.o", "-T", "missing.ld"]
 status 1
-stderr "compile.py: link error: missing.ld: No such file or directory\n"
-run ["compile.py", "good.o", "-T", "bad.ld"]
+stderr "c6502: link error: missing.ld: No such file or directory\n"
+run ["c6502", "good.o", "-T", "bad.ld"]
 status 1
-stderr "compile.py: link error: bad.ld: output section '.text' names region 'nowhere', which MEMORY doesn't define\n"
-run ["compile.py", "good.o", "-T", "small.ld"]
+stderr "c6502: link error: bad.ld: output section '.text' names region 'nowhere', which MEMORY doesn't define\n"
+run ["c6502", "good.o", "-T", "small.ld"]
 status 1
-stderr "compile.py: link error: section .text runs past the end of region ram by 31 bytes\n"
-run ["compile.py", "good.o", "--defsym", "x"]
+stderr "c6502: link error: section .text runs past the end of region ram by 31 bytes\n"
+run ["c6502", "good.o", "--defsym", "x"]
 status 2
-stderr "compile.py: --defsym takes NAME=VALUE: x\n"
-run ["compile.py", "good.o", "--defsym", "x=y"]
+stderr "c6502: --defsym takes NAME=VALUE: x\n"
+run ["c6502", "good.o", "--defsym", "x=y"]
 status 2
-stderr "compile.py: --defsym takes NAME=VALUE: x=y\n"
-run ["compile.py", "good.o", "-Ttext=0x10000"]
+stderr "c6502: --defsym takes NAME=VALUE: x=y\n"
+run ["c6502", "good.o", "-Ttext=0x10000"]
 status 1
-stderr "compile.py: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
-run ["compile.py", "good.o", "-o", "nodir/prog"]
+stderr "c6502: link error: the origin $10000 is outside the 6502's address space ($0000-$FFFF)\n"
+run ["c6502", "good.o", "-o", "nodir/prog"]
 status 1
-stderr "compile.py: link error: good.o: undefined symbol `rescue_bobble`\n"
-run ["compile.py", "good.o", "-o", "."]
+stderr "c6502: link error: good.o: undefined symbol `rescue_bobble`\n"
+run ["c6502", "good.o", "-o", "."]
 status 1
-stderr "compile.py: link error: good.o: undefined symbol `rescue_bobble`\n"
-run ["compile.py", "good.o", "notutf8.c"]
+stderr "c6502: link error: good.o: undefined symbol `rescue_bobble`\n"
+run ["c6502", "good.o", "notutf8.c"]
 status 1
 stderr "notutf8.c: error: 'utf-8' codec can't decode byte 0xff in position 14: invalid start byte\n"
-run ["compile.py", "good.o", "notutf8.asm"]
+run ["c6502", "good.o", "notutf8.asm"]
 status 1
 stderr "notutf8.asm: error: 'utf-8' codec can't decode byte 0xff in position 2: invalid start byte\n"
-run ["compile.py", "good.o", "bad.asm"]
+run ["c6502", "good.o", "bad.asm"]
 status 1
 stderr "bad.asm: error: bad.asm:2: a branch takes a label\n"
-run ["compile.py", "undefined.asm"]
+run ["c6502", "undefined.asm"]
 status 1
-stderr "compile.py: link error: undefined.o: undefined symbol `nowhere`\n"
-run ["compile.py", "good.o", "good.o"]
+stderr "c6502: link error: undefined.o: undefined symbol `nowhere`\n"
+run ["c6502", "good.o", "good.o"]
 status 1
-stderr "compile.py: link error: good.o: undefined symbol `rescue_bobble`\n"
-run ["compile.py", "-c", "good.o"]
+stderr "c6502: link error: good.o: undefined symbol `rescue_bobble`\n"
+run ["c6502", "-c", "good.o"]
 status 2
-stderr "compile.py: good.o is already an object\n"
-run ["compile.py", "-c", "a.c", "good.o"]
+stderr "c6502: good.o is already an object\n"
+run ["c6502", "-c", "a.c", "good.o"]
 status 2
-stderr "compile.py: good.o is already an object\n"
-run ["compile.py", "-c", "a.c", "b.c", "-o", "x.o"]
+stderr "c6502: good.o is already an object\n"
+run ["c6502", "-c", "a.c", "b.c", "-o", "x.o"]
 status 2
-stderr "compile.py: -o with -c and more than one input\n"
-run ["compile.py", "-c", "-"]
+stderr "c6502: -o with -c and more than one input\n"
+run ["c6502", "-c", "-"]
 status 2
-stderr "compile.py: -c on stdin needs -o\n"
+stderr "c6502: -c on stdin needs -o\n"
 file a.c sha256 2ad75d95660563887d8d3f1d0ae1dcf18c2379cbd83a5c72f5ab276351ee6949 29
 file a.o sha256 3828c794020b9792cefe5b7ba751475dced793239329cbe3e423d44bf8250bb8 808
 file b.c sha256 07e31c947182a3a4430804cbda670c779dde0e385ab4c0eea728c311b6519382 26

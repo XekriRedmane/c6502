@@ -22,7 +22,7 @@ std::int64_t sim_return_int(const std::string& src) {
 // Checks that `compile.py - -S -O` reports a problem with `src` in one
 // line that names `needle`, with exit status 1.
 void check_compile_error(const std::string& src, const std::string& needle) {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"}, src);
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"}, src);
   REQUIRE(o.status.has_value());
   CHECK(*o.status == 1);
   CHECK(o.err().rfind("<stdin>: error: ", 0) == 0);
@@ -32,7 +32,7 @@ void check_compile_error(const std::string& src, const std::string& needle) {
 }  // namespace
 
 TEST_CASE("register_keyword_sim: the caller loads the second argument into X") {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"},
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"},
                                      "char add2(register char a, register char b) {"
                                      "    return (char)(a + b);"
                                      "}"
@@ -119,7 +119,7 @@ TEST_CASE("register_keyword_sim: a register local is kept in Y") {
   // without a soft-stack frame, whose prologue would overwrite A.
   const std::string src = R"c(char sum_n(register char n) {    register char acc = 0;    while (n > 0) {        acc = (char)(acc + n);        n = (char)(n - 1);    }    return acc;}int main(void) { return sum_n(5); })c";
   CHECK(sim_return_int(src) == 5 + 4 + 3 + 2 + 1);
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"}, src);
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"}, src);
   REQUIRE(o.status.has_value());
   REQUIRE(*o.status == 0);
   const std::string out = o.out();

@@ -14,7 +14,7 @@ namespace suite = c6502::suite;
 
 // compile.py's exit status and stderr for `src` on stdin.
 std::pair<long long, std::string> compile_s(const std::string& src) {
-  const auto o = suite::compile_main({"compile.py", "-", "-S"}, src);
+  const auto o = suite::compile_main({"c6502", "-", "-S"}, src);
   REQUIRE(o.status.has_value());
   return {*o.status, o.err()};
 }

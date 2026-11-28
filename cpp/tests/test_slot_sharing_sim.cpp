@@ -116,7 +116,7 @@ Linked link_units(const std::vector<std::string>& sources, Inlining inlining = I
   options.inline_calls = inlining == Inlining::kOn;
   for (std::size_t k = 0; k < sources.size(); ++k) {
     const std::string path = tmp.file("u" + std::to_string(k) + ".o");
-    const compile_command::Outcome o = compile_main({"compile.py", "-", "-c", "-O", "-o", path}, sources[k], options);
+    const compile_command::Outcome o = compile_main({"c6502", "-", "-c", "-O", "-o", path}, sources[k], options);
     REQUIRE(o.status.has_value());
     REQUIRE(*o.status == 0);
     paths.push_back(path);

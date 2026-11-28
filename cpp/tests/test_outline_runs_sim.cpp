@@ -65,8 +65,8 @@ TEST_CASE("outline_runs: linked program runs") {
   const std::string exe = tmp.file("a.out");
   MainOptions no_inlining;
   no_inlining.inline_calls = false;
-  CHECK(compile_main({"compile.py", "-", "-c", "-O", "-o", obj}, kSrc, no_inlining).status == 0);
-  std::vector<std::string> argv = {"compile.py", obj, "-o", exe};
+  CHECK(compile_main({"c6502", "-", "-c", "-O", "-o", obj}, kSrc, no_inlining).status == 0);
+  std::vector<std::string> argv = {"c6502", obj, "-o", exe};
   for (const std::string& d : sim_defsym_args()) argv.push_back(d);
   CHECK(compile_main(argv, "", no_inlining).status == 0);
   CHECK(build_linked_sim(exe).run().return_int() == expected());

@@ -801,7 +801,7 @@ int main(int argc, char** argv) {
     if (command == "nm" || command == "objdump") {
       // The tool's command line, as its `main` takes it with the
       // program's name first.
-      std::vector<std::string> argv_tool{command + ".py"};
+      std::vector<std::string> argv_tool{"c6502-" + command};
       const std::vector<std::string> utf8 = utf8_args(argc, argv);
       argv_tool.insert(argv_tool.end(), utf8.begin() + 2, utf8.end());
       std::string out;

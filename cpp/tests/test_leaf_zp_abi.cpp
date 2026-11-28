@@ -12,7 +12,7 @@ namespace {
 namespace suite = c6502::suite;
 
 std::string compile_s(const std::string& src) {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"}, src);
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"}, src);
   REQUIRE(o.status.has_value());
   CHECK_MESSAGE(*o.status == 0, o.err());
   return o.out();
@@ -59,7 +59,7 @@ TEST_CASE("leaf_zp_abi: a zp_abi function on a cycle is rejected") {
       "  return x ? rec(x - 1) : 0; "
       "} "
       "int main(void) { return rec(3); }";
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"}, src);
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"}, src);
   REQUIRE(o.status.has_value());
   CHECK(*o.status == 1);
   CHECK(suite::contains(o.err(), "rec"));

@@ -103,8 +103,8 @@ TEST_CASE("param_registers: the type checker's errors") {
   }
 }
 
-TEST_CASE("param_registers: compile.py reports an ABI error in one line") {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"}, kSharedRegister);
+TEST_CASE("param_registers: c6502 reports an ABI error in one line") {
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"}, kSharedRegister);
   REQUIRE(o.status.has_value());
   CHECK(*o.status == 1);
   CHECK(o.err().rfind("<stdin>: error: ", 0) == 0);

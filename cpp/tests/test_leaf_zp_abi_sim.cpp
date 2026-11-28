@@ -9,7 +9,7 @@ namespace c6502::suite {
 namespace {
 
 std::string codegen_main(const std::string& source) {
-  const auto o = compile_main({"compile.py", "-", "-S", "-O"}, source);
+  const auto o = compile_main({"c6502", "-", "-S", "-O"}, source);
   REQUIRE(o.status.value_or(-1) == 0);
   return o.out();
 }

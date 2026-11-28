@@ -8,12 +8,12 @@ namespace c6502::suite {
 std::string build_example(const TempDir& tmp, std::string_view example, const std::vector<std::string>& units,
                           std::string_view script, Helpers helpers) {
   const std::string dir = "examples/" + std::string(example) + "/";
-  std::vector<std::string> link{"compile.py", "-T", repo_path(dir + std::string(script))};
+  std::vector<std::string> link{"c6502", "-T", repo_path(dir + std::string(script))};
   for (const std::string& unit : units) {
     const std::string source = repo_path(dir + unit + ".c");
     if (!std::filesystem::exists(source)) continue;
     const std::string obj = tmp.file(unit + ".o");
-    const auto o = compile_main({"compile.py", source, "-c", "-O", "-o", obj});
+    const auto o = compile_main({"c6502", source, "-c", "-O", "-o", obj});
     if (o.status != 0) throw std::runtime_error(unit + ": " + o.err());
     link.push_back(obj);
   }

@@ -17,7 +17,7 @@ namespace suite = c6502::suite;
 // stderr.
 std::pair<long long, std::string> compile_s(const std::string& src,
                                             const std::vector<std::string>& flags = {}) {
-  std::vector<std::string> argv{"compile.py", "-", "-S"};
+  std::vector<std::string> argv{"c6502", "-", "-S"};
   argv.insert(argv.end(), flags.begin(), flags.end());
   const auto o = suite::compile_main(argv, src);
   REQUIRE(o.status.has_value());
@@ -25,7 +25,7 @@ std::pair<long long, std::string> compile_s(const std::string& src,
 }
 
 std::pair<long long, std::string> run(const std::vector<std::string>& args) {
-  std::vector<std::string> argv{"compile.py"};
+  std::vector<std::string> argv{"c6502"};
   argv.insert(argv.end(), args.begin(), args.end());
   const auto o = suite::compile_main(argv);
   REQUIRE(o.status.has_value());
@@ -139,7 +139,7 @@ TEST_CASE("cli_errors: a missing input or linker script is a one-line error") {
       {{"missing.asm", "-c", "-o", out}, "missing.asm: error: No such file or directory\n"},
       {{"missing.o", "-o", out}, "missing.o: error: No such file or directory\n"},
       {{"-T", "missing.ld", obj, "-o", out},
-       "compile.py: link error: missing.ld: No such file or directory\n"},
+       "c6502: link error: missing.ld: No such file or directory\n"},
   };
   for (const auto& [argv, expected] : cases) {
     INFO(argv[0] << " " << argv[1]);

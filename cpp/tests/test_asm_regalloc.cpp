@@ -9,7 +9,7 @@ namespace suite = c6502::suite;
 
 TEST_CASE("asm_regalloc: two locals land in the caller-saved zero-page pool") {
   const auto o = suite::compile_main(
-      {"compile.py", "-", "-S", "-O"},
+      {"c6502", "-", "-S", "-O"},
       "int f(int p, int q) { int a = p + 1; int b = a + q; return b; }\n"
       "int main(void) { return f(3, 4); }\n");
   REQUIRE(o.status.has_value());

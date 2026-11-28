@@ -207,7 +207,7 @@ std::optional<asdl::Int> py_int(std::string_view t, int base) {
     if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
     if (d >= base) return std::nullopt;
     if (v > (max - asdl::Int(d)) / asdl::Int(base)) {
-      throw InternalError("compile.py's number " + pyrepr::string(t) +
+      throw InternalError("the number " + pyrepr::string(t) +
                           " is wider than the 128 bits the C++ port holds a number in");
     }
     v = v * asdl::Int(base) + asdl::Int(d);
@@ -270,7 +270,7 @@ constexpr const char* kOptimizeHelp =
 // Returns compile.py's argparse parser (`_parse_args`), action for
 // action in its order.
 argparse::Parser compile_parser() {
-  argparse::Parser ap("compile.py", "Compile C for the 6502, assemble, and link.");
+  argparse::Parser ap("c6502", "Compile C for the 6502, assemble, and link.");
   ap.add_positional("inputs", "C sources (- for stdin), .asm files, and .o objects");
   ap.add_store({"-o"}, "output", "output file, or - for stdout");
   const int stages = ap.add_mutually_exclusive_group();
@@ -477,12 +477,12 @@ class Compile {
         stage == "codegen") {
       for (const std::string& p : args.inputs) {
         if (kind_of(p) != "c") {
-          eprint("compile.py: " + p + " isn't a C source");
+          eprint("c6502: " + p + " isn't a C source");
           return 2;
         }
       }
       if (args.output && args.inputs.size() > 1) {
-        eprint("compile.py: -o with more than one input");
+        eprint("c6502: -o with more than one input");
         return 2;
       }
       if (stage == "codegen" && args.output && *args.output != "-") {
@@ -491,7 +491,7 @@ class Compile {
           return o.size() >= s.size() && o.compare(o.size() - s.size(), s.size(), s) == 0;
         };
         if (!ends(".s") && !ends(".asm")) {
-          eprint("compile.py: -S output must have a .s or .asm suffix: " + o);
+          eprint("c6502: -S output must have a .s or .asm suffix: " + o);
           return 2;
         }
       }
@@ -518,12 +518,12 @@ class Compile {
     }
     if (stage == "object") {
       if (args.output && args.inputs.size() > 1) {
-        eprint("compile.py: -o with -c and more than one input");
+        eprint("c6502: -o with -c and more than one input");
         return 2;
       }
       if (std::find(args.inputs.begin(), args.inputs.end(), "-") != args.inputs.end() &&
           !args.output) {
-        eprint("compile.py: -c on stdin needs -o");
+        eprint("c6502: -c on stdin needs -o");
         return 2;
       }
       return build(args, nullptr);
@@ -535,7 +535,7 @@ class Compile {
       const std::optional<asdl::Int> v =
           eq == std::string::npos ? std::nullopt : number(d.substr(eq + 1));
       if (!v || name.empty()) {
-        eprint("compile.py: --defsym takes NAME=VALUE: " + d);
+        eprint("c6502: --defsym takes NAME=VALUE: " + d);
         return 2;
       }
       // A name given twice keeps its first place and its last value, as
@@ -708,7 +708,7 @@ class Compile {
       }
     }
     if (stop_object) {
-      eprint("compile.py: " + *stop_object + " is already an object");
+      eprint("c6502: " + *stop_object + " is already an object");
       return 2;
     }
     if (stop_error) {
@@ -720,7 +720,7 @@ class Compile {
     if (link_record->key == "link-error") {
       const Raised e = from_backend(json::parse(link_record->value));
       if (!is_link_error(e.type)) throw e;
-      eprint("compile.py: link error: " + e.message);
+      eprint("c6502: link error: " + e.message);
       return 1;
     }
     if (link_record->key == "write-error") {
@@ -949,7 +949,7 @@ Outcome run(const std::vector<std::string>& argv, const Options& options) {
 }
 
 int command(const std::vector<std::string>& args, const std::string& self) {
-  std::vector<std::string> argv{"compile.py"};
+  std::vector<std::string> argv{"c6502"};
   argv.insert(argv.end(), args.begin(), args.end());
   if (env_is_one("C6502CPP_FRAMES")) return framed(argv);
   Options options;

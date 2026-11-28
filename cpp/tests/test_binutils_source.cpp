@@ -64,7 +64,7 @@ elf::ElfFile assemble(const std::string& text, const std::string& name = "t.asm"
   const std::string src = tmp.file(name);
   const std::string out = tmp.file("t.o");
   suite::write_file(src, text);
-  const auto o = suite::compile_main({"compile.py", "-c", src, "-o", out});
+  const auto o = suite::compile_main({"c6502", "-c", src, "-o", out});
   REQUIRE_MESSAGE(o.status == 0, o.err());
   return read_elf(out);
 }
@@ -232,9 +232,9 @@ TEST_CASE("binutils: each damaged copy of an assembled object is an ElfError") {
   const suite::TempDir tmp;
   const std::string path = tmp.file("x.o");
   suite::write_file(path, damaged[0].second);
-  const suite::ToolOutcome o = suite::nm_main({"nm.py", path});
+  const suite::ToolOutcome o = suite::nm_main({"c6502-nm", path});
   CHECK(o.status == 1);
-  CHECK(o.err == "nm.py: " + path + ": the ELF file is truncated or damaged\n");
+  CHECK(o.err == "c6502-nm: " + path + ": the ELF file is truncated or damaged\n");
 }
 
 namespace {
@@ -267,7 +267,7 @@ struct Tools {
 // stderr.
 std::pair<long long, std::string> run(const std::vector<std::string>& args,
                                       bool inline_calls = true) {
-  std::vector<std::string> argv{"compile.py"};
+  std::vector<std::string> argv{"c6502"};
   argv.insert(argv.end(), args.begin(), args.end());
   suite::MainOptions options;
   options.inline_calls = inline_calls;
@@ -288,7 +288,7 @@ TEST_CASE("binutils: units compiled with -c, linked, and run") {
   CHECK(suite::build_linked_sim("a.out").run().return_int() == 6);
 }
 
-TEST_CASE("binutils: compile.py -c names each object after its source") {
+TEST_CASE("binutils: c6502 -c names each object after its source") {
   const Tools t;
   REQUIRE(run({"-O", "-c", "a.c", "b.c"}).first == 0);
   for (const char* name : {"a.o", "b.o"}) {
@@ -344,7 +344,7 @@ TEST_CASE("binutils: nm lists an object's and an executable's symbols") {
   // symbol.
   const Tools t;
   REQUIRE(run({"-O", "-c", "b.c"}, false).first == 0);
-  suite::ToolOutcome o = suite::nm_main({"nm.py", "b.o"});
+  suite::ToolOutcome o = suite::nm_main({"c6502-nm", "b.o"});
   CHECK(o.status == 0);
   const std::vector<std::string> lines = suite::lines(o.out);
   for (const char* line : {"0000 T main", "0000 t twice", "     U bump", "     U n"}) {
@@ -352,11 +352,11 @@ TEST_CASE("binutils: nm lists an object's and an executable's symbols") {
     CHECK(std::find(lines.begin(), lines.end(), line) != lines.end());
   }
   CHECK_FALSE(suite::contains(o.out, "$c"));
-  o = suite::nm_main({"nm.py", "-g", "-u", "b.o"});
+  o = suite::nm_main({"c6502-nm", "-g", "-u", "b.o"});
   CHECK_FALSE(suite::contains(o.out, "main"));
   CHECK(suite::contains(o.out, "U n"));
   REQUIRE(run({"-O", "a.c", "b.c", "-o", "prog"}, false).first == 0);
-  o = suite::nm_main({"nm.py", "-n", "prog"});
+  o = suite::nm_main({"c6502-nm", "-n", "prog"});
   std::vector<std::string> names;
   for (const std::string& line : suite::lines(o.out)) {
     const std::size_t last = line.find_last_of(' ');
@@ -374,18 +374,18 @@ TEST_CASE("binutils: nm lists an object's and an executable's symbols") {
 TEST_CASE("binutils: objdump disassembles an object and an executable") {
   const Tools t;
   REQUIRE(run({"-O", "-c", "b.c"}).first == 0);
-  suite::ToolOutcome o = suite::objdump_main({"objdump.py", "-d", "b.o"});
+  suite::ToolOutcome o = suite::objdump_main({"c6502-objdump", "-d", "b.o"});
   CHECK(o.status == 0);
   CHECK(py_search("(?m)^main:\n   SUBROUTINE$", o.out));
   CHECK(py_search("JSR   bump +; [0-9A-F]{4}  20 00 00", o.out));
-  o = suite::objdump_main({"objdump.py", "-x", "b.o"});
+  o = suite::objdump_main({"c6502-objdump", "-x", "b.o"});
   for (const char* part : {"file format elf32-mos", "Sections:", "SYMBOL TABLE:",
                            "RELOCATION RECORDS FOR", "R_MOS_ADDR16", "@zp-link-meta-begin"}) {
     INFO(part);
     CHECK(suite::contains(o.out, part));
   }
   REQUIRE(run({"-O", "a.c", "b.c", "-o", "prog"}).first == 0);
-  o = suite::objdump_main({"objdump.py", "-D", "--no-show-raw-insn", "prog"});
+  o = suite::objdump_main({"c6502-objdump", "-D", "--no-show-raw-insn", "prog"});
   CHECK(suite::contains(o.out, "   SEG   text\n   ORG   $0800\n"));
   CHECK(py_search(R"((?m)^n\tEQU\t\$[0-9A-F]{2}$)", o.out));
 }
@@ -562,12 +562,12 @@ TEST_CASE("binutils: dasm assembles the Zork interpreter's listing into its exec
                                           "input", "pages",   "zstring", "output",
                                           "disk",  "prompts", "save"};
   const suite::TempDir tmp;
-  std::vector<std::string> argv{"compile.py", "-T", suite::repo_path("examples/zork/interpreter.ld")};
+  std::vector<std::string> argv{"c6502", "-T", suite::repo_path("examples/zork/interpreter.ld")};
   for (const std::string& unit : units) {
     INFO(unit);
     const std::string obj = tmp.file(unit + ".o");
     const auto o = suite::compile_main(
-        {"compile.py", suite::repo_path("examples/zork/" + unit + ".c"), "-c", "-O", "-o", obj});
+        {"c6502", suite::repo_path("examples/zork/" + unit + ".c"), "-c", "-O", "-o", obj});
     REQUIRE_MESSAGE(o.status == 0, o.err());
     argv.push_back(obj);
   }

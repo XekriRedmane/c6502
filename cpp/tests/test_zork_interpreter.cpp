@@ -22,10 +22,10 @@ const char* const kUnits[] = {
 // Compiles each unit with `-c -O` and links the objects by the example's
 // script, as its README does, and returns the executable's path.
 std::string build(const suite::TempDir& tmp) {
-  std::vector<std::string> link{"compile.py", "-T", suite::repo_path("examples/zork/interpreter.ld")};
+  std::vector<std::string> link{"c6502", "-T", suite::repo_path("examples/zork/interpreter.ld")};
   for (const char* unit : kUnits) {
     const std::string obj = tmp.file(std::string(unit) + ".o");
-    const auto o = suite::compile_main({"compile.py",
+    const auto o = suite::compile_main({"c6502",
                                         suite::repo_path("examples/zork/" + std::string(unit) + ".c"),
                                         "-c", "-O", "-o", obj});
     REQUIRE_MESSAGE(o.status == 0, unit << ": " << o.err());

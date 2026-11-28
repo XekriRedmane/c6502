@@ -17,19 +17,19 @@ namespace {
 
 namespace cc = c6502::compile_command;
 
-// compile.py's usage at 41 columns.
+// c6502's usage at 41 columns.
 const char kUsage41[] =
-    "usage: compile.py [-h] [-o OUTPUT]\n"
-    "                  [--lex | --parse | --resolve | --tac | -S | -c]\n"
-    "                  [-O] [-T SCRIPT]\n"
-    "                  [--origin ADDR]\n"
-    "                  [--defsym NAME=VALUE]\n"
-    "                  inputs [inputs ...]\n";
+    "usage: c6502 [-h] [-o OUTPUT]\n"
+    "             [--lex | --parse | --resolve | --tac | -S | -c]\n"
+    "             [-O] [-T SCRIPT]\n"
+    "             [--origin ADDR]\n"
+    "             [--defsym NAME=VALUE]\n"
+    "             inputs [inputs ...]\n";
 
 cc::Outcome run41(const std::vector<std::string>& args) {
   cc::Options options;
   options.columns = 41;
-  std::vector<std::string> argv{"compile.py"};
+  std::vector<std::string> argv{"c6502"};
   argv.insert(argv.end(), args.begin(), args.end());
   return cc::run(argv, options);
 }
@@ -45,19 +45,19 @@ TEST_CASE("compile: argparse's usage errors") {
     return o.err();
   };
   const std::string usage = kUsage41;
-  CHECK(err({}) == usage + "compile.py: error: the following arguments are required: inputs\n");
+  CHECK(err({}) == usage + "c6502: error: the following arguments are required: inputs\n");
   CHECK(err({"a.c", "-c", "-S"}) ==
-        usage + "compile.py: error: argument -S: not allowed with argument -c\n");
+        usage + "c6502: error: argument -S: not allowed with argument -c\n");
   CHECK(err({"a.c", "-Sc"}) ==
-        usage + "compile.py: error: argument -c: not allowed with argument -S\n");
+        usage + "c6502: error: argument -c: not allowed with argument -S\n");
   CHECK(err({"a.c", "--origin", "'x'"}) ==
-        usage + "compile.py: error: argument --origin: invalid _number value: \"'x'\"\n");
+        usage + "c6502: error: argument --origin: invalid _number value: \"'x'\"\n");
   // `_rewrite_ttext` spells `-Ttext=ADDR` as `--origin ADDR`.
   CHECK(err({"a.c", "-Ttext=0x"}) ==
-        usage + "compile.py: error: argument --origin: invalid _number value: '0x'\n");
+        usage + "c6502: error: argument --origin: invalid _number value: '0x'\n");
   CHECK(err({"a.c", "-O2"}) ==
-        usage + "compile.py: error: argument -O: ignored explicit argument '2'\n");
-  CHECK(err({"-o"}) == usage + "compile.py: error: argument -o: expected one argument\n");
+        usage + "c6502: error: argument -O: ignored explicit argument '2'\n");
+  CHECK(err({"-o"}) == usage + "c6502: error: argument -o: expected one argument\n");
 }
 
 TEST_CASE("compile: the help") {
@@ -77,12 +77,12 @@ TEST_CASE("compile: the help") {
                   "                   store elimination),\n") != std::string::npos);
 }
 
-TEST_CASE("compile: compile.py's own checks, after argparse's") {
+TEST_CASE("compile: c6502's own checks, after argparse's") {
   const cc::Outcome o = run41({"-S", "a.c", "a.c", "-o", "x.s", "-DX"});
   CHECK(!o.exited);
   CHECK(o.status == 2);
-  CHECK(o.err() == "compile.py: -o with more than one input\n");
-  CHECK(run41({"--lex", "x.o"}).err() == "compile.py: x.o isn't a C source\n");
+  CHECK(o.err() == "c6502: -o with more than one input\n");
+  CHECK(run41({"--lex", "x.o"}).err() == "c6502: x.o isn't a C source\n");
 }
 
 TEST_CASE("compile: a C source on stdin") {
@@ -94,7 +94,7 @@ TEST_CASE("compile: a C source on stdin") {
     ++reads;
     return std::string(reads == 1 ? "_Bool b;\n" : "");
   };
-  const cc::Outcome o = cc::run({"compile.py", "-", "-", "--lex"}, options);
+  const cc::Outcome o = cc::run({"c6502", "-", "-", "--lex"}, options);
   CHECK(o.status == 0);
   CHECK(reads == 2);
   REQUIRE(o.writes.size() == 2);

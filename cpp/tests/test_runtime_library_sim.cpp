@@ -138,7 +138,7 @@ Exe build(const std::string& src, const std::vector<std::string>& extra = {},
   const suite::TempDir tmp;
   const std::string obj = tmp.file("a.o");
   REQUIRE(suite::compile_object(src, obj) == 0);
-  std::vector<std::string> argv{"compile.py", obj, "-o", tmp.file("prog")};
+  std::vector<std::string> argv{"c6502", obj, "-o", tmp.file("prog")};
   if (script) {
     suite::write_file(tmp.file("prog.ld"), *script);
     argv.insert(argv.begin() + 1, {"-T", tmp.file("prog.ld")});

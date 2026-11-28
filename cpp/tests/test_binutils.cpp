@@ -182,7 +182,7 @@ TEST_CASE("elf: the fields elf.write packs in 32 unsigned bits") {
 }
 
 TEST_CASE("argparse: nm's usage, errors, and combined flags") {
-  c6502::argparse::Parser ap("nm.py", "List things.");
+  c6502::argparse::Parser ap("c6502-nm", "List things.");
   ap.add_positional("files", "object or executable files");
   for (const char* name : {"-a", "-g", "-u", "-n", "-p", "-r", "-S", "-A"}) {
     ap.add_store_true({name}, "");
@@ -197,13 +197,13 @@ TEST_CASE("argparse: nm's usage, errors, and combined flags") {
     return c6502::argparse::Exit{-1, "", ""};
   };
   const std::string usage =
-      "usage: nm.py [-h] [-a] [-g] [-u] [-n] [-p] [-r] [-S] [-A] [--defined-only]\n"
-      "             files [files ...]\n";
+      "usage: c6502-nm [-h] [-a] [-g] [-u] [-n] [-p] [-r] [-S] [-A] [--defined-only]\n"
+      "                files [files ...]\n";
   CHECK(ap.format_usage(80) == usage);
-  CHECK(exit_of({}).err == usage + "nm.py: error: the following arguments are required: files\n");
+  CHECK(exit_of({}).err == usage + "c6502-nm: error: the following arguments are required: files\n");
   CHECK(exit_of({"-ax", "f"}).err ==
-        usage + "nm.py: error: argument -a: ignored explicit argument 'x'\n");
-  CHECK(exit_of({"f", "-a", "g"}).err == usage + "nm.py: error: unrecognized arguments: g\n");
+        usage + "c6502-nm: error: argument -a: ignored explicit argument 'x'\n");
+  CHECK(exit_of({"f", "-a", "g"}).err == usage + "c6502-nm: error: unrecognized arguments: g\n");
   CHECK(exit_of({"-h"}).status == 0);
   const c6502::argparse::Namespace ns = ap.parse_args({"-agu", "--", "-h"}, 80);
   CHECK(ns.flag("a"));
@@ -254,8 +254,8 @@ TEST_CASE("nm: a damaged file is named as the command line gives it") {
   const nm::ReadFile half = [&](const std::string&) { return data.substr(0, data.size() / 2); };
   std::string out;
   std::string err;
-  CHECK(nm::main({"nm.py", "./x.o"}, half, 80, out, err) == 1);
-  CHECK(err == "nm.py: ./x.o: the ELF file is truncated or damaged\n");
+  CHECK(nm::main({"c6502-nm", "./x.o"}, half, 80, out, err) == 1);
+  CHECK(err == "c6502-nm: ./x.o: the ELF file is truncated or damaged\n");
 }
 
 namespace {
@@ -402,17 +402,17 @@ TEST_CASE("objdump: a command line that asks for nothing returns 2") {
   std::string out;
   std::string err;
   const nm::ReadFile none = [](const std::string&) -> std::string { throw nm::FileError{"x"}; };
-  CHECK(objdump::main({"objdump.py", "f.o"}, none, 80, out, err) == 2);
+  CHECK(objdump::main({"c6502-objdump", "f.o"}, none, 80, out, err) == 2);
   CHECK(out.empty());
-  CHECK(err == "objdump.py: give at least one of -d -D -f -h -t -r -s -x --link-metadata\n");
+  CHECK(err == "c6502-objdump: give at least one of -d -D -f -h -t -r -s -x --link-metadata\n");
   err.clear();
-  CHECK(objdump::main({"objdump.py", "-d", "f.o"}, none, 80, out, err) == 1);
-  CHECK(err == "objdump.py: x\n");
+  CHECK(objdump::main({"c6502-objdump", "-d", "f.o"}, none, 80, out, err) == 1);
+  CHECK(err == "c6502-objdump: x\n");
   // A damaged file is named as the command line gives it, as nm names
   // one.
   const std::string data = elf::write(sample());
   const nm::ReadFile half = [&](const std::string&) { return data.substr(0, data.size() / 2); };
   err.clear();
-  CHECK(objdump::main({"objdump.py", "-d", "./x.o"}, half, 80, out, err) == 1);
-  CHECK(err == "objdump.py: ./x.o: the ELF file is truncated or damaged\n");
+  CHECK(objdump::main({"c6502-objdump", "-d", "./x.o"}, half, 80, out, err) == 1);
+  CHECK(err == "c6502-objdump: ./x.o: the ELF file is truncated or damaged\n");
 }

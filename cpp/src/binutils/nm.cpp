@@ -122,7 +122,7 @@ std::string read_path(const std::string& path) {
 int main(const std::vector<std::string>& argv, const ReadFile& read_file, int columns,
          std::string& out, std::string& err, bool* help) {
   if (help != nullptr) *help = false;
-  argparse::Parser ap("nm.py", "List the symbols of c6502 objects and executables.");
+  argparse::Parser ap("c6502-nm", "List the symbols of c6502 objects and executables.");
   ap.add_positional("files", "object or executable files");
   ap.add_store_true({"-a", "--debug-syms"}, "list local labels, mapping and file symbols too");
   ap.add_store_true({"-g", "--extern-only"}, "only global symbols");
@@ -160,11 +160,11 @@ int main(const std::vector<std::string>& argv, const ReadFile& read_file, int co
     try {
       elf = elf::read(read_file(path), path);
     } catch (const FileError& e) {
-      err += "nm.py: " + e.message + "\n";
+      err += "c6502-nm: " + e.message + "\n";
       status = 1;
       continue;
     } catch (const CompileError& e) {
-      err += std::string("nm.py: ") + e.what() + "\n";
+      err += std::string("c6502-nm: ") + e.what() + "\n";
       status = 1;
       continue;
     }

@@ -270,20 +270,20 @@ std::vector<std::string> sim_defsym_args() { return sim::defsym_args(); }
 
 long long compile_object(const std::string& source, const std::string& out_path, bool optimize,
                          const std::vector<std::string>& extra) {
-  std::vector<std::string> argv{"compile.py", "-", "-c"};
+  std::vector<std::string> argv{"c6502", "-", "-c"};
   if (optimize) argv.push_back("-O");
   argv.push_back("-o");
   argv.push_back(out_path);
   argv.insert(argv.end(), extra.begin(), extra.end());
   const compile_command::Outcome o = compile_main(argv, source);
-  if (!o.status) throw std::runtime_error("compile.py raised " + o.raised->type);
+  if (!o.status) throw std::runtime_error("c6502 raised " + o.raised->type);
   return *o.status;
 }
 
 compile_command::Outcome link(const std::vector<std::string>& paths, const std::string& out_path,
                               const std::optional<std::string>& script,
                               const std::vector<std::string>& extra) {
-  std::vector<std::string> argv{"compile.py"};
+  std::vector<std::string> argv{"c6502"};
   if (script) {
     argv.push_back("-T");
     argv.push_back(*script);
@@ -298,13 +298,13 @@ compile_command::Outcome link(const std::vector<std::string>& paths, const std::
 
 std::string listing(const std::string& exe_path) {
   const ToolOutcome o =
-      objdump_main({"objdump.py", "-D", "--no-show-raw-insn", "--no-addresses", exe_path});
+      objdump_main({"c6502-objdump", "-D", "--no-show-raw-insn", "--no-addresses", exe_path});
   if (o.status != 0) throw std::runtime_error("objdump failed: " + o.err);
   return o.out;
 }
 
 std::string linked_text(const std::string& exe_path) {
-  const ToolOutcome meta = objdump_main({"objdump.py", "--link-metadata", exe_path});
+  const ToolOutcome meta = objdump_main({"c6502-objdump", "--link-metadata", exe_path});
   if (meta.status != 0) throw std::runtime_error("objdump failed: " + meta.err);
   return listing(exe_path) + "\n" + (meta.out == "(no link metadata)\n" ? "" : meta.out);
 }

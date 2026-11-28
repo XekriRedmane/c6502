@@ -163,7 +163,7 @@ std::tuple<long long, std::string, std::string> link_units(const std::vector<std
   options.inline_calls = inline_calls;
   for (std::size_t k = 0; k < sources.size(); ++k) {
     const std::string path = tmp.file("u" + std::to_string(k) + ".o");
-    const auto o = suite::compile_main({"compile.py", "-", "-c", "-O", "-o", path}, sources[k],
+    const auto o = suite::compile_main({"c6502", "-", "-c", "-O", "-o", path}, sources[k],
                                        options);
     REQUIRE(o.status == 0);
     paths.push_back(path);

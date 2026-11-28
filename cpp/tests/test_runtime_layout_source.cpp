@@ -217,7 +217,7 @@ namespace {
 
 // Compiles `src` from stdin with `-S -O` to `path`.
 void compile_s(const std::string& src, const std::string& path) {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O", "-o", path}, src);
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O", "-o", path}, src);
   REQUIRE(o.status == 0);
 }
 

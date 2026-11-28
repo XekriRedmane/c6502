@@ -43,14 +43,14 @@ Run run(const std::vector<std::string>& argv, const std::string& stdin_text = ""
 
 // Returns the `-S` text of `src`, compiled from stdin.
 std::string codegen(const std::string& src) {
-  const Run r = run({"compile.py", "-", "-S"}, src);
+  const Run r = run({"c6502", "-", "-S"}, src);
   REQUIRE_MESSAGE(r.rc == 0, r.err);
   return r.out;
 }
 
 // Returns the `--tac` text of `src`, compiled from stdin.
 std::string tac(const std::string& src) {
-  const Run r = run({"compile.py", "-", "--tac"}, src);
+  const Run r = run({"c6502", "-", "--tac"}, src);
   REQUIRE_MESSAGE(r.rc == 0, r.err);
   return r.out;
 }
@@ -62,7 +62,7 @@ bool starts_with(const std::string& s, const std::string& prefix) {
 // Returns stderr of `-S` on `src`, which must fail with one line that
 // reports the problem with the program.
 std::string expect_failure(const std::string& src) {
-  const Run r = run({"compile.py", "-", "-S"}, src);
+  const Run r = run({"c6502", "-", "-S"}, src);
   REQUIRE_MESSAGE(r.rc != 0, "expected compilation to fail for: " << src);
   CHECK_MESSAGE(starts_with(r.err, "<stdin>: error: "), r.err);
   return r.err;
@@ -123,7 +123,7 @@ asm_ast::Program compile_to_asm(const std::string& source, bool optimize) {
 // --- The driver ---
 
 TEST_CASE("compile: --lex on stdin prints the tokens") {
-  const Run r = run({"compile.py", "-", "--lex"}, kSource);
+  const Run r = run({"c6502", "-", "--lex"}, kSource);
   CHECK(r.rc == 0);
   const auto lines = suite::lines(r.out);
   REQUIRE_FALSE(lines.empty());
@@ -134,7 +134,7 @@ TEST_CASE("compile: --lex on stdin prints the tokens") {
 }
 
 TEST_CASE("compile: --parse on stdin prints the tree") {
-  const Run r = run({"compile.py", "-", "--parse"}, kSource);
+  const Run r = run({"c6502", "-", "--parse"}, kSource);
   CHECK(r.rc == 0);
   for (const char* needle : {"Program(", "FunctionDecl(", "Constant(", "ConstInt(", "value=42"}) {
     INFO(needle);
@@ -154,7 +154,7 @@ TEST_CASE("compile: a construct c6502 doesn't take is a one-line error") {
   };
   for (const auto& [src, message] : cases) {
     INFO(src);
-    const Run r = run({"compile.py", "-", "-S"}, src);
+    const Run r = run({"c6502", "-", "-S"}, src);
     CHECK(r.rc == 1);
     CHECK_MESSAGE(starts_with(r.err, "<stdin>: error: "), r.err);
     CHECK(suite::contains(r.err, message));
@@ -163,7 +163,7 @@ TEST_CASE("compile: a construct c6502 doesn't take is a one-line error") {
 }
 
 TEST_CASE("compile: --tac on stdin prints the TAC") {
-  const Run r = run({"compile.py", "-", "--tac"}, "int main(void) { return -42; }");
+  const Run r = run({"c6502", "-", "--tac"}, "int main(void) { return -42; }");
   CHECK(r.rc == 0);
   for (const char* needle : {"Unary(", "Negate(", "'%0'", "Ret("}) {
     INFO(needle);
@@ -172,7 +172,7 @@ TEST_CASE("compile: --tac on stdin prints the TAC") {
 }
 
 TEST_CASE("compile: -S on stdin prints the assembly") {
-  const Run r = run({"compile.py", "-", "-S"}, kSource);
+  const Run r = run({"c6502", "-", "-S"}, kSource);
   CHECK(r.rc == 0);
   for (const char* needle : {"main:", "SUBROUTINE", "LDA   #$2A", "RTS"}) {
     INFO(needle);
@@ -304,13 +304,13 @@ TEST_CASE("compile: the preprocessor strips comments") {
 TEST_CASE("compile: -S -o writes the assembly to the file") {
   const suite::TempDir tmp;
   const std::string out_path = tmp.file("hello.asm");
-  const Run r = run({"compile.py", "-", "-S", "-o", out_path}, "int main(void) { return 7; }");
+  const Run r = run({"c6502", "-", "-S", "-o", out_path}, "int main(void) { return 7; }");
   CHECK(r.rc == 0);
   CHECK(suite::contains(suite::read_file(out_path), "LDA   #$07"));
 }
 
 TEST_CASE("compile: -S output must end in .s or .asm") {
-  const Run r = run({"compile.py", "-", "-S", "-o", "out.txt"}, kSource);
+  const Run r = run({"c6502", "-", "-S", "-o", "out.txt"}, kSource);
   CHECK(r.rc == 2);
   CHECK(suite::contains(r.err, ".s or .asm suffix"));
 }
@@ -318,19 +318,19 @@ TEST_CASE("compile: -S output must end in .s or .asm") {
 TEST_CASE("compile: the other stages' outputs can have any suffix") {
   const suite::TempDir tmp;
   const std::string out_path = tmp.file("tokens.txt");
-  const Run r = run({"compile.py", "-", "--lex", "-o", out_path}, kSource);
+  const Run r = run({"c6502", "-", "--lex", "-o", out_path}, kSource);
   CHECK(r.rc == 0);
   CHECK(suite::contains(suite::read_file(out_path), "keyword\tint"));
 }
 
 TEST_CASE("compile: the stage flags are mutually exclusive") {
-  const auto o = suite::compile_main({"compile.py", "-", "--lex", "--parse"}, kSource);
+  const auto o = suite::compile_main({"c6502", "-", "--lex", "--parse"}, kSource);
   CHECK(o.exited);
   CHECK(o.status == 2);
 }
 
 TEST_CASE("compile: an input is required") {
-  const auto o = suite::compile_main({"compile.py", "-S"}, kSource);
+  const auto o = suite::compile_main({"c6502", "-S"}, kSource);
   CHECK(o.exited);
   CHECK(o.status == 2);
 }
@@ -339,7 +339,7 @@ TEST_CASE("compile: the input can be a file") {
   const suite::TempDir tmp;
   const std::string in_path = tmp.file("hello.c");
   suite::write_file(in_path, kSource);
-  const Run r = run({"compile.py", in_path, "-S", "-o", "-"});
+  const Run r = run({"c6502", in_path, "-S", "-o", "-"});
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.out, "LDA   #$2A"));
 }
@@ -354,7 +354,7 @@ TEST_CASE("compile: -S names the assembly after the source, in the current direc
   Run r;
   {
     const suite::ChangeDir in_tmp(tmp.path());
-    r = run({"compile.py", src, "-S"});
+    r = run({"c6502", src, "-S"});
   }
   CHECK(r.rc == 0);
   CHECK(r.out == "");
@@ -362,13 +362,13 @@ TEST_CASE("compile: -S names the assembly after the source, in the current direc
 }
 
 TEST_CASE("compile: -D passes a macro to the preprocessor") {
-  const Run r = run({"compile.py", "-", "-S", "-D", "MAX=42"}, "int main(void) { return MAX; }");
+  const Run r = run({"c6502", "-", "-S", "-D", "MAX=42"}, "int main(void) { return MAX; }");
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.out, "LDA   #$2A"));
 }
 
 TEST_CASE("compile: -D without a value defines the macro as 1") {
-  const Run r = run({"compile.py", "-", "-S", "-D", "FOO"}, "int main(void) { return FOO; }");
+  const Run r = run({"c6502", "-", "-S", "-D", "FOO"}, "int main(void) { return FOO; }");
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.out, "LDA   #$01"));
 }
@@ -376,7 +376,7 @@ TEST_CASE("compile: -D without a value defines the macro as 1") {
 TEST_CASE("compile: __PCPP_VERSION__ is predefined") {
   // The macro holds pcpp's version string ("1.30"), which the parser
   // would reject as a numeric expression, so only `#ifdef` tests it.
-  const Run r = run({"compile.py", "-", "-S"},
+  const Run r = run({"c6502", "-", "-S"},
                     "#ifdef __PCPP_VERSION__\n"
                     "int main(void) { return 99; }\n"
                     "#else\n"
@@ -387,7 +387,7 @@ TEST_CASE("compile: __PCPP_VERSION__ is predefined") {
 }
 
 TEST_CASE("compile: a flag the preprocessor doesn't know is reported and ignored") {
-  const Run r = run({"compile.py", "-", "-S", "--no-such-pcpp-flag"}, kSource);
+  const Run r = run({"c6502", "-", "-S", "--no-such-pcpp-flag"}, kSource);
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.err, "--no-such-pcpp-flag"));
   CHECK(suite::contains(r.err, "not known"));
@@ -643,7 +643,7 @@ TEST_CASE("compile: -O puts a register-allocated local in zero page") {
   // Two locals that depend on a parameter keep constant folding from
   // removing them. The EQU binds each in the caller-saved range, so dasm
   // encodes the loads as zero-page ones.
-  const Run r = run({"compile.py", "-", "-S", "-O"},
+  const Run r = run({"c6502", "-", "-S", "-O"},
                     "int main(int p) { int a = p + 1; int b = a + p; return b; }");
   CHECK(r.rc == 0);
   CHECK(suite::search(R"(LDA\s+__local_main__\w+)", r.out));
@@ -653,7 +653,7 @@ TEST_CASE("compile: -O puts a register-allocated local in zero page") {
 TEST_CASE("compile: without -O the locals stay in the frame") {
   // A static could be read absolutely too, but by its symbol, not by a
   // literal zero-page address.
-  const Run r = run({"compile.py", "-", "-S"},
+  const Run r = run({"c6502", "-", "-S"},
                     "int main(int p) { int a = p + 1; int b = a + p; return b; }");
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.out, "(FP),Y"));
@@ -661,7 +661,7 @@ TEST_CASE("compile: without -O the locals stay in the frame") {
 }
 
 TEST_CASE("compile: -O gives an eligible function's parameter a zero-page slot") {
-  const Run r = run({"compile.py", "-", "-S", "-O"}, "int main(int p) { return p + 1; }");
+  const Run r = run({"c6502", "-", "-S", "-O"}, "int main(int p) { return p + 1; }");
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.out, "__zpabi_main__p_0"));
   CHECK_FALSE(suite::contains(r.out, "(FP),Y"));
@@ -670,7 +670,7 @@ TEST_CASE("compile: -O gives an eligible function's parameter a zero-page slot")
 TEST_CASE("compile: -O leaves a recursive function's parameter in the frame") {
   // A recursive call would overwrite the outer activation's slots, so
   // the function falls back to the soft stack.
-  const Run r = run({"compile.py", "-", "-S", "-O"},
+  const Run r = run({"c6502", "-", "-S", "-O"},
                     "int r(int x) { return x ? r(x - 1) : 0; } int main(void) { return r(3); }");
   CHECK(r.rc == 0);
   CHECK(suite::contains(r.out, "(FP),Y"));
@@ -686,7 +686,7 @@ TEST_CASE("compile: -O compiles representative programs") {
   };
   for (const std::string& src : sources) {
     INFO(src);
-    const Run r = run({"compile.py", "-", "-S", "-O"}, src);
+    const Run r = run({"c6502", "-", "-S", "-O"}, src);
     CHECK(r.rc == 0);
     CHECK(suite::contains(r.out, "main:"));
     CHECK(suite::contains(r.out, "RTS"));

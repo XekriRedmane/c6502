@@ -21,7 +21,7 @@ int main(void) {
 }  // namespace
 
 TEST_CASE("unroll: a loop the unroller rejects is a one-line error") {
-  const auto o = suite::compile_main({"compile.py", "-", "-S", "-O"},
+  const auto o = suite::compile_main({"c6502", "-", "-S", "-O"},
                                      "unsigned char row[256];\n"
                                      "void fill(unsigned char v) {\n"
                                      "    [[c6502::unroll]] "
@@ -42,7 +42,7 @@ TEST_CASE("unroll: a loop the unroller rejects is a one-line error") {
 
 TEST_CASE("unroll: -O unrolls a marked loop") {
   // A loop left in the TAC would have its continue and break labels.
-  const auto o = suite::compile_main({"compile.py", "-", "--tac", "-O"}, kSumLoop);
+  const auto o = suite::compile_main({"c6502", "-", "--tac", "-O"}, kSumLoop);
   CHECK_FALSE(o.exited);
   CHECK(o.status == 0);
   CHECK_FALSE(suite::contains(o.out(), "_continue"));
@@ -50,7 +50,7 @@ TEST_CASE("unroll: -O unrolls a marked loop") {
 }
 
 TEST_CASE("unroll: without -O a marked loop stays a loop") {
-  const auto o = suite::compile_main({"compile.py", "-", "--tac"}, kSumLoop);
+  const auto o = suite::compile_main({"c6502", "-", "--tac"}, kSumLoop);
   CHECK_FALSE(o.exited);
   CHECK(o.status == 0);
   CHECK(suite::contains(o.out(), "_continue"));

@@ -23,7 +23,7 @@ const std::string kAltBoolWarning =
 // compile.py's exit status and stderr for `src` on stdin.
 std::pair<long long, std::string> compile_s(const std::string& src,
                                             const std::vector<std::string>& flags = {}) {
-  std::vector<std::string> argv{"compile.py", "-", "-S"};
+  std::vector<std::string> argv{"c6502", "-", "-S"};
   argv.insert(argv.end(), flags.begin(), flags.end());
   const auto o = suite::compile_main(argv, src);
   REQUIRE(o.status.has_value());
@@ -32,7 +32,7 @@ std::pair<long long, std::string> compile_s(const std::string& src,
 
 }  // namespace
 
-TEST_CASE("c23_bool: compile.py warns at _Bool and succeeds") {
+TEST_CASE("c23_bool: c6502 warns at _Bool and succeeds") {
   for (const std::vector<std::string>& flags :
        {std::vector<std::string>{}, std::vector<std::string>{"-O"}}) {
     INFO((flags.empty() ? "" : "-O"));

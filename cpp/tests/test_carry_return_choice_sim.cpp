@@ -101,7 +101,7 @@ int main(void) {
 )c";
 namespace linked {
 std::string compile(const std::string& src, const std::string& path) {
-  const auto o = compile_main({"compile.py", "-", "-S", "-O", "-o", path}, src);
+  const auto o = compile_main({"c6502", "-", "-S", "-O", "-o", path}, src);
   CHECK(o.status == 0);
   return read_file(path);
 }
@@ -114,7 +114,7 @@ TEST_CASE("carry_return_choice: units agree on the convention and run") {
   CHECK(search("; def is_digit .*carry=true", lib));
   CHECK(search("; ext is_digit .*carry=true", main_text));
   const std::string out = tmp.file("out");
-  CHECK(compile_main({"compile.py", tmp.file("lib.asm"), tmp.file("main.asm"), "-o", out}).status == 0);
+  CHECK(compile_main({"c6502", tmp.file("lib.asm"), tmp.file("main.asm"), "-o", out}).status == 0);
   // Three of the five are digits.
   CHECK(build_linked_sim(out).run().return_int() == 33);
 }

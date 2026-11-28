@@ -79,7 +79,7 @@ TEST_CASE("peephole_fixedpoint stops at the cap") {
   CHECK(calls == passes::kPeepholeFixedpointCap);
 }
 
-TEST_CASE("the sweep holds compile.py's passes in its order") {
+TEST_CASE("the sweep holds c6502's passes in its order") {
   const passes::SymbolAddrs none;
   std::vector<std::string> names;
   for (const auto& p : passes::peephole_sweep(passes::AsmContext{}, nullptr, &none, {})) {

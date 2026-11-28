@@ -22,10 +22,7 @@
 #define NOMINMAX
 #include <windows.h>
 #else
-#include <spawn.h>
-#include <sys/wait.h>
 #include <unistd.h>
-extern char** environ;
 #endif
 
 #include "backend.h"
@@ -34,6 +31,7 @@ extern char** environ;
 #include "errors.h"
 #include "json.h"
 #include "pcpp_text.h"
+#include "processes.h"
 #include "pyrepr.h"
 #include "sha256.h"
 
@@ -387,91 +385,6 @@ JobResult run_job(const Manifest& m, const Job& job, const Root& root, const fs:
 
 // --- Workers ---
 
-// Returns the path of the running executable.
-std::string self_path(const std::string& fallback) {
-#ifdef _WIN32
-  wchar_t buf[MAX_PATH * 4];
-  const DWORD n = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-  if (n > 0 && n < std::size(buf)) return path_text(fs::path(std::wstring(buf, n)));
-#else
-  char buf[4096];
-  const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
-  if (n > 0) return std::string(buf, static_cast<std::size_t>(n));
-#endif
-  return fallback;
-}
-
-#ifdef _WIN32
-// Quotes `arg` for CommandLineToArgvW, as Python's
-// `subprocess.list2cmdline` does.
-std::wstring quote_arg(const std::wstring& arg) {
-  if (!arg.empty() && arg.find_first_of(L" \t\"") == std::wstring::npos) return arg;
-  std::wstring out = L"\"";
-  std::size_t backslashes = 0;
-  for (wchar_t c : arg) {
-    if (c == L'\\') {
-      ++backslashes;
-      continue;
-    }
-    if (c == L'"') {
-      out.append(backslashes * 2 + 1, L'\\');
-    } else {
-      out.append(backslashes, L'\\');
-    }
-    backslashes = 0;
-    out += c;
-  }
-  out.append(backslashes * 2, L'\\');
-  return out + L"\"";
-}
-#endif
-
-// Starts each command line of `commands` and waits for all of them,
-// returning their exit statuses.
-std::vector<int> run_all(const std::vector<std::vector<std::string>>& commands) {
-  std::vector<int> statuses(commands.size(), -1);
-#ifdef _WIN32
-  std::vector<PROCESS_INFORMATION> procs(commands.size());
-  for (std::size_t i = 0; i < commands.size(); ++i) {
-    std::wstring line;
-    for (const std::string& a : commands[i]) {
-      if (!line.empty()) line += L' ';
-      line += quote_arg(utf8_path(a).wstring());
-    }
-    STARTUPINFOW si{};
-    si.cb = sizeof si;
-    if (!CreateProcessW(nullptr, line.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si,
-                        &procs[i])) {
-      throw std::runtime_error("can't start a worker");
-    }
-  }
-  for (std::size_t i = 0; i < commands.size(); ++i) {
-    WaitForSingleObject(procs[i].hProcess, INFINITE);
-    DWORD code = 1;
-    GetExitCodeProcess(procs[i].hProcess, &code);
-    statuses[i] = static_cast<int>(code);
-    CloseHandle(procs[i].hProcess);
-    CloseHandle(procs[i].hThread);
-  }
-#else
-  std::vector<pid_t> pids(commands.size());
-  for (std::size_t i = 0; i < commands.size(); ++i) {
-    std::vector<char*> argv;
-    for (const std::string& a : commands[i]) argv.push_back(const_cast<char*>(a.c_str()));
-    argv.push_back(nullptr);
-    if (posix_spawn(&pids[i], argv[0], nullptr, nullptr, argv.data(), environ) != 0) {
-      throw std::runtime_error("can't start a worker");
-    }
-  }
-  for (std::size_t i = 0; i < commands.size(); ++i) {
-    int status = 0;
-    waitpid(pids[i], &status, 0);
-    statuses[i] = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
-  }
-#endif
-  return statuses;
-}
-
 struct Options {
   fs::path root;
   int jobs = 1;
@@ -627,7 +540,7 @@ int check_golden(const std::vector<std::string>& args, const std::string& self) 
 
   const auto start = std::chrono::steady_clock::now();
   const std::vector<Manifest> manifests = read_manifests(opts);
-  const std::string exe = self_path(self);
+  const std::string exe = path_text(processes::self_path(self));
   const fs::path results_dir =
       fs::temp_directory_path() / ("c6502-golden-results-" + std::to_string(
 #ifdef _WIN32
@@ -655,7 +568,7 @@ int check_golden(const std::vector<std::string>& args, const std::string& self) 
     if (opts.update) cmd.push_back("--update");
     commands.push_back(std::move(cmd));
   }
-  const std::vector<int> statuses = run_all(commands);
+  const std::vector<int> statuses = processes::run_all(commands);
   std::map<std::size_t, WorkerResult> results;
   for (int k = 0; k < opts.jobs; ++k) {
     if (statuses[k] != 0) {

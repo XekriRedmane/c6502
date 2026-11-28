@@ -26,6 +26,7 @@
 #include "errors.h"
 #include "json.h"
 #include "pcpp_text.h"
+#include "processes.h"
 #include "pyrepr.h"
 
 namespace c6502::compile_command {
@@ -742,48 +743,6 @@ class Compile {
 
 // --- The command ---
 
-// Returns the path of the running executable, or `fallback`.
-fs::path self_path(const std::string& fallback) {
-#ifdef _WIN32
-  wchar_t buf[MAX_PATH * 4];
-  const DWORD n = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-  if (n > 0 && n < std::size(buf)) return fs::path(std::wstring(buf, n));
-#else
-  char buf[4096];
-  const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
-  if (n > 0) return fs::path(std::string(buf, static_cast<std::size_t>(n)));
-#endif
-  return utf8_path(fallback);
-}
-
-// Whether `root` is a c6502 checkout, which holds compile.py and
-// include/stdint.h.
-bool is_checkout(const fs::path& root) {
-  std::error_code ec;
-  return fs::is_regular_file(root / "compile.py", ec) &&
-         fs::is_regular_file(root / "include" / "stdint.h", ec);
-}
-
-// Returns the include/ of the c6502 checkout the executable is in (the
-// first directory up from the executable's that is one), or else of the
-// source tree it was built from, with the platform's separators, as
-// cpp_backend.py's `_INCLUDE_DIR` spells it.
-std::string find_include_dir(const std::string& self) {
-  std::error_code ec;
-  fs::path p = fs::absolute(self_path(self), ec).parent_path();
-  for (;; p = p.parent_path()) {
-    if (is_checkout(p)) return (p / "include").make_preferred().string();
-    if (p == p.parent_path()) break;
-  }
-#ifdef C6502_SOURCE_ROOT
-  const fs::path built = fs::weakly_canonical(utf8_path(C6502_SOURCE_ROOT), ec);
-  if (is_checkout(built)) return (built / "include").make_preferred().string();
-#endif
-  throw std::runtime_error(
-      "compile can't find c6502's include/ above the executable, which it looks for beside "
-      "compile.py");
-}
-
 // Returns whether the environment variable `name` is "1".
 bool env_is_one(const char* name) {
 #ifdef _MSC_VER
@@ -896,7 +855,31 @@ int framed(const std::vector<std::string>& argv) {
   return 0;
 }
 
+// Whether `root` is a c6502 checkout, which holds compile.py and
+// include/stdint.h.
+bool is_checkout(const fs::path& root) {
+  std::error_code ec;
+  return fs::is_regular_file(root / "compile.py", ec) &&
+         fs::is_regular_file(root / "include" / "stdint.h", ec);
+}
+
 }  // namespace
+
+std::string find_include_dir(const std::string& self) {
+  std::error_code ec;
+  fs::path p = fs::absolute(processes::self_path(self), ec).parent_path();
+  for (;; p = p.parent_path()) {
+    if (is_checkout(p)) return (p / "include").make_preferred().string();
+    if (p == p.parent_path()) break;
+  }
+#ifdef C6502_SOURCE_ROOT
+  const fs::path built = fs::weakly_canonical(utf8_path(C6502_SOURCE_ROOT), ec);
+  if (is_checkout(built)) return (built / "include").make_preferred().string();
+#endif
+  throw std::runtime_error(
+      "compile can't find c6502's include/ above the executable, which it looks for beside "
+      "compile.py");
+}
 
 int write_bytes(const std::string& path, std::string_view data) {
   const fs::path p = utf8_path(path);

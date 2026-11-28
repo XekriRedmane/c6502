@@ -1,6 +1,8 @@
 // Tests of the generated IR classes' equality and dump format, with
 // the runtime's box and dispatch helpers (src/asdl/runtime.h).
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "asdl/runtime.h"
 #include "asm_ast.h"
@@ -130,6 +132,87 @@ TEST_CASE("optional fields and product types round-trip") {
   const c99::Type_member_decl m{.name = "m", .data_type = c99::UChar{}};
   CHECK(asdl::dump(m) == "member_decl(\"m\" UChar)\n");
   CHECK(asdl::load<c99::Type_member_decl>(asdl::dump(m)) == m);
+
+  // The string "None" is a string, and the bare word is the empty
+  // optional.
+  const tac::Type_instruction ret_none_name = tac::Ret{.val = tac::Var{.name = "None"}};
+  CHECK(asdl::dump(ret_none_name) == "Ret(Var(\"None\"))\n");
+  CHECK(asdl::load<tac::Type_instruction>(asdl::dump(ret_none_name)) == ret_none_name);
+}
+
+TEST_CASE("the reader rejects a malformed value") {
+  CHECK_THROWS_AS(asdl::load<ir::Type_operand>("Imm(x)"), asdl::ParseError);
+  CHECK_THROWS_AS(asdl::load<ir::Type_instruction>("Label(\"\\q\")"), asdl::ParseError);
+  CHECK_THROWS_AS(asdl::load<ir::Type_operand>("Reg(Imm(1))"), asdl::ParseError);
+  CHECK_THROWS_AS(asdl::load<ir::Type_operand>("Imm(1"), asdl::ParseError);
+}
+
+TEST_CASE("a string of any code point round-trips") {
+  // The code points 0 to U+017F, then U+1F600, then the lone surrogate
+  // U+D800, which ir_dump.py wrote as `\u{d800}` too.
+  const auto utf8 = [](char32_t c) {
+    std::string out;
+    if (c < 0x80) {
+      out += static_cast<char>(c);
+    } else if (c < 0x800) {
+      out += static_cast<char>(0xC0 | (c >> 6));
+      out += static_cast<char>(0x80 | (c & 0x3F));
+    } else if (c < 0x10000) {
+      out += static_cast<char>(0xE0 | (c >> 12));
+      out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+      out += static_cast<char>(0x80 | (c & 0x3F));
+    } else {
+      out += static_cast<char>(0xF0 | (c >> 18));
+      out += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+      out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+      out += static_cast<char>(0x80 | (c & 0x3F));
+    }
+    return out;
+  };
+  std::string s;
+  for (char32_t c = 0; c < 0x180; ++c) s += utf8(c);
+  s += utf8(0x1F600);
+  s += utf8(0xD800);
+  const ir::Type_instruction label = ir::Label{.name = s};
+  const std::string text = asdl::dump(label);
+  // ir_dump.py's text for the same value had 1,664 characters and ended
+  // so.
+  CHECK(text.size() == 1664);
+  CHECK(text.ends_with("\\u{17e}\\u{17f}\\u{1f600}\\u{d800}\")\n"));
+  CHECK(asdl::load<ir::Type_instruction>(text) == label);
+}
+
+TEST_CASE("large and negative integers round-trip") {
+  namespace tac = c6502::tac_ast;
+  const asdl::Int ten15 = 1000000000000000LL;
+  const std::pair<asdl::Int, std::string> cases[] = {
+      {0, "0"},
+      {-1, "-1"},
+      {asdl::Int(1) << 63, "9223372036854775808"},
+      {-(asdl::Int(1) << 63), "-9223372036854775808"},
+      {(asdl::Int(1) << 64) - 1, "18446744073709551615"},
+      {ten15 * ten15, "1000000000000000000000000000000"},
+  };
+  for (const auto& [n, digits] : cases) {
+    CAPTURE(digits);
+    const tac::Type_val v = tac::Constant{.const_ = tac::ConstULongLong{.value = n}};
+    const std::string text = asdl::dump(v);
+    CHECK(text == "Constant(ConstULongLong(" + digits + "))\n");
+    CHECK(asdl::load<tac::Type_val>(text) == v);
+  }
+}
+
+TEST_CASE("c99 data types compare by constructor and fields") {
+  namespace c99 = c6502::c99_ast;
+  const c99::Type_data_type i = c99::Int{};
+  CHECK(i == c99::Type_data_type(c99::Int{}));
+  CHECK(i != c99::Type_data_type(c99::Long{}));
+  const auto fun = [](std::vector<c99::Type_data_type> params) {
+    return c99::Type_data_type(c99::FunType{.params = std::move(params), .ret = c99::Int{}});
+  };
+  CHECK(fun({c99::Int{}, c99::Int{}}) == fun({c99::Int{}, c99::Int{}}));
+  CHECK(fun({c99::Int{}, c99::Int{}}) != fun({c99::Int{}, c99::Long{}}));
+  CHECK(fun({c99::Int{}}) != fun({c99::Int{}, c99::Int{}}));
 }
 
 TEST_CASE("pretty writes what pretty.py writes") {

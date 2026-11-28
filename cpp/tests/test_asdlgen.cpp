@@ -106,6 +106,36 @@ TEST_CASE("a parse error gives the line and column") {
                        asdlgen::Error);
   CHECK_THROWS_WITH_AS(asdlgen::parse("module T { x = A } y"),
                        "1:20: trailing input after module", asdlgen::Error);
+  CHECK_THROWS_WITH_AS(asdlgen::parse("Foo {}"), "1:1: expected 'module'", asdlgen::Error);
+  CHECK_THROWS_WITH_AS(asdlgen::parse("module F"), "1:9: expected '{'", asdlgen::Error);
+  CHECK_THROWS_WITH_AS(asdlgen::parse("module F { foo = X(Int value) }"),
+                       "1:23: field type must start with a lowercase letter: 'Int'",
+                       asdlgen::Error);
+}
+
+TEST_CASE("an empty module and a product with no fields parse") {
+  const asdlgen::Module empty = asdlgen::parse("module Foo {}");
+  CHECK(empty.name == "Foo");
+  CHECK(empty.types.empty());
+  const asdlgen::Module unit = asdlgen::parse("module F { unit = () }");
+  REQUIRE(unit.types.size() == 1);
+  CHECK(unit.types[0].name == "unit");
+  CHECK(unit.types[0].is_product);
+  CHECK(unit.types[0].fields.empty());
+}
+
+TEST_CASE("comments may come before the module, inside it, and after it") {
+  const asdlgen::Module m = asdlgen::parse(
+      "-- head\nmodule F {\n  -- inside\n  foo = (int x) -- trailing\n  -- between\n"
+      "  bar = Baz\n}\n-- tail\n");
+  REQUIRE(m.types.size() == 2);
+  CHECK(m.types[0].name == "foo");
+  REQUIRE(m.types[0].fields.size() == 1);
+  CHECK(m.types[0].fields[0].type == "int");
+  CHECK(m.types[0].fields[0].name == "x");
+  CHECK(m.types[1].name == "bar");
+  REQUIRE(m.types[1].constructors.size() == 1);
+  CHECK(m.types[1].constructors[0].name == "Baz");
 }
 
 TEST_CASE("the module name is the file's stem and _ast") {

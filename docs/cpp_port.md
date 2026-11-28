@@ -3594,6 +3594,10 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
    builds with MSVC wasn't checked. The commit that added the build
    (53fe6efd, 11 Nov 2026) gives no reason for Zig's clang, probably
    because no C++ toolchain had been set up then (inferred).
+   G6 found that MSVC builds it but writes other programs for every
+   seed, since YARPGen's draws go through the standard library's
+   distributions, and fuzz/build_yarpgen.sh builds it with Zig's
+   clang, downloaded by the script (Status, G6).
 3. **The program names.** The messages and the usage say `compile.py`,
    `nm.py`, and `objdump.py`, and the golden manifests hold the names
    on up to 4,483 lines each. Step 8 left the rename to step 9 (its
@@ -5605,3 +5609,141 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   present, gave 60 passed, against 82 at the base, and the 22 tests of
   the three game modules account for the difference. No GCC build was
   made.
+- 27 Nov 2026: group G6 of step 9 is done. The fuzzers are C++, in
+  cpp/src/fuzz/, and `c6502cpp fuzz` runs them (cpp/README.md, "The
+  fuzzers", and fuzz/CLAUDE.md).
+  - exprs.h, calls.h, stmts.h, and bit_precise_types.h are the
+    generators, on py_random, with `asdl::Int` where Python's integers
+    had no bound and a product of two 64-bit values taken modulo 2^128.
+    runner.h runs a program on the TAC interpreter and in the simulator
+    in both pipelines, in process, with the IR checks on, and writes
+    `ERR <class>: <message>` cut to 120 characters, `TIMEOUT`, and the
+    backend's limits as fuzz/runner.py did. reduce.h is fuzz/reduce.py,
+    `fuzz tac-passes` is fuzz/tac_passes.py, and yarpgen.h is
+    fuzz/yarpgen.py's driver and its merge of three files. `c6502cpp
+    fuzz GENERATOR` takes `--start`, `--count`, `--out`, and `-j`, and
+    `--verbose` and `fuzz programs` were added for the comparisons.
+  - The compiler's globals were checked. The switch of the IR checks
+    (`ir_check.cpp`'s `g_enabled`), the TAC optimizer's observer
+    (`driver.cpp`'s `current_observer`), and the caches of `ir_check`'s
+    CFG shapes and of `fnmatch`'s compiled patterns are shared by every
+    thread, so `-j` starts a process per seed (`fuzz worker`), which
+    writes its seed's record for the parent, and the parent writes the
+    results in seed order. `diagnostics`' sink, the named constants'
+    resolvers, and `pass_order`'s state are `thread_local` already.
+    The search was by `grep` for namespace-scope and `static` variables,
+    so a global it missed is possible (inferred).
+  - tools/compare_fuzzers.py compared each piece with the Python one.
+    The generators wrote the same program and expected return on seeds
+    0 to 2999 of exprs, calls, and stmts, 9,000 programs, and the
+    doctest case checks seeds 0 to 99 against golden/fuzz/, which
+    stays as it was. The runner gave each seed the same verdict and the
+    same three results:
+
+    | Generator | Seeds | The same | Python's verdicts |
+    |---|---|---|---|
+    | exprs | 0 to 299 | 300 | 275 ok, 25 rejected |
+    | calls | 0 to 299 | 300 | 294 ok, 6 rejected |
+    | stmts | 0 to 299 | 300 | 287 ok, 13 rejected |
+    | yarpgen | 0 to 99 | 100 | 41 ok, 59 rejected |
+
+    No difference was found, so nothing had to be resolved. With the
+    TAC constant fold of a subtraction made to add 1, in a build of the
+    working tree that wasn't committed, stmts seeds 2, 5, and 17 of 0
+    to 39 came out wrong on the `opt` path. Both `tac-passes` named
+    `ConstantFold` in `main` for all three, both reducers with
+    `--tac-opt` took them from 70, 76, and 123 lines to the same 35,
+    34, and 59, and both reducers without it to the same 51, 63, and 75.
+    The reduction of the doctest case's seven-line program wrong on
+    every path was the same in both too. The script went in the commit
+    that removed fuzz/'s Python, so these comparisons can be run again
+    from ecbef9e3, which still has both:
+
+    ```sh
+    C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_fuzzers.py generators --count 3000
+    C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_fuzzers.py runner -j 10
+    C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_fuzzers.py reduce [--tac-opt] FILE...
+    C6502_CPP=cpp/build/bin/c6502cpp uv run python tools/compare_fuzzers.py tac-passes FILE...
+    ```
+
+  - YARPGen's build (open question 2). A helper agent built YARPGen at
+    the pinned commit with Visual Studio's CMake and MSVC, which took
+    19 s and gave only C4244, C4146, and C4267 warnings. That build
+    wrote other programs than the Zig build of fuzz/build_yarpgen.py on
+    all of seeds 1 to 100 (seed 1's init.h starts `extern short var_3`
+    where the Zig build's starts `extern unsigned short var_0`), since
+    YARPGen draws through `std::uniform_int_distribution`,
+    `std::discrete_distribution`, and `std::shuffle`, whose results the
+    C++ standard leaves to the library. So fuzz/build_yarpgen.sh, a
+    bash script, builds with the clang of Zig 0.17.1, the Zig of the
+    `ziglang` package build_yarpgen.py used, which it downloads from
+    ziglang.org into fuzz_out and checks against the SHA-256 of
+    ziglang.org's index, with CMake and Ninja from the PATH or from
+    Visual Studio. Its binary wrote the same init.h, func.c, and
+    driver.c as build_yarpgen.py's on all 100 seeds, apart from the
+    build date and the command line in func.c's opening comment. The
+    first build took 112 s with the 96 MB download. The comment at the
+    top of the script says what a switch to MSVC would need, and that
+    every seed would then name another program. The script hasn't run
+    on Linux or macOS.
+  - The tests and the files. test_fuzz_tools.py's 5 tests were ported
+    and none dropped: seeds 0 to 2 of exprs and 1 and 44 of calls agree
+    on every path, a seed gives the same program twice, `falls_off_end`
+    on its six programs, and the reducer's predicate rejecting a
+    candidate that falls off its end. test_fuzz.cpp and
+    test_fuzz_generators.cpp hold them with 9 cases of their own: the
+    golden programs, the expected returns, the reducer on a predicate
+    of its own and on a program wrong on every path, an error's class
+    and its cut to 120 characters, a frame over 253 bytes as a backend
+    limit, `disagreements`, `expected_of`, and `merge`.
+
+    | Python file | Fate | What still reads it |
+    |---|---|---|
+    | fuzz/__init__.py, bit_precise_types.py, build_yarpgen.py, calls.py, exprs.py, reduce.py, runner.py, stmts.py, tac_passes.py, yarpgen.py | deleted | nothing |
+    | tests/test_fuzz_tools.py | deleted, its 5 tests ported | nothing |
+    | tests/test_sim_chapters.py (`_run_program`) | deleted | nothing (fuzz/runner.py read it) |
+    | tests/cpp_build.py | deleted | nothing (test_fuzz_tools.py read it) |
+    | tools/compare_fuzzers.py | added and deleted | nothing |
+    | sim/harness.py | left | sim/linked.py (`Simulation`), sim/lockstep.py (`hook_and_rts`), and the compile-example skill (`build_sim`, `run_bucketed`) |
+    | sim/assembler.py | left | sim/harness.py, sim/runtime.py's `build_runtime`, and tests/test_sim_assembler.py |
+    | sim/runtime.py, sim/lockstep.py | left | sim/harness.py, sim/linked.py, and the games' Python machines |
+
+    cpp_backend.py lost `tac_main`, `tac_results`,
+    `tac_first_changing_pass`, `tac_falls_off_end`, `TacSimError`, and
+    `enable_ir_check`, which only the fuzzers and test_sim_chapters.py
+    called. The backend's modes `tac-run`, `tac-observe`, and
+    `tac-falls-off` stay, since check-golden's `tacsim` jobs give the
+    same lines, and R removes them with the backend. The repository
+    tracks 43 Python files, against 56 at the base.
+
+  The plan changed in three places once the code was read.
+  - sim/assembler.py and sim/harness.py stay, where the plan had them
+    go with fuzz/'s Python: the games' Python machines, which stay for
+    tools/compare_game_machines.py until R, import them, and so does
+    the compile-example skill. They go with sim/ in R.
+  - YARPGen's build uses Zig's clang, downloaded by the script, where
+    the brief preferred MSVC, since MSVC's standard library makes every
+    seed name another program. Robert decides open question 2, and the
+    script's opening comment says how to switch.
+  - The C++ runner names an error by the Python class cpp_backend.py
+    would have raised for it (an `InternalError` as `AssertionError`,
+    the CPU's word read at $FFFF as py65's `IndexError`), so that its
+    output and the reducer's signatures read as the Python runner's.
+
+  No bug was found in the compiler, the simulator, or the fuzzers, and
+  no seed of the runs above came out wrong. The fresh MSVC build gave
+  11,181 doctest cases passed (124,762 assertions) with the games'
+  files present, against 11,167 at the base, which the 14 cases of the
+  two new files account for, and no warning from a file G6 added or
+  changed. ctest gave 76 of 76, `check-golden` 19,678 jobs with 0
+  differing, and `check-frozen` no difference. `c6502cpp fuzz` gave 0
+  wrong on seeds 0 to 299 of exprs (25 rejected), calls (6), and stmts
+  (13), and 0 to 99 of yarpgen (59). 300 stmts programs take 39 s in
+  one process and 8 s with `-j 12`. The suite, with `C6502_CHECK_IR=1`
+  and the games' files present, gave 55 passed, against 60 at the base,
+  and test_fuzz_tools.py's 5 tests account for the difference.
+  A GCC 12.2 build in WSL passed the 14 fuzz cases, ran 60 stmts seeds
+  with `-j 8` through `posix_spawn` and `waitpid` (0 wrong), and wrote
+  golden/fuzz/'s exprs programs. Its one warning from a G6 file is
+  GCC 12's `-Wrestrict` on a string concatenation in exprs.cpp, which
+  ten files that G6 didn't touch get too.

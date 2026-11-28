@@ -6,6 +6,7 @@
 - [[codebase/claude-code-setup]]
 - [[codebase/comment-cleanup]]
 - [[codebase/compile-command]]
+- [[codebase/fuzzers]]
 - [[codebase/game-machines]]
 - [[codebase/generated-files]]
 - [[codebase/git-bash-on-windows]]

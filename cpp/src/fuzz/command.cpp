@@ -1,7 +1,6 @@
 #include "fuzz/command.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -338,14 +337,9 @@ std::vector<fs::path> files_of(const std::vector<std::string>& paths) {
     for (const auto& entry : fs::directory_iterator(path)) {
       if (entry.path().extension() == ".c") found.push_back(entry.path());
     }
-    auto key = [](const fs::path& f) {
-      std::string k = compile_command::path_text(f);
-#ifdef _WIN32
-      for (char& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-#endif
-      return k;
-    };
-    std::sort(found.begin(), found.end(), [&](const fs::path& a, const fs::path& b) { return key(a) < key(b); });
+    std::sort(found.begin(), found.end(), [](const fs::path& a, const fs::path& b) {
+      return compile_command::path_text(a) < compile_command::path_text(b);
+    });
     files.insert(files.end(), found.begin(), found.end());
   }
   return files;

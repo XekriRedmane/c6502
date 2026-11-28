@@ -2306,8 +2306,9 @@ makes compile.py's own checks of the stage and the inputs, compiles
 each C input of `--lex`, `--parse`, `--resolve`, `--tac`, and `-S`,
 and compiles, assembles, and links the inputs of `-c` or a link ("The
 back end through c6502cpp", above). Its usage line and messages name
-the program `c6502` (`usage: c6502 ...`, `c6502: link error: ...`),
-where they said `compile.py:` until group R of step 9.
+the program by `argv[0]`, as Python's argparse did, which `c6502cpp
+compile` sets to `c6502` (`usage: c6502 ...`, `c6502: link error:
+...`), where they said `compile.py:` until group R of step 9.
 `compile_command::run` returns an `Outcome`: each write to stdout and
 stderr in its order, and the exit status, the code of a SystemExit
 (argparse's help and usage errors, and the C++ preprocessor's
@@ -3976,4 +3977,6 @@ own.
   `opcodes`, `helper-footprints`, and `sweep-passes`). `c6502cpp
   compile`, `nm`, and `objdump` are the command lines, and their usage
   and messages name the programs `c6502`, `c6502-nm`, and
-  `c6502-objdump`.
+  `c6502-objdump`. Each tool takes its name from `argv[0]`, as Python's
+  argparse did, so `check-frozen` runs the records of nm.py and
+  objdump.py under their own names.

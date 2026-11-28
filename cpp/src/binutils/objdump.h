@@ -47,6 +47,6 @@ std::vector<std::string> full_contents(const elf::ElfFile& elf, const std::set<s
 // shown returns 2 with objdump.py's own message, which Python returns
 // where argparse raises SystemExit.
 int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, int columns,
-         std::string& out, std::string& err, bool* help = nullptr);
+         std::string& out, std::string& err);
 
 }  // namespace c6502::binutils::objdump

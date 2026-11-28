@@ -279,7 +279,7 @@ class Checker {
       std::string err;
       const auto tool = kind == "nm" ? nm::main : objdump::main;
       const int status =
-          tool(argv, read_file, static_cast<int>(args.get("columns")->integer), out, err, nullptr);
+          tool(argv, read_file, static_cast<int>(args.get("columns")->integer), out, err);
       if (out != output.get("stdout")->string) {
         return "stdout differs\nC++:\n" + out + "Python:\n" + output.get("stdout")->string;
       }

@@ -63,10 +63,8 @@ std::string read_path(const std::string& path);
 // and stderr to `out` and `err`, and returns the exit status: argparse's
 // 2 for a bad command line and 0 for the help, which Python raises as
 // SystemExit, and otherwise 1 when a file couldn't be read and 0 when
-// every one was. When `help` isn't null, it's set to whether `out` holds
-// the help, which Python writes through its text stream, where it writes
-// the listing's bytes (objdump.py's `write_lf`).
+// every one was.
 int main(const std::vector<std::string>& argv, const ReadFile& read_file, int columns,
-         std::string& out, std::string& err, bool* help = nullptr);
+         std::string& out, std::string& err);
 
 }  // namespace c6502::binutils::nm

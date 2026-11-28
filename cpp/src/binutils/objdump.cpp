@@ -184,8 +184,7 @@ std::vector<std::string> full_contents(const elf::ElfFile& elf, const std::set<s
 }
 
 int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, int columns,
-         std::string& out, std::string& err, bool* help) {
-  if (help != nullptr) *help = false;
+         std::string& out, std::string& err) {
   const std::string prog = argparse::path_name(argv.at(0));
   argparse::Parser ap(prog, "Show what's in c6502 objects and executables.", false);
   ap.add_help({"--help"}, "show this message and exit");
@@ -208,7 +207,6 @@ int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, in
   } catch (const argparse::Exit& e) {
     out += e.out;
     err += e.err;
-    if (help != nullptr) *help = !e.out.empty();
     return e.status;
   }
   const bool disassemble = args.flag("disassemble");

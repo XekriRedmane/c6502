@@ -687,15 +687,10 @@ int main(int argc, char** argv) {
       argv_tool.insert(argv_tool.end(), utf8.begin() + 2, utf8.end());
       std::string out;
       std::string err;
-      bool help = false;
       const auto tool = command == "nm" ? binutils::nm::main : binutils::objdump::main;
       const int status =
-          tool(argv_tool, binutils::nm::read_path, argparse::terminal_columns(), out, err, &help);
-      if (help) {
-        std::fwrite(out.data(), 1, out.size(), stdout);
-      } else {
-        write_stdout(out);
-      }
+          tool(argv_tool, binutils::nm::read_path, argparse::terminal_columns(), out, err);
+      write_stdout(out);
       std::fflush(stdout);
 #ifdef _WIN32
       _setmode(_fileno(stderr), _O_BINARY);

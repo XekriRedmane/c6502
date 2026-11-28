@@ -120,8 +120,7 @@ std::string read_path(const std::string& path) {
 }
 
 int main(const std::vector<std::string>& argv, const ReadFile& read_file, int columns,
-         std::string& out, std::string& err, bool* help) {
-  if (help != nullptr) *help = false;
+         std::string& out, std::string& err) {
   const std::string prog = argparse::path_name(argv.at(0));
   argparse::Parser ap(prog, "List the symbols of c6502 objects and executables.");
   ap.add_positional("files", "object or executable files");
@@ -140,7 +139,6 @@ int main(const std::vector<std::string>& argv, const ReadFile& read_file, int co
   } catch (const argparse::Exit& e) {
     out += e.out;
     err += e.err;
-    if (help != nullptr) *help = !e.out.empty();
     return e.status;
   }
   Options base;

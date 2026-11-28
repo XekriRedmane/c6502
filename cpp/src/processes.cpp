@@ -1,7 +1,9 @@
 #include "processes.h"
 
 #include <iterator>
+#include <limits>
 #include <stdexcept>
+#include <type_traits>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -18,6 +20,10 @@ extern char** environ;
 #include "compile_command.h"
 
 namespace c6502::processes {
+
+#ifdef _WIN32
+static_assert(std::is_same_v<Process, HANDLE>);
+#endif
 
 namespace {
 
@@ -125,34 +131,28 @@ int run(const std::vector<std::string>& argv, Output output) {
 }
 
 std::vector<int> run_all(const std::vector<std::vector<std::string>>& commands) {
-#ifdef _WIN32
-  std::vector<HANDLE> started;
-#else
-  std::vector<pid_t> started;
-#endif
+  std::vector<Process> started;
   for (const auto& argv : commands) started.push_back(spawn(argv, Output::kInherit));
   std::vector<int> statuses;
   for (auto p : started) statuses.push_back(wait_for(p));
   return statuses;
 }
 
-Children::~Children() {
-  for (const auto& [id, p] : running_) {
+std::size_t max_children() {
 #ifdef _WIN32
-    wait_for(reinterpret_cast<HANDLE>(p));
+  return MAXIMUM_WAIT_OBJECTS;
 #else
-    wait_for(static_cast<pid_t>(p));
+  return std::numeric_limits<std::size_t>::max();
 #endif
-  }
+}
+
+Children::~Children() {
+  for (const auto& [id, p] : running_) wait_for(p);
 }
 
 std::size_t Children::start(const std::vector<std::string>& argv) {
-#ifdef _WIN32
-  if (running_.size() >= MAXIMUM_WAIT_OBJECTS) throw std::runtime_error("too many child processes");
-  running_[next_] = reinterpret_cast<std::intptr_t>(spawn(argv, Output::kInherit));
-#else
-  running_[next_] = static_cast<std::intptr_t>(spawn(argv, Output::kInherit));
-#endif
+  if (running_.size() >= max_children()) throw std::runtime_error("too many child processes");
+  running_[next_] = spawn(argv, Output::kInherit);
   return next_++;
 }
 
@@ -162,7 +162,7 @@ Children::Exit Children::wait_any() {
   std::vector<HANDLE> handles;
   std::vector<std::size_t> ids;
   for (const auto& [id, p] : running_) {
-    handles.push_back(reinterpret_cast<HANDLE>(p));
+    handles.push_back(p);
     ids.push_back(id);
   }
   const DWORD r = WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(), FALSE,
@@ -177,7 +177,7 @@ Children::Exit Children::wait_any() {
     const pid_t pid = waitpid(-1, &status, 0);
     if (pid < 0) throw std::runtime_error("can't wait for a child process");
     for (auto it = running_.begin(); it != running_.end(); ++it) {
-      if (static_cast<pid_t>(it->second) == pid) {
+      if (it->second == pid) {
         const std::size_t id = it->first;
         running_.erase(it);
         return {id, status_of(status)};

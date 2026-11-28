@@ -41,10 +41,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// The most processes `-j` starts at once, which is what Windows can wait
-// for in one call.
-constexpr int kMaxJobs = 64;
-
 constexpr const char* kUsage =
     "usage: c6502cpp fuzz GENERATOR [--start N] [--count N] [--out DIR] [-j N] [--verbose]\n"
     "       c6502cpp fuzz programs GENERATOR [--start N] [--count N] --out DIR\n"
@@ -225,7 +221,10 @@ int fuzz_main(Generator g, const std::string& prog, const std::vector<std::strin
   const argparse::Namespace ns = parse(ap, args);
   const std::int64_t start = int_value(ns, "start", 0);
   const std::int64_t count = int_value(ns, "count", 100);
-  const std::int64_t jobs = std::min<std::int64_t>(int_value(ns, "jobs", 1), kMaxJobs);
+  std::int64_t jobs = int_value(ns, "jobs", 1);
+  if (jobs > 0 && static_cast<std::uint64_t>(jobs) > processes::max_children()) {
+    jobs = static_cast<std::int64_t>(processes::max_children());
+  }
   const fs::path dir = ns.value("out") ? compile_command::utf8_path(*ns.value("out"))
                                        : fs::path("fuzz_out") / prog;
   const bool verbose = ns.flag("verbose");

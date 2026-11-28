@@ -1,13 +1,28 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
 
+#ifndef _WIN32
+#include <sys/types.h>
+#endif
+
 namespace c6502::processes {
+
+// A started child: its HANDLE on Windows, and its process ID elsewhere.
+#ifdef _WIN32
+using Process = void*;
+#else
+using Process = pid_t;
+#endif
+
+// The most children a `Children` runs at once. On Windows it's
+// MAXIMUM_WAIT_OBJECTS, the most handles WaitForMultipleObjects waits
+// for, and elsewhere there is no limit.
+std::size_t max_children();
 
 // Returns the path of the running executable, or `fallback` where the
 // platform doesn't say.
@@ -49,7 +64,7 @@ class Children {
   std::size_t running() const { return running_.size(); }
 
  private:
-  std::map<std::size_t, std::intptr_t> running_;
+  std::map<std::size_t, Process> running_;
   std::size_t next_ = 0;
 };
 

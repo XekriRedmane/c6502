@@ -189,6 +189,16 @@ std::vector<Lvalue> global_reads(const Obj& g) {
   }
 }
 
+// Returns the objects that main mixes into the checksum after its body,
+// in order.
+std::vector<Lvalue> final_reads(const Prog& p) {
+  std::vector<Lvalue> reads;
+  for (const Obj& g : p.globals) {
+    for (Lvalue& l : global_reads(g)) reads.push_back(std::move(l));
+  }
+  return reads;
+}
+
 class Types {
  public:
   explicit Types(TypeTable& table) : table_(table) {}
@@ -429,10 +439,7 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
         break;
     }
   }
-  std::vector<Lvalue> reads;
-  for (const Obj& g : p.globals) {
-    for (Lvalue& l : global_reads(g)) reads.push_back(std::move(l));
-  }
+  const std::vector<Lvalue> reads = final_reads(p);
   std::size_t fins = 0;
   for (std::size_t i = 0; i < reads.size(); i += kMixesPerFinUnderFrameLimit, ++fins) {
     lines.push_back("void fin" + std::to_string(fins) + "(void) {");
@@ -528,9 +535,7 @@ class Interp {
   void run_program(const Prog& p) {
     call("main", {});
     frames_.emplace_back();
-    for (const Obj& g : p.globals) {
-      for (const Lvalue& l : global_reads(g)) mix(mem_.at(loc(l)));
-    }
+    for (const Lvalue& l : final_reads(p)) mix(mem_.at(loc(l)));
   }
 
  private:

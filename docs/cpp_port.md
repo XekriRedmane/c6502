@@ -3586,6 +3586,10 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
    harnesses. The
    reflect skill runs `python ~/.claude/skills/exact-edits/eol.py`,
    which is outside the repository.
+   Answered 27 Nov 2026: .claude/'s Python stays. The ruminate skill and
+   its script are unchanged, and the script runs with `uv run python`
+   with no project once pyproject.toml is gone. The compile-example
+   skill gives the C++ commands.
 2. **YARPGen's build.** fuzz/build_yarpgen.py builds YARPGen with
    CMake and Ninja from PyPI through `uvx`, Zig's bundled clang, and
    `-DYARPGEN_INT_BITS=16`. The repository already depends on CMake
@@ -3598,6 +3602,8 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
    seed, since YARPGen's draws go through the standard library's
    distributions, and fuzz/build_yarpgen.sh builds it with Zig's
    clang, downloaded by the script (Status, G6).
+   Answered 27 Nov 2026: the build stays with Zig's clang, in
+   fuzz/build_yarpgen.sh.
 3. **The program names.** The messages and the usage say `compile.py`,
    `nm.py`, and `objdump.py`, and the golden manifests hold the names
    on up to 4,483 lines each. Step 8 left the rename to step 9 (its
@@ -3605,15 +3611,22 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
    `c6502-objdump`). The rewrite is mechanical, through `check-golden
    --update`, and the question is whether it happens and when, in R
    or in a commit of its own whose golden diff holds the names alone.
+   Answered 27 Nov 2026: the programs are `c6502`, `c6502-nm`, and
+   `c6502-objdump`, renamed in R in a commit of their own. The executable
+   stays `c6502cpp`.
 4. **The checkout marker.** `is_checkout` finds include/ by looking
    for compile.py beside include/stdint.h. Before R, the test is
    changed to look for another file, such as cpp/CMakeLists.txt, and
    the question is which file.
+   Answered 27 Nov 2026: cpp/CMakeLists.txt beside include/.
 5. **examples/*.asm.** Once decision 4 drops their comparisons, the
    checked-in `.asm` files of the examples and the three games, and
    examples/zork/interpreter.asm, are copies that nothing checks. They
    could stay with a check that each equals golden/O/'s text, or go,
    leaving golden/ as the only copy.
+   Answered 27 Nov 2026: they go, and golden/O/ is the only copy.
+   examples/zork/interpreter.asm, the listing of the linked program,
+   stays.
 6. **The harness's assembler.** The plan ports sim/assembler.py, so
    that the images are the same bytes and the comparison with py65 is
    exact. The alternative compiles with `-c`, links with the
@@ -3621,9 +3634,12 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
    does. That drops 1,699 lines but changes every program's layout,
    and possibly its zero-page slots and its cycles (inferred). The
    switch could also come after Python is gone.
+   Settled by G4, which ported sim/assembler.py (Status, G4).
 7. **The conversions of a NaN or an infinity.** The question is
    whether the C++ hook stops the run with the TAC interpreter's
    error, as this plan reads decision 1, or writes a value.
+   Answered 27 Nov 2026: the run stops with the TAC interpreter's
+   error, as it does.
 
 ## Status
 
@@ -5747,3 +5763,118 @@ on G1's library, G2's builders, and G3's CPU, G5 on G4, and G6 on G1's
   golden/fuzz/'s exprs programs. Its one warning from a G6 file is
   GCC 12's `-Wrestrict` on a string concatenation in exprs.cpp, which
   ten files that G6 didn't touch get too.
+- 27 Nov 2026: group R of step 9 is done, and so is step 9. The
+  repository tracks one Python file,
+  .claude/skills/ruminate/scripts/extract-conversations.py, which Robert
+  kept, and building, testing, and fuzzing the compiler need no Python.
+  - The checkout marker came first: `is_checkout` looks for
+    cpp/CMakeLists.txt beside include/stdint.h (open question 4).
+  - The programs are `c6502`, `c6502-nm`, and `c6502-objdump` (open
+    question 3), in a commit of their own. golden/ was written again with
+    `check-golden --update` after the manifests' `run` lines had their
+    first argument renamed, and of the 24,161 changed lines, 23,961 differ
+    only in the name and 200 are usages that argparse wrapped again for
+    the shorter name, which differ only in whitespace. A user types
+    `cpp/build/bin/c6502cpp compile foo.c -S -O`, `c6502cpp nm`, and
+    `c6502cpp objdump`, and the messages say `usage: c6502 ...`, `c6502:
+    link error: ...`, and `c6502-nm: x.o: ...`. The executable is still
+    `c6502cpp`, which Robert can rename later. The rename made
+    `check-frozen` fail 14 of the 100 records of nm.py and objdump.py,
+    which hold those tools' messages and usage, so the three tools take
+    their names from `argv[0]`, as Python's argparse did, and the records
+    keep theirs.
+  - The Python went: compile.py, nm.py, objdump.py, cpp_backend.py,
+    errors.py, diagnostics.py, the four IR modules, ir_dump.py, asdl.py,
+    builtin_functions.py, main.py, sim/ (10 files), binutils/*.py (3),
+    passes/*.py (4), tests/'s 9 files, tools/compare_game_machines.py,
+    tools/py65_cpu_vectors.py, and tools/py_random_vectors.py, and
+    pyproject.toml, uv.lock, requirements.txt, and .python-version, 46
+    files in all. cpp/tests/frozen/cpu and cpp/tests/frozen/py_random.txt
+    were frozen from the two vector tools and can't be written again.
+    Each test was read against the C++ cases before it went:
+
+    | Python test | What covers it |
+    |---|---|
+    | test_binutils.py, 4 tests | test_binutils_source.cpp's round trip, header, and damaged copies, and test_binutils.cpp's relocation past its section |
+    | test_sim_assembler.py, 2 tests | test_sim_assembler.cpp's program past $FFFF. The message for an origin of -2 can't come from the C++ assembler, which rejects an origin below $100 first, as its case of an origin in zero page checks |
+    | test_ir_dump.py, 11 tests | test_ir.cpp and test_ir_dump_files.cpp, and four new cases of test_ir.cpp: a malformed value, a string of any code point, large and negative integers, and the string "None". Two tests of Python values the C++ types can't hold were dropped |
+    | test_asdl.py, 33 tests | `TestParser` in test_asdlgen.cpp, with two new cases and three new parse errors. `TestGenerator`, `TestRealistic`, and `TestCheckedInModules` tested the Python generator and were dropped |
+    | test_type_checking.py, 5 tests | test_ir.cpp's new case of c99 data types' equality |
+    | no_inlining.py, asm_compare.py, `__init__.py` | read by no test |
+
+    The new cases' positions, lengths, and digits were printed by asdl.py
+    and ir_dump.py before they were deleted.
+  - What only Python called went from c6502cpp: the command `backend`
+    with its request format (cpp/src/backend.*), the frames of
+    `C6502CPP_FRAMES`, the modes `cpu-run` (`cpu_run::respond`),
+    `tac-run`, `tac-observe`, and `tac-falls-off`
+    (`tac_sim_modes::respond`, `is_tac_mode`), and the commands
+    `helper-footprints`, `roundtrip`, `assemble` and `link`
+    (binutils/assemble_command.*, link_command.*), `sweep-passes`, and
+    `opcodes`. `c6502cpp compile` itself sent the backend a text request
+    for each run and parsed the response, so compile_command.cpp now
+    calls the front end, code generation, the text stages, the assembler,
+    and the linker directly, in the backend's order, and check-golden's
+    `tacsim` jobs call `tac_sim_modes`' functions, with the new
+    `outcome_json` and `changing_pass_json` for their lines.
+    test_backend.cpp's checks of the stages' texts, warnings, and errors
+    are test_compile_stages.cpp's, through the test library's `compile`,
+    and the cases of the request formats went.
+  - The examples' 56 copies of their `-S -O` text went (open question
+    5), each byte for byte golden/O/'s. examples/zork/interpreter.asm
+    stays, since it is objdump's listing of the linked interpreter, which
+    test_zork_interpreter.cpp compares and no golden file holds. The
+    tests that read the copies read golden/O/'s, including the
+    comparison of the assembler with dasm.
+  - The documents give C++ commands: README.md, CLAUDE.md, cpp/README.md,
+    the CLAUDE.md files of tests/, examples/, docs/, and cpp/src/, the
+    examples' READMEs and notes, the user guides of docs/, the brain
+    notes, and the compile-example skill. sim/, binutils/, and passes/
+    CLAUDE.md went with their directories, and what they said of the
+    C++ is in the new cpp/src/binutils/CLAUDE.md and cpp/src/sim/CLAUDE.md.
+    `-T`'s help names docs/linker_scripts.md where it named
+    passes/link_script.py, and the comments in cpp/ that described the
+    Python as present describe the C++.
+  - Open questions 1, 2, 4, 5, and 7 were answered on 27 Nov 2026, and 6
+    was settled by G4.
+
+  The plan changed in four places once the code was read.
+  - `helper-dump` and `pass-order` stay. The first rewrites
+    cpp/tests/frozen/rtlib_helpers.txt after a change made to a helper
+    on purpose, and the second lists the passes' order for a new
+    optimization's documents.
+  - The request format had a C++ caller, compile_command.cpp, which
+    called it only as an adapter, so the command calls the stages instead
+    of keeping the format.
+  - The tools take their names from `argv[0]`, which kept the frozen
+    records of nm.py and objdump.py.
+  - `check-helpers`, `check-preprocess`, and `check-regex` stay, though
+    no records of theirs are in the repository, since nothing in Python
+    called them. They could go in a later cleanup.
+
+  No bug was found in the compiler. The one failure was `check-frozen`'s
+  after the rename, fixed by the names from `argv[0]`. A fresh MSVC
+  build with the games' files gave 11,182 doctest cases passed (124,802
+  assertions) and none skipped, against G6's 11,181: the 6 new cases of
+  test_asdlgen.cpp and test_ir.cpp, less the 2 cases of
+  test_backend.cpp's request format and the 3 of `cpu-run`. Run alone,
+  the cases of the games and the Disk II gave 77 passed. ctest gave 76 of
+  76, `check-golden` 19,678 jobs with 0 differing, and `check-frozen` no
+  difference. `c6502cpp fuzz` with `-j 12` gave 0 wrong on seeds 0 to 299
+  of exprs (25 rejected), calls (6), and stmts (13), and 0 to 99 of
+  yarpgen (59). The build's four warnings come from lines that R didn't
+  change.
+
+  A fresh GCC 12.2 build in WSL Debian 12, with the games' files, gave
+  11,182 cases passed (114,186 assertions,
+  fewer than MSVC's, which wasn't traced) and none skipped, 77 for the
+  games and the Disk II run alone, ctest 76 of 76, `check-golden` 19,678
+  jobs with 0 differing in 41 s, and `check-frozen` no difference, and
+  `c6502cpp fuzz` gave the same counts on exprs, calls, and stmts.
+  yarpgen didn't run there, since there's no Linux build of YARPGen and
+  fuzz/build_yarpgen.sh hasn't run on Linux. Of its 34 warnings, 33 are
+  GCC 12's `-Wrestrict` on `std::string`'s `+` and one is a
+  `-Wtrigraphs` in test_pcpp_lexer.cpp. One `-Wrestrict` was on
+  `changing_pass_json`'s line, moved from the response of `tac-observe`,
+  which now appends its pieces, and gives none after a rebuild. The
+  rest are on lines R didn't change.

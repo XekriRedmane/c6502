@@ -41,10 +41,13 @@ std::string strip(const std::string& s) {
   return s.substr(b, s.find_last_not_of(ws) - b + 1);
 }
 
-Result error_result(const std::string& python_type, const std::string& message) {
+std::string unqualified_class_name(const std::string& python_type) {
   const std::size_t dot = python_type.rfind('.');
-  const std::string name = dot == std::string::npos ? python_type : python_type.substr(dot + 1);
-  return "ERR " + name + ": " + first_chars(message, kMessageChars);
+  return dot == std::string::npos ? python_type : python_type.substr(dot + 1);
+}
+
+Result error_result(const std::string& python_type, const std::string& message) {
+  return "ERR " + unqualified_class_name(python_type) + ": " + first_chars(message, kMessageChars);
 }
 
 Result internal_error_result(const InternalError& e) {

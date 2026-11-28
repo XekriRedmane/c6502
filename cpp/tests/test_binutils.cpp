@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "argparse.h"
-#include "binutils/assemble_command.h"
 #include "binutils/disasm.h"
 #include "binutils/elf.h"
 #include "binutils/nm.h"

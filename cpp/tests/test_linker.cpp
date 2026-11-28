@@ -1,7 +1,6 @@
 // Tests of src/passes/linker.*: Python's message for each of the seven
 // raise sites of `link_objects` and `link_files`, five of which
-// tools/capture_binutils.py's records don't reach, and `c6502cpp
-// link`'s request and response.
+// tools/capture_binutils.py's records don't reach.
 // `c6502cpp check-binutils` links every `link` record of the corpus and
 // the suite in C++ and compares the executables byte for byte.
 #include <filesystem>
@@ -16,7 +15,6 @@
 #include "binutils/assembler.h"
 #include "binutils/elf.h"
 #include "binutils/ld.h"
-#include "binutils/link_command.h"
 #include "doctest.h"
 #include "errors.h"
 #include "passes/link_script.h"
@@ -102,32 +100,11 @@ TEST_CASE("link_files gives Python's message for an object it can't read") {
   std::filesystem::remove(bad);
 }
 
-TEST_CASE("c6502cpp link reads the objects, then the script, and gives the error's input") {
-  const std::string object = elf::write(main_object());
-  const auto request = [&](const std::string& args, const std::vector<std::string>& objects) {
-    std::string out = "c6502-link 1\nargs " + args + "\n";
-    for (const std::string& o : objects) out += "object " + std::to_string(o.size()) + "\n" + o;
-    return out;
-  };
-  const std::string ok = c6502::binutils::link_response(request(
-      R"({"objects": ["m.o"], "script": null, "origin": 2048, "defsyms": [["X", 5]]})", {object}));
-  CHECK(ok.starts_with("executable "));
-  const std::string exe = ok.substr(ok.find('\n') + 1);
+TEST_CASE("link_objects rejects an executable as an input") {
   ld::Names defsyms;
   defsyms.insert_or_assign("X", 5);
-  CHECK(exe == elf::write(linker::link_objects({{"m.o", main_object()}}, std::nullopt, 0x0800,
-                                               defsyms)));
-  CHECK(c6502::binutils::link_response(request(
-            R"({"objects": ["m.o", "b.o"], "script": "missing.ld", "origin": 2048, "defsyms": []})",
-            {object, "hello"})) ==
-        "error {\"type\": \"ElfError\", \"message\": \"b.o: not an ELF file\", \"input\": 1}\n");
-  CHECK(c6502::binutils::link_response(request(
-            R"({"objects": ["m.o"], "script": "d3-missing.ld", "origin": 2048, "defsyms": []})",
-            {object})) ==
-        "error {\"type\": \"LinkError\", \"message\": \"d3-missing.ld: No such file or "
-        "directory\", \"input\": null}\n");
-  CHECK(c6502::binutils::link_response(request(
-            R"({"objects": ["prog"], "script": null, "origin": 2048, "defsyms": []})", {exe})) ==
-        "error {\"type\": \"LinkError\", \"message\": \"prog isn't a relocatable object\", "
-        "\"input\": null}\n");
+  const elf::ElfFile exe = linker::link_objects({{"m.o", main_object()}}, std::nullopt, 0x0800,
+                                                defsyms);
+  CHECK(link_error({{"prog", elf::read(elf::write(exe), "prog")}}) ==
+        "LinkError: prog isn't a relocatable object");
 }

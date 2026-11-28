@@ -1,13 +1,12 @@
 // The tests of tests/test_tac_sim_optimized.py: fuzz/tac_passes.py's
 // `first_changing_pass`, which runs the TAC interpreter after each step
 // of the TAC optimizer, names no step for a program the optimizer
-// compiles correctly. Its C++ form is the mode `tac-observe` of
+// compiles correctly. Its C++ form is `first_changing_pass` in
 // src/tac_sim_modes.h.
 #include <string>
 
 #include "compile_case.h"
 #include "doctest.h"
-#include "json.h"
 #include "passes/ir_check.h"
 #include "tac_sim_modes.h"
 
@@ -15,18 +14,17 @@ namespace {
 
 namespace suite = c6502::suite;
 
-// Returns the `found` line of `tac-observe` for `source`, with the IR
-// checks on, as `cpp_backend.tac_first_changing_pass` asks for it under
-// `C6502_CHECK_IR=1`.
+// Returns check-golden's `found` line for `source`, with the IR checks
+// on, as the Python test ran it under `C6502_CHECK_IR=1`.
 std::string found(const std::string& source) {
   const c6502::passes::ir_check::Enabled checks(true);
-  const c6502::json::Value kwargs = c6502::json::parse(
-      R"({"pcpp_args": [], "filename": null, "include_dir": )" +
-      c6502::json::quote(suite::repo_path("include")) + R"(, "preprocess": true})");
-  const std::string response = c6502::tac_sim_modes::respond("tac-observe", kwargs, source);
-  const std::size_t at = response.rfind("\nfound ");
-  REQUIRE_MESSAGE(at != std::string::npos, response);
-  return response.substr(at + 1);
+  c6502::passes::FrontEndOptions options;
+  options.include_dir = suite::repo_path("include");
+  std::string err;
+  c6502::tac_sim_modes::Translated t = c6502::tac_sim_modes::translate(source, options, err);
+  return "found " +
+         c6502::tac_sim_modes::changing_pass_json(c6502::tac_sim_modes::first_changing_pass(t)) +
+         "\n";
 }
 
 }  // namespace

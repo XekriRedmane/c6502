@@ -82,8 +82,8 @@
 // error, or the line `result <JSON>` of `main`'s result on the
 // unoptimized TAC, the line `optimized <JSON>` of its result on the TAC
 // after the TAC optimizer when the first was a value, and the line
-// `found <JSON>` of fuzz/tac_passes.py's `first_changing_pass`, each in
-// the form of the interpreter's response (src/tac_sim_modes.h).
+// `found <JSON>` of `first_changing_pass`, each in the form
+// `outcome_json` and `changing_pass_json` give (src/tac_sim_modes.h).
 //
 // A command names each file of the repository by its path relative to
 // the repository's root, such as `examples/zork/main.c`, and the files

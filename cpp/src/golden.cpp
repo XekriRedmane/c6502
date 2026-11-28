@@ -25,15 +25,19 @@
 #include <unistd.h>
 #endif
 
-#include "backend.h"
-#include "compile_command.h"
 #include "capture.h"
+#include "compile_command.h"
+#include "diagnostics.h"
 #include "errors.h"
 #include "json.h"
+#include "passes/front_end.h"
+#include "passes/ir_check.h"
 #include "pcpp_text.h"
 #include "processes.h"
 #include "pyrepr.h"
 #include "sha256.h"
+#include "stage_checks.h"
+#include "tac_sim_modes.h"
 
 namespace c6502::golden {
 
@@ -49,9 +53,6 @@ constexpr std::string_view kFormat = "c6502-golden 1";
 
 using compile_command::path_text;
 using compile_command::read_text;
-using compile_command::Record;
-using compile_command::records;
-using compile_command::string_list_json;
 using compile_command::utf8_path;
 using compile_command::write_bytes;
 
@@ -158,8 +159,8 @@ std::string normalize(std::string text, const Root& root) {
   return text;
 }
 
-// The directory of c6502's own headers, as cpp_backend.py's
-// `_INCLUDE_DIR` spells it, with the platform's separators.
+// The directory of c6502's own headers, with the platform's
+// separators.
 std::string compile_include_dir(const Root& root) {
   return (root.path / "include").make_preferred().string();
 }
@@ -179,28 +180,34 @@ std::string normalized_json(json::Value v, const Root& root) {
 std::vector<std::string> tacsim_lines(const std::vector<std::string>& argv,
                                       const std::string& include_dir, const Root& root) {
   const std::string source = read_text(argv.at(0));
-  std::vector<std::string> pcpp(argv.begin() + 1, argv.end());
-  const auto request = [&](const std::string& mode, const std::string& extra) {
-    const std::string kwargs = "{\"pcpp_args\": " + string_list_json(pcpp) +
-                               ", \"filename\": " + json::quote(argv[0]) +
-                               ", \"include_dir\": " + json::quote(include_dir) +
-                               ", \"preprocess\": true, \"check_ir\": false" + extra + "}";
-    return records(backend::respond("c6502-backend 3\nmode " + mode + "\nargs " + kwargs +
-                                    "\nsource " + std::to_string(source.size()) + "\n" +
-                                    source));
+  passes::FrontEndOptions front;
+  front.pcpp_args.assign(argv.begin() + 1, argv.end());
+  front.filename = argv[0];
+  front.include_dir = include_dir;
+  const passes::ir_check::Enabled checks(false);
+  // Each of the two checks starts from a translation of its own.
+  const auto translate = [&] {
+    std::string err;
+    std::vector<diagnostics::CompileWarning> warnings;
+    diagnostics::Collecting block(warnings);
+    return tac_sim_modes::translate(source, front, err);
+  };
+  const auto line = [&](const std::string& key, const std::string& json_text) {
+    return key + " " + normalized_json(json::parse(json_text), root);
   };
   std::vector<std::string> lines;
-  for (const Record& r : request("tac-run", ", \"optimized\": true")) {
-    if (r.key == "error") {
-      return {"front " + normalized_json(json::parse(r.value), root)};
-    }
-    if (r.key == "result" || r.key == "optimized") {
-      lines.push_back(r.key + " " + normalized_json(json::parse(r.value), root));
-    }
+  std::optional<tac_sim_modes::Translated> t;
+  try {
+    t = translate();
+  } catch (const CompileError& e) {
+    return {line("front", stage_checks::error_text(e.python_type(), e.what()))};
   }
-  for (const Record& r : request("tac-observe", "")) {
-    if (r.key == "found") lines.push_back("found " + normalized_json(json::parse(r.value), root));
-  }
+  const tac_sim_modes::PlainAndOptimized r = tac_sim_modes::run_plain_and_optimized(std::move(*t));
+  lines.push_back(line("result", tac_sim_modes::outcome_json(r.plain)));
+  if (r.optimized) lines.push_back(line("optimized", tac_sim_modes::outcome_json(*r.optimized)));
+  tac_sim_modes::Translated again = translate();
+  lines.push_back(line("found", tac_sim_modes::changing_pass_json(
+                                    tac_sim_modes::first_changing_pass(again))));
   return lines;
 }
 

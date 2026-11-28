@@ -1,14 +1,10 @@
-// c6502cpp, the CLI of the C++ port. Until the port reaches the
-// compiler's own command line, it holds the checks the port is
-// measured by (cpp/README.md) and the back end that compile.py's shim
-// runs through it.
+// c6502cpp: the compiler (`compile`), nm, and objdump, and the checks
+// the port to C++ is measured by (cpp/README.md).
 #include <algorithm>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <iterator>
 #include <map>
 #include <sstream>
 #include <string>
@@ -29,15 +25,10 @@
 #include "asdl/runtime.h"
 #include "asm2_ast.h"
 #include "asm_ast.h"
-#include "backend.h"
 #include "argparse.h"
-#include "binutils/assemble_command.h"
-#include "binutils/link_command.h"
 #include "binutils/checks.h"
 #include "binutils/nm.h"
 #include "binutils/objdump.h"
-#include "binutils/opcodes.h"
-#include "c99_ast.h"
 #include "capture.h"
 #include "compile_command.h"
 #include "errors.h"
@@ -47,10 +38,8 @@
 #include "helper_checks.h"
 #include "json.h"
 #include "pass_order.h"
-#include "passes/peephole_fixedpoint.h"
 #include "passes/registry.h"
 #include "passes/stage_registry.h"
-#include "passes/zp_globals.h"
 #include "preprocessor_cases.h"
 #include "py_regex_cases.h"
 #include "rtlib/helpers.h"
@@ -64,25 +53,18 @@ namespace fs = std::filesystem;
 using namespace c6502;
 
 const char kUsage[] =
-    "usage: c6502cpp roundtrip [--pretty] <module> [<file>]\n"
-    "       c6502cpp check-captures [--pass <name>] [--verbose] [--got <dir>] <path>...\n"
-    "       c6502cpp check-helpers [--verbose] <path>...\n"
-    "       c6502cpp check-preprocess [--verbose] <path>...\n"
-    "       c6502cpp check-regex [--verbose] <path>...\n"
-    "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
+    "usage: c6502cpp compile [<argument>...]\n"
+    "       c6502cpp nm [<option>...] <file>...\n"
+    "       c6502cpp objdump [<option>...] <file>...\n"
     "       c6502cpp check-golden [--root <dir>] [-j <n>] [--manifest <name>,...]\n"
     "                             [--label <label>] [--update] [--verbose]\n"
     "       c6502cpp check-frozen [--verbose] [<frozen dir>]\n"
-    "       c6502cpp compile [<compile.py's argument>...]\n"
-    "       c6502cpp opcodes\n"
-    "       c6502cpp helper-footprints\n"
+    "       c6502cpp check-captures [--pass <name>] [--verbose] [--got <dir>] <path>...\n"
+    "       c6502cpp check-binutils [--verbose] <capture dir>...\n"
+    "       c6502cpp check-helpers [--verbose] <path>...\n"
+    "       c6502cpp check-preprocess [--verbose] <path>...\n"
+    "       c6502cpp check-regex [--verbose] <path>...\n"
     "       c6502cpp helper-dump\n"
-    "       c6502cpp nm [<option>...] <file>...\n"
-    "       c6502cpp objdump [<option>...] <file>...\n"
-    "       c6502cpp backend\n"
-    "       c6502cpp assemble\n"
-    "       c6502cpp link [--repeat <n>]\n"
-    "       c6502cpp sweep-passes\n"
     "       c6502cpp pass-order\n"
     "       c6502cpp game-run <game> <script> [--exe <path>] [--events <n>] [--ld <path>]\n"
     "                         [--steps-after <event> --steps <n>] [-o <file>]\n"
@@ -93,61 +75,42 @@ const char kUsage[] =
     "       c6502cpp fuzz reduce [--tac-opt] <path>\n"
     "       c6502cpp fuzz tac-passes <path>...\n"
     "\n"
-    "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
-    "tac_ast, or c99_ast) from <file> or stdin and writes its dump again,\n"
-    "or with --pretty the text pretty.py gives it, and a newline.\n"
+    "compile is the compiler, c6502: it preprocesses, compiles, assembles,\n"
+    "and links C for the 6502, as its own -h describes (src/compile_command.h).\n"
     "\n"
-    "check-captures reads the capture files under each <path> (a file or a\n"
-    "directory), checks that each one's input and output dumps read and\n"
-    "write back as the same bytes, and runs each ported pass on its\n"
-    "recorded input, checking the result against the recorded output.\n"
-    "\n"
-    "check-helpers reads the records of tools/capture_helpers.py under each\n"
-    "<path>, computes the values of the shared asm helpers in C++, and\n"
-    "compares them with the recorded ones.\n"
-    "\n"
-    "check-preprocess runs the preprocessor on each recorded call of\n"
-    "preprocessor.preprocess in the .json files under each <path>, with the\n"
-    "files the record holds, and compares the text, the error, the\n"
-    "warnings, and stderr with Python's (src/preprocessor_cases.h).\n"
-    "\n"
-    "check-regex reads records of Python's re, one JSON object per line of\n"
-    "each file under each <path> (src/py_regex_cases.h), and compares\n"
-    "py_regex's compile error or matches with Python's, counting apart the\n"
-    "patterns it reports as unsupported.\n"
-    "\n"
-    "backend reads a request of compile.py's (cpp_backend.py) from stdin,\n"
-    "compiles its source text from the preprocessor to the finished asm\n"
-    "program or the -S text, or compiles, assembles, and reads the inputs\n"
-    "of compile.py -c or a link and links them, and writes the result to\n"
-    "stdout (src/backend.h). A problem\n"
-    "with the program being compiled is part of the response, with the\n"
-    "Python type of the error. A problem with the request exits with\n"
-    "status 1 and a bug in the compiler with status 3, each with its\n"
-    "message on stderr.\n"
-    "\n"
-    "check-binutils checks the records of tools/capture_binutils.py under\n"
-    "each capture directory (src/binutils/checks.h).\n"
+    "nm lists the symbols of c6502 objects and executables, and objdump shows\n"
+    "what's in them, as their own -h describes (src/binutils/nm.h and\n"
+    "src/binutils/objdump.h).\n"
     "\n"
     "check-golden runs the jobs of the golden files under <dir>/golden with\n"
-    "the C++ compiler in -j worker processes, as compile.py would run them,\n"
-    "and compares what each command gives and the files each job leaves with\n"
-    "the golden files, which --update writes again (src/golden.h).\n"
+    "the compiler in -j worker processes and compares what each command gives\n"
+    "and the files each job leaves with the golden files, which --update\n"
+    "writes again (src/golden.h).\n"
     "\n"
     "check-frozen unpacks the frozen captures, the .xz archives under\n"
     "<frozen dir>/passes and <frozen dir>/binutils (cpp/tests/frozen by\n"
     "default), and checks them as check-captures and check-binutils do\n"
     "(src/frozen.h).\n"
     "\n"
-    "opcodes lists the 6502 opcode table, one `mnemonic mode opcode` line\n"
-    "per row, in the order of binutils/opcodes.py.\n"
+    "check-captures reads the capture files under each <path> (a file or a\n"
+    "directory), checks that each one's input and output dumps read and\n"
+    "write back as the same bytes, and runs each pass on its recorded input,\n"
+    "checking the result against the recorded output.\n"
     "\n"
-    "helper-footprints lists each runtime helper's HARGS footprint, one\n"
-    "`name bytes` line per helper, in the order of all_helper_functions\n"
-    "(src/rtlib/helpers.h).\n"
+    "check-binutils checks the records of the assembler and the linker under\n"
+    "each capture directory (src/binutils/checks.h).\n"
+    "\n"
+    "check-helpers, check-preprocess, and check-regex check records that\n"
+    "Python wrote before step 8 of the port removed its compiler: of the\n"
+    "shared asm helpers, of preprocessor.preprocess (src/preprocessor_cases.h),\n"
+    "and of Python's re (src/py_regex_cases.h).\n"
     "\n"
     "helper-dump writes the asm program of the runtime helpers in the dump\n"
-    "format (ir_dump.py), which the simulator assembles at $E000.\n"
+    "format, which cpp/tests/frozen/rtlib_helpers.txt holds (src/rtlib/helpers.h).\n"
+    "\n"
+    "pass-order compiles a small built-in program with -O and lists, for\n"
+    "each of the optimizer's drivers, the passes of its first run in the\n"
+    "order it ran them, one `<driver> <pass>` line each (src/pass_order.h).\n"
     "\n"
     "game-run plays a script of zork, lode_runner, or ali_baba on the\n"
     "game's machine, the original or with --exe a linked C program, and\n"
@@ -157,44 +120,7 @@ const char kUsage[] =
     "calls, stmts, or yarpgen), runs each on the TAC interpreter and in the\n"
     "simulator in both pipelines, and saves those some path gets wrong. Its\n"
     "other forms write the programs, check given files, reduce a failing\n"
-    "program, and find the TAC pass that changes a result (src/fuzz/command.h).\n"
-    "\n"
-    "compile takes compile.py's command line and does what compile.py does,\n"
-    "with its options, messages, files, and exit status, in this process\n"
-    "(src/compile_command.h). compile.py's main runs it.\n"
-    "\n"
-    "nm lists the symbols of c6502 objects and executables, as nm.py does,\n"
-    "with nm.py's options, messages, and exit status (src/binutils/nm.h).\n"
-    "\n"
-    "objdump shows what's in c6502 objects and executables, as objdump.py\n"
-    "does, with its options, messages, and exit status\n"
-    "(src/binutils/objdump.h).\n"
-    "\n"
-    "assemble reads a request from stdin, the assembly text with its file\n"
-    "name and the assembler's arguments, assembles it as binutils/assembler.py\n"
-    "does, and writes the object's bytes or the error to stdout\n"
-    "(src/binutils/assemble_command.h).\n"
-    "\n"
-    "link reads a request from stdin, the objects' bytes with their names,\n"
-    "the script's path, the origin, and the --defsyms, links them as\n"
-    "passes/linker.py does, and writes the executable's bytes or the error\n"
-    "to stdout (src/binutils/link_command.h). With --repeat it links n\n"
-    "times and writes the shortest time to stderr.\n"
-    "\n"
-    "sweep-passes lists the passes of the peephole fixed point's sweep, in\n"
-    "order, one per line.\n"
-    "\n"
-    "pass-order compiles a small built-in program with -O and lists, for\n"
-    "each of the optimizer's drivers, the passes of its first run in the\n"
-    "order it ran them, one `<driver> <pass>` line each (src/pass_order.h).\n";
-
-std::string read_stdin() {
-#ifdef _WIN32
-  _setmode(_fileno(stdin), _O_BINARY);
-#endif
-  return std::string(std::istreambuf_iterator<char>(std::cin),
-                     std::istreambuf_iterator<char>());
-}
+    "program, and find the TAC pass that changes a result (src/fuzz/command.h).\n";
 
 // Returns the command line as UTF-8, as Python reads it. On Windows the
 // `argv` of `main` is in the ANSI code page, so the arguments are read
@@ -223,46 +149,6 @@ void write_stdout(const std::string& text) {
   _setmode(_fileno(stdout), _O_BINARY);
 #endif
   std::fwrite(text.data(), 1, text.size(), stdout);
-}
-
-// Returns the dump of the program `v`, or with `pretty` pretty.py's text
-// of it and a newline, as `compile.py --tac` prints a TAC program.
-template <class T>
-std::string written(const T& v, bool pretty) {
-  return pretty ? asdl::py_pretty(v) + "\n" : asdl::dump(v);
-}
-
-// Returns the dump of the value of module `module` that `text` holds,
-// read and written again, or with `pretty` its pretty.py text.
-std::string roundtrip(std::string_view module, const std::string& text, bool pretty) {
-  // Each module's dumps start with the name of a constructor of
-  // `program`, `Program`, for every value the tests round-trip.
-  if (module == "asm_ast") {
-    return written(asdl::load<asm_ast::Program>(text), pretty);
-  }
-  if (module == "asm2_ast") {
-    return written(asdl::load<asm2_ast::Program>(text), pretty);
-  }
-  if (module == "tac_ast") {
-    return written(asdl::load<tac_ast::Program>(text), pretty);
-  }
-  if (module == "c99_ast") {
-    return written(asdl::load<c99_ast::Program>(text), pretty);
-  }
-  throw std::runtime_error("unknown module " + std::string(module));
-}
-
-int cmd_roundtrip(std::vector<std::string> args) {
-  const bool pretty = !args.empty() && args[0] == "--pretty";
-  if (pretty) args.erase(args.begin());
-  if (args.empty() || args.size() > 2) {
-    std::fputs(kUsage, stderr);
-    return 2;
-  }
-  const std::string text =
-      args.size() == 2 ? capture::read_file(args[1]) : read_stdin();
-  write_stdout(roundtrip(args[0], text, pretty));
-  return 0;
 }
 
 // Returns the 1-based number of the first line where `a` and `b`
@@ -769,9 +655,6 @@ int main(int argc, char** argv) {
   const std::string command = argv[1];
   const std::vector<std::string> args(argv + 2, argv + argc);
   try {
-    if (command == "roundtrip") {
-      return cmd_roundtrip(args);
-    }
     if (command == "check-captures") {
       return cmd_check_captures(args);
     }
@@ -810,9 +693,8 @@ int main(int argc, char** argv) {
       const auto tool = command == "nm" ? binutils::nm::main : binutils::objdump::main;
       const int status =
           tool(argv_tool, binutils::nm::read_path, argparse::terminal_columns(), out, err, &help);
-      // Python writes the listing's bytes and the help as text, which on
-      // Windows ends each line with CR LF, and its stderr as text too,
-      // which cpp_backend.run_tool writes through Python's stream.
+      // nm.py and objdump.py wrote the listing's bytes, and the help as
+      // text, which on Windows ends each line with CR LF.
       if (help) {
         std::fwrite(out.data(), 1, out.size(), stdout);
       } else {
@@ -825,46 +707,8 @@ int main(int argc, char** argv) {
       std::fwrite(err.data(), 1, err.size(), stderr);
       return status;
     }
-    if (command == "opcodes" && args.empty()) {
-      std::string lines;
-      for (const auto& e : binutils::opcodes::table()) {
-        char op[8];
-        std::snprintf(op, sizeof op, "0x%02X", e.opcode);
-        lines += std::string(e.mnemonic) + " " + std::string(binutils::opcodes::mode_name(e.mode)) +
-                 " " + op + "\n";
-      }
-      write_stdout(lines);
-      return 0;
-    }
-    if (command == "helper-footprints" && args.empty()) {
-      std::string lines;
-      const passes::HelperFootprints& footprints = passes::helper_footprints();
-      for (const auto& fn : rtlib::all_helper_functions()) {
-        lines += fn.name + " " + asdl::int_to_string(footprints.at(fn.name)) + "\n";
-      }
-      write_stdout(lines);
-      return 0;
-    }
     if (command == "helper-dump" && args.empty()) {
       write_stdout(rtlib::helper_dump());
-      return 0;
-    }
-    if (command == "backend" && args.empty()) {
-      // A problem with the program goes back in the response with its
-      // Python type, so that cpp_backend.py raises the exception
-      // compile.py would.
-      write_stdout(backend::respond(read_stdin()));
-      return 0;
-    }
-    if (command == "assemble" && args.empty()) {
-      write_stdout(binutils::assemble_response(read_stdin()));
-      return 0;
-    }
-    if (command == "link" && (args.empty() || (args.size() == 2 && args[0] == "--repeat"))) {
-      const int repeat = args.empty() ? 1 : std::stoi(args[1]);
-      double best = 0;
-      write_stdout(binutils::link_response(read_stdin(), repeat, &best));
-      if (repeat > 1) std::fprintf(stderr, "best of %d: %.2f ms\n", repeat, best);
       return 0;
     }
     if (command == "game-run") {
@@ -881,14 +725,6 @@ int main(int argc, char** argv) {
     }
     if (command == "pass-order" && args.empty()) {
       write_stdout(pass_order::listing());
-      return 0;
-    }
-    if (command == "sweep-passes" && args.empty()) {
-      std::string names;
-      for (const auto& p : passes::peephole_sweep(passes::AsmContext{}, nullptr, nullptr, {})) {
-        names += std::string(p.name) + "\n";
-      }
-      write_stdout(names);
       return 0;
     }
     if (command == "--help" || command == "-h") {

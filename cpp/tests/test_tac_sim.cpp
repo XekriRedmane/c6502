@@ -1,5 +1,5 @@
-// Tests of the TAC interpreter (src/tac_sim.h) and of its modes of
-// `c6502cpp backend` (src/tac_sim_modes.h).
+// Tests of the TAC interpreter (src/tac_sim.h) and of the runs of it
+// that check-golden and the fuzzers make (src/tac_sim_modes.h).
 //
 // The first cases are tests/test_tac_sim.py's: each compiles a C
 // program with the front end and `c99_to_tac`, without the
@@ -14,9 +14,9 @@
 #include <string>
 #include <vector>
 
-#include "backend.h"
 #include "c99_to_tac.h"
 #include "doctest.h"
+#include "errors.h"
 #include "fp_arith.h"
 #include "parser.h"
 #include "passes/identifier_resolution.h"
@@ -25,6 +25,7 @@
 #include "passes/string_lifting.h"
 #include "passes/type_checker.h"
 #include "tac_sim.h"
+#include "tac_sim_modes.h"
 
 namespace {
 
@@ -409,54 +410,71 @@ TEST_CASE("tac_sim: arithmetic at the edges of 64 bits") {
 
 namespace {
 
-std::string tac_request(const std::string& mode, const std::string& source,
-                        const std::string& extra = "") {
-  const std::string args = R"({"pcpp_args": [], "filename": null, "include_dir": "include", )"
-                           R"("preprocess": false)" + extra + "}";
-  return "c6502-backend 3\nmode " + mode + "\nargs " + args + "\nsource " +
-         std::to_string(source.size()) + "\n" + source;
+namespace tsm = c6502::tac_sim_modes;
+
+// Returns the TAC of `source`, which the preprocessor doesn't read.
+tsm::Translated translated(const std::string& source) {
+  c6502::passes::FrontEndOptions options;
+  options.include_dir = "include";
+  options.preprocess = false;
+  std::string err;
+  return tsm::translate(source, options, err);
+}
+
+std::string observed(const std::string& source) {
+  tsm::Translated t = translated(source);
+  return tsm::changing_pass_json(tsm::first_changing_pass(t));
+}
+
+bool falls_off(const std::string& source) {
+  c6502::passes::FrontEndOptions options;
+  options.include_dir = "include";
+  options.preprocess = false;
+  std::string err;
+  return tsm::falls_off_end(source, options, err);
 }
 
 }  // namespace
 
-TEST_CASE("tac_sim: the backend's modes") {
-  const std::string prefix = "stderr 0\nwarnings []\n";
-  CHECK(c6502::backend::respond(tac_request("tac-run", "int main(void) { return -3; }")) ==
-        prefix + "result {\"value\": -3}\n");
-  CHECK(c6502::backend::respond(
-            tac_request("tac-run", "int main(void) { int x = 0; return 1 / x; }",
-                        ", \"optimized\": true")) ==
-        prefix + "result {\"error\": {\"type\": \"TacSimError\", \"message\": \"division by "
-                 "zero\"}}\n");
-  CHECK(c6502::backend::respond(tac_request(
-            "tac-run", "int main(void) { int s = 0; for (int i = 0; i < 5; i++) s += i; return s; }",
-            ", \"optimized\": true")) ==
-        prefix + "result {\"value\": 10}\noptimized {\"value\": 10}\n");
-  CHECK(c6502::backend::respond(tac_request("tac-run", "int main(void) { return x; }")).find(
-            "error {\"type\": \"IdentifierResolutionError\"") == prefix.size());
+TEST_CASE("tac_sim: the runs that check-golden and the fuzzers make") {
+  {
+    tsm::Translated t = translated("int main(void) { return -3; }");
+    CHECK(tsm::outcome_json(c6502::tac_sim::run_main(t.tac, t.symbols, &t.types)) ==
+          "{\"value\": -3}");
+  }
+  // The optimizer runs only when the first run gives a value.
+  const tsm::PlainAndOptimized divided =
+      tsm::run_plain_and_optimized(translated("int main(void) { int x = 0; return 1 / x; }"));
+  CHECK(tsm::outcome_json(divided.plain) ==
+        "{\"error\": {\"type\": \"TacSimError\", \"message\": \"division by zero\"}}");
+  CHECK_FALSE(divided.optimized);
+  const tsm::PlainAndOptimized summed = tsm::run_plain_and_optimized(translated(
+      "int main(void) { int s = 0; for (int i = 0; i < 5; i++) s += i; return s; }"));
+  CHECK(tsm::outcome_json(summed.plain) == "{\"value\": 10}");
+  REQUIRE(summed.optimized);
+  CHECK(tsm::outcome_json(*summed.optimized) == "{\"value\": 10}");
+  try {
+    translated("int main(void) { return x; }");
+    FAIL("the program was translated");
+  } catch (const c6502::CompileError& e) {
+    CHECK(e.python_type() == "IdentifierResolutionError");
+  }
   // The program of test_tac_sim_optimized_source.cpp's first case, which
   // no pass changes.
-  const std::string observed =
-      "unsigned char g = 10;\n"
-      "unsigned char h(void) { g = 77; return 1; }\n"
-      "int main(void) {\n"
-      "  int t = g + 1;\n"
-      "  unsigned char k = h();\n"
-      "  unsigned char x = (unsigned char)t;\n"
-      "  return x + k;\n"
-      "}\n";
-  CHECK(c6502::backend::respond(tac_request("tac-observe", observed)) == prefix + "found null\n");
+  CHECK(observed("unsigned char g = 10;\n"
+                 "unsigned char h(void) { g = 77; return 1; }\n"
+                 "int main(void) {\n"
+                 "  int t = g + 1;\n"
+                 "  unsigned char k = h();\n"
+                 "  unsigned char x = (unsigned char)t;\n"
+                 "  return x + k;\n"
+                 "}\n") == "null");
   // `f(0)` falls off the end of `f`.
-  const std::string falls =
-      "int f(int a) { if (a) return 1; }\n"
-      "int g(int a) { return a; }\n"
-      "int main(void) { return f(0) + g(1); }\n";
-  CHECK(c6502::backend::respond(tac_request("tac-falls-off", falls)) == prefix + "fell true\n");
-  CHECK(c6502::backend::respond(tac_request(
-            "tac-falls-off", "int f(int a) { if (a) return 1; }\nint main(void) { return f(1); }\n")) ==
-        prefix + "fell false\n");
-  CHECK(c6502::backend::respond(tac_request("tac-falls-off", "int main(void) { return x; }")) ==
-        prefix + "fell false\n");
+  CHECK(falls_off("int f(int a) { if (a) return 1; }\n"
+                  "int g(int a) { return a; }\n"
+                  "int main(void) { return f(0) + g(1); }\n"));
+  CHECK_FALSE(falls_off("int f(int a) { if (a) return 1; }\nint main(void) { return f(1); }\n"));
+  CHECK_FALSE(falls_off("int main(void) { return x; }"));
 }
 
 TEST_CASE("tac_sim: a variable without a value before a loop") {
@@ -470,8 +488,7 @@ TEST_CASE("tac_sim: a variable without a value before a loop") {
       "  for (int i = 0; i < 4; i++) c = i;\n"
       "  return c;\n"
       "}\n";
-  CHECK(c6502::backend::respond(tac_request("tac-observe", src)) ==
-        "stderr 0\nwarnings []\nfound null\n");
+  CHECK(observed(src) == "null");
 }
 
 TEST_CASE("tac_sim: an object that another unit defines") {
@@ -489,6 +506,5 @@ TEST_CASE("tac_sim: an object that another unit defines") {
       "struct s { char a[3]; };\n"
       "extern struct s ext;\n"
       "int main(void) { ext.a[1] = 5; return ext.a[1]; }\n";
-  CHECK(c6502::backend::respond(tac_request("tac-observe", src)) ==
-        "stderr 0\nwarnings []\nfound null\n");
+  CHECK(observed(src) == "null");
 }

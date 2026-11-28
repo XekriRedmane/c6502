@@ -1,15 +1,13 @@
 #include "tac_sim_modes.h"
 
 #include <optional>
-#include <stdexcept>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include "c99_ast.h"
 #include "c99_to_tac.h"
-#include "diagnostics.h"
 #include "errors.h"
+#include "json.h"
 #include "parser.h"
 #include "passes/front_end.h"
 #include "passes/identifier_resolution.h"
@@ -19,7 +17,6 @@
 #include "passes/optimization/optimizer.h"
 #include "passes/string_lifting.h"
 #include "passes/type_checker.h"
-#include "stage_checks.h"
 #include "tac_sim.h"
 
 namespace c6502::tac_sim_modes {
@@ -29,7 +26,7 @@ namespace {
 namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 
-// The function that no program defines, whose call fuzz/reduce.py
+// The function that no program defines, whose call `falls_off_end`
 // appends to each function that returns a value.
 constexpr std::string_view kFellOff = "__reduce_fell_off";
 
@@ -51,49 +48,10 @@ void append_fell_off_calls(c99::Program& prog) {
   }
 }
 
-// Returns an outcome as the JSON of the `result` and `optimized` lines.
-std::string outcome_json(const tac_sim::Outcome& o) {
-  if (o.error_type) {
-    return "{\"error\": {\"type\": " + json::quote(*o.error_type) +
-           ", \"message\": " + json::quote(o.error_message) + "}}";
-  }
-  return std::string("{\"value\": ") + (o.value ? asdl::int_to_string(*o.value) : "null") + "}";
-}
-
-// Returns an outcome as the JSON of fuzz/tac_passes.py's result: the
-// value, null, or `ERR <type>: <message>`.
+// Returns an outcome as `changing_pass_json` writes a result.
 std::string observed_json(const tac_sim::Outcome& o) {
   if (o.error_type) return json::quote("ERR " + *o.error_type + ": " + o.error_message);
   return o.value ? asdl::int_to_string(*o.value) : "null";
-}
-
-std::string section(std::string_view name, const std::string& body) {
-  return std::string(name) + " " + std::to_string(body.size()) + "\n" + body;
-}
-
-std::string diagnostics_lines(const std::string& err,
-                              const std::vector<diagnostics::CompileWarning>& found) {
-  std::string out = section("stderr", err);
-  out += "warnings [";
-  for (std::size_t i = 0; i < found.size(); ++i) {
-    if (i != 0) out += ", ";
-    out += '[' + json::quote(found[i].where) + ", " + json::quote(found[i].message) + ']';
-  }
-  out += "]\n";
-  return out;
-}
-
-bool boolean(const json::Value* v, bool fallback) {
-  if (v == nullptr || v->kind != json::Value::Kind::kBool) return fallback;
-  return v->boolean;
-}
-
-// Returns the rest of a `tac-observe` response.
-std::string observe(Translated& t) {
-  const std::optional<ChangingPass> found = first_changing_pass(t);
-  if (!found) return "found null\n";
-  return "found [" + json::quote(found->function) + ", " + json::quote(found->pass) + ", " +
-         observed_json(found->expected) + ", " + observed_json(found->got) + "]\n";
 }
 
 }  // namespace
@@ -161,48 +119,18 @@ Translated translate(const std::string& source, const passes::FrontEndOptions& o
   return out;
 }
 
-bool is_tac_mode(const std::string& mode) {
-  return mode == "tac-run" || mode == "tac-observe" || mode == "tac-falls-off";
+std::string outcome_json(const tac_sim::Outcome& o) {
+  if (o.error_type) {
+    return "{\"error\": {\"type\": " + json::quote(*o.error_type) +
+           ", \"message\": " + json::quote(o.error_message) + "}}";
+  }
+  return std::string("{\"value\": ") + (o.value ? asdl::int_to_string(*o.value) : "null") + "}";
 }
 
-std::string respond(const std::string& mode, const json::Value& kwargs, const std::string& source) {
-  passes::FrontEndOptions options;
-  if (const json::Value* args = kwargs.get("pcpp_args")) {
-    for (const auto& a : args->items) options.pcpp_args.push_back(a.string);
-  }
-  if (const json::Value* f = kwargs.get("filename"); f != nullptr && f->kind == json::Value::Kind::kString) {
-    options.filename = f->string;
-  }
-  if (const json::Value* d = kwargs.get("include_dir")) options.include_dir = d->string;
-  options.preprocess = boolean(kwargs.get("preprocess"), true);
-  std::string err;
-  std::vector<diagnostics::CompileWarning> found;
-  if (mode == "tac-falls-off") {
-    bool fell = false;
-    {
-      diagnostics::Collecting block(found);
-      fell = falls_off_end(source, options, err);
-    }
-    return diagnostics_lines(err, found) + "fell " + (fell ? "true" : "false") + "\n";
-  }
-  std::optional<Translated> t;
-  std::optional<std::string> error;
-  try {
-    diagnostics::Collecting block(found);
-    t = translate(source, options, err);
-  } catch (const CompileError& e) {
-    error = stage_checks::error_text(e.python_type(), e.what());
-  }
-  std::string out = diagnostics_lines(err, found);
-  if (error) return out + "error " + *error + "\n";
-  if (mode == "tac-observe") return out + observe(*t);
-  if (!boolean(kwargs.get("optimized"), false)) {
-    return out + "result " + outcome_json(tac_sim::run_main(t->tac, t->symbols, &t->types)) + "\n";
-  }
-  const PlainAndOptimized r = run_plain_and_optimized(std::move(*t));
-  out += "result " + outcome_json(r.plain) + "\n";
-  if (r.optimized) out += "optimized " + outcome_json(*r.optimized) + "\n";
-  return out;
+std::string changing_pass_json(const std::optional<ChangingPass>& found) {
+  if (!found) return "null";
+  return "[" + json::quote(found->function) + ", " + json::quote(found->pass) + ", " +
+         observed_json(found->expected) + ", " + observed_json(found->got) + "]";
 }
 
 }  // namespace c6502::tac_sim_modes

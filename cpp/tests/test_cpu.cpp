@@ -4,7 +4,6 @@
 #include <utility>
 #include <vector>
 
-#include "backend.h"
 #include "compile_case.h"
 #include "doctest.h"
 #include "sim/cpu.h"
@@ -379,75 +378,4 @@ TEST_CASE("cpu: py65 counts 3 cycles for DEC abs") {
   cpu.step();
   CHECK(cpu.memory[0x3000] == 0x00);
   CHECK(cpu.cycles == 3);
-}
-
-TEST_CASE("cpu-run: segments run from the given state and patches, with a digest after each instruction") {
-  std::string image(0x10000, '\0');
-  const std::uint8_t program[] = {kLdaImm, 0x05,
-                                  kStaZp, 0x10,
-                                  kJsr, 0x00, 0xE0,
-                                  kStaZp, 0x11,
-                                  kBrk};
-  for (std::size_t i = 0; i < sizeof program; ++i) image[0x0800 + i] = static_cast<char>(program[i]);
-  const std::string args =
-      R"({"stops": [57344], "stop_at_brk": true, "max_cycles": 1000, "max_instructions": null, "segments": [)"
-      R"({"pc": 2048, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": []}, )"
-      R"({"pc": 2055, "a": 7, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 11, "patches": [[18, 99]]}]})";
-  const std::string request = "c6502-backend 3\nmode cpu-run\nargs " + args + "\nimage 65536\n" + image;
-  const std::string response = c6502::backend::respond(request);
-
-  const auto record = [](std::uint16_t pc, std::uint8_t a, std::uint8_t sp, std::uint64_t cycles,
-                         const std::string& writes) {
-    std::string r;
-    r += static_cast<char>(pc & 0xFF);
-    r += static_cast<char>(pc >> 8);
-    r += static_cast<char>(a);
-    r += '\0';
-    r += '\0';
-    r += static_cast<char>(sp);
-    r += static_cast<char>(0x30);
-    for (int i = 0; i < 8; ++i) r += static_cast<char>((cycles >> (8 * i)) & 0xFF);
-    const std::uint32_t crc = c6502::sim::cpu_run::crc32(r + writes);
-    std::string out;
-    for (int i = 0; i < 4; ++i) out += static_cast<char>((crc >> (8 * i)) & 0xFF);
-    return out;
-  };
-  const std::string seg0_digests = record(0x0802, 5, 0xFF, 2, "") +
-                                   record(0x0804, 5, 0xFF, 5, std::string("\x10\x00\x05", 3)) +
-                                   record(0xE000, 5, 0xFD, 11, std::string("\xFF\x01\x08\xFE\x01\x06", 6));
-  const std::string seg0_writes = std::string("\x10\x00\x05\xFE\x01\x06\xFF\x01\x08", 9);
-  const std::string seg1_digests = record(0x0809, 7, 0xFF, 14, std::string("\x11\x00\x07", 3));
-  const std::string want = "segment 0 stop 3\nstate 57344 5 0 0 253 48 11\nlast-writes 01FF:08 01FE:06\n"
-                           "writes 9\n" + seg0_writes + "digests 12\n" + seg0_digests +
-                           "segment 1 brk 1\nstate 2057 7 0 0 255 48 14\nlast-writes 0011:07\n"
-                           "writes 3\n" + std::string("\x11\x00\x07", 3) + "digests 4\n" + seg1_digests;
-  CHECK(response == want);
-}
-
-TEST_CASE("cpu-run: a segment's instructions limit it in place of max_instructions") {
-  std::string image(0x10000, '\0');
-  const std::uint8_t program[] = {kLdaImm, 0x05, kLdaImm, 0x06, kLdaImm, 0x07, kBrk};
-  for (std::size_t i = 0; i < sizeof program; ++i) image[0x0800 + i] = static_cast<char>(program[i]);
-  const std::string args =
-      R"({"stops": [], "stop_at_brk": false, "max_cycles": 1000, "max_instructions": 1, "segments": [)"
-      R"({"pc": 2048, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": [], "instructions": 2}, )"
-      R"({"pc": 2052, "a": 6, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 4, "patches": []}]})";
-  const std::string response =
-      c6502::backend::respond("c6502-backend 3\nmode cpu-run\nargs " + args + "\nimage 65536\n" + image);
-  CHECK(c6502::suite::contains(response, "segment 0 count 2\nstate 2052 6 0 0 255 48 4\n"));
-  CHECK(c6502::suite::contains(response, "segment 1 count 1\nstate 2054 7 0 0 255 48 6\n"));
-}
-
-TEST_CASE("cpu-run: a word read at $FFFF ends the response with an error") {
-  std::string image(0x10000, '\0');
-  image[0xFFFE] = static_cast<char>(kLdaAbs);
-  const std::string args =
-      R"({"stops": [], "stop_at_brk": true, "max_cycles": 1000, "max_instructions": null, "segments": [)"
-      R"({"pc": 65534, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": []}, )"
-      R"({"pc": 0, "a": 0, "x": 0, "y": 0, "sp": 255, "p": 48, "cycles": 0, "patches": []}]})";
-  const std::string response =
-      c6502::backend::respond("c6502-backend 3\nmode cpu-run\nargs " + args + "\nimage 65536\n" + image);
-  CHECK(response ==
-        "segment 0 error 0\nstate 65535 0 0 0 255 48 0\nlast-writes\nwrites 0\ndigests 0\n"
-        "error \"py65 reads a word at $FFFF, whose high byte is past the end of memory\"\n");
 }

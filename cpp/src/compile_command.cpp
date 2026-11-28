@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -22,9 +23,19 @@
 #endif
 
 #include "argparse.h"
-#include "backend.h"
+#include "binutils/assembler.h"
+#include "binutils/elf.h"
+#include "binutils/ld.h"
+#include "diagnostics.h"
 #include "errors.h"
-#include "json.h"
+#include "lexer.h"
+#include "passes/codegen_stage.h"
+#include "passes/front_end.h"
+#include "passes/ir_check.h"
+#include "passes/link_script.h"
+#include "passes/linker.h"
+#include "passes/text_stages.h"
+#include "passes/zp_globals.h"
 #include "pcpp_text.h"
 #include "processes.h"
 #include "pyrepr.h"
@@ -385,13 +396,44 @@ bool is_link_error(std::string_view type) {
          type == "ZpLocalAllocationError";
 }
 
-// Returns the exception `cpp_backend._exception` makes of the C++
-// side's error.
-Raised from_backend(const json::Value& error) {
-  return Raised{error.get("type")->string, error.get("message")->string, ""};
+Raised raised_of(const CompileError& e) { return Raised{e.python_type(), e.what(), ""}; }
+
+// Returns `v` as a 64-bit value, the width the linker holds an address
+// in. compile.py read an origin or a `--defsym` with Python's unbounded
+// integers, so a wider one throws `InternalError`, which says the port
+// doesn't take it.
+std::int64_t address(const asdl::Int& v, std::string_view what) {
+  if (v < asdl::Int(INT64_MIN) || v > asdl::Int(INT64_MAX)) {
+    throw InternalError("the C++ linker holds an address in 64 bits, and the " +
+                        std::string(what) + " " + asdl::int_to_string(v) + " is wider");
+  }
+  return static_cast<std::int64_t>(v);
 }
 
-std::string bool_json(bool b) { return b ? "true" : "false"; }
+passes::TextStage text_stage(std::string_view stage) {
+  if (stage == "parse") return passes::TextStage::kParse;
+  if (stage == "resolve") return passes::TextStage::kResolve;
+  return passes::TextStage::kTac;
+}
+
+// Runs the front end and code generation on `source`. What the
+// preprocessor writes to stderr is appended to `err`, and the front
+// end's warnings to `found`, which keep what they were given when a
+// pass throws, since compile.py prints them before the error.
+passes::StageResult generate(const std::string& source, const passes::FrontEndOptions& front,
+                             const passes::CodegenOptions& options, std::string& err,
+                             std::vector<diagnostics::CompileWarning>& found) {
+  passes::StageTables tables;
+  {
+    diagnostics::Collecting block(found);
+    passes::FrontEndResult checked = passes::front_end(source, front, err);
+    tables.c99 = std::move(checked.prog);
+    tables.symbols = std::move(checked.symbols);
+    tables.types = std::move(checked.types);
+  }
+  tables.footprints = passes::helper_footprints();
+  return passes::codegen(tables, options);
+}
 
 // Runs compile.py's `main` on one command line, keeping what it writes
 // in order.
@@ -421,8 +463,8 @@ class Compile {
         outcome_.raised = e;
       }
     } catch (const InternalError& e) {
-      // cpp_backend.py raises the C++ side's internal error as an
-      // AssertionError.
+      // cpp_backend.py raised the C++ side's internal error as an
+      // AssertionError, which the golden files hold.
       outcome_.raised = Raised{"AssertionError", e.what(), ""};
     }
     return std::move(outcome_);
@@ -449,12 +491,12 @@ class Compile {
     eprint(where + ": error: " + (e.strerror.empty() ? e.message : e.strerror));
   }
 
-  // compile.py's `_print_warnings`, for the `[where, message]` pairs of
-  // a response's `warnings` line.
-  void print_warnings(const std::string& path, const std::string& warnings) {
+  // compile.py's `_print_warnings`.
+  void print_warnings(const std::string& path,
+                      const std::vector<diagnostics::CompileWarning>& warnings) {
     const std::string where = path == "-" ? "<stdin>" : path;
-    for (const json::Value& w : json::parse(warnings).items) {
-      eprint(where + ": warning: " + w.items.at(0).string + ": " + w.items.at(1).string);
+    for (const diagnostics::CompileWarning& w : warnings) {
+      eprint(where + ": warning: " + w.where + ": " + w.message);
     }
   }
 
@@ -465,9 +507,12 @@ class Compile {
     return options_.read_stdin();
   }
 
-  std::string common_args(const Args& args) const {
-    return "\"pcpp_args\": " + string_list_json(args.pcpp_args) +
-           ", \"include_dir\": " + json::quote(options_.include_dir);
+  passes::FrontEndOptions front_options(const Args& args) const {
+    passes::FrontEndOptions front;
+    front.pcpp_args = args.pcpp_args;
+    front.include_dir = options_.include_dir;
+    front.optimize = args.optimize;
+    return front;
   }
 
   long long main(const std::vector<std::string>& argv) {
@@ -551,41 +596,42 @@ class Compile {
     return build(args, &defsyms);
   }
 
-  // compile.py's `_compile_c` under the variable: the request of
-  // `cpp_backend.compile_source` (for `-S`) or `stage_source`, and the
-  // replay of its response, with the warnings printed before an error.
+  // compile.py's `_compile_c`: the text of `--lex`, `--parse`,
+  // `--resolve`, `--tac`, or `-S` for the C input `path`, with what the
+  // preprocessor wrote to stderr and the warnings written before an
+  // error.
   std::string compile_c(const std::string& path, const Args& args) {
     const std::string source = read_source(path);
-    std::string mode;
-    std::string kwargs = "{" + common_args(args);
-    kwargs += ", \"filename\": " + (path == "-" ? std::string("null") : json::quote(path)) +
-              ", \"preprocess\": true";
-    const std::string inline_calls = bool_json(options_.inline_calls);
-    if (args.stage == "codegen") {
-      mode = "source-text";
-      kwargs += ", \"optimize\": " + bool_json(args.optimize) + ", \"inline\": " + inline_calls +
-                ", \"check_ir\": " + bool_json(options_.check_ir) + ", \"link_metadata\": false";
-    } else {
-      // `--lex`, `--parse`, `--resolve`, and `--tac`, the request of
-      // `cpp_backend.stage_source`, which checks the IR only for `--tac`.
-      mode = args.stage;
-      kwargs += ", \"optimize\": " + bool_json(args.optimize) + ", \"inline\": " + inline_calls +
-                ", \"check_ir\": " + bool_json(args.stage == "tac" && options_.check_ir);
-    }
-    kwargs += "}";
-    const std::string request = "c6502-backend 3\nmode " + mode + "\nargs " + kwargs +
-                                "\nsource " + std::to_string(source.size()) + "\n" + source;
-    const std::vector<Record> response = records(backend::respond(request));
-    std::string warnings = "[]";
+    passes::FrontEndOptions front = front_options(args);
+    if (path != "-") front.filename = path;
+    std::string err;
+    std::vector<diagnostics::CompileWarning> found;
     std::optional<Raised> error;
     std::string text;
-    for (const Record& r : response) {
-      if (r.key == "stderr") write(Stream::kErr, r.body);
-      if (r.key == "warnings") warnings = r.value;
-      if (r.key == "error") error = from_backend(json::parse(r.value));
-      if (r.key == "text") text = r.body;
+    try {
+      if (args.stage == "codegen") {
+        const passes::ir_check::Enabled checks(options_.check_ir);
+        passes::CodegenOptions codegen;
+        codegen.optimize = args.optimize;
+        codegen.inline_calls = options_.inline_calls;
+        text = generate(source, front, codegen, err, found).emitted.text;
+      } else {
+        // Of the text stages, only `--tac` checks the IR, in the TAC
+        // optimizer's driver.
+        const passes::ir_check::Enabled checks(args.stage == "tac" && options_.check_ir);
+        diagnostics::Collecting block(found);
+        const std::string preprocessed = passes::preprocess_source(source, front, err);
+        text = args.stage == "lex"
+                   ? lexer::format_tokens(preprocessed)
+                   : passes::run_text_stage(text_stage(args.stage), preprocessed, args.optimize,
+                                            options_.inline_calls)
+                         .text;
+      }
+    } catch (const CompileError& e) {
+      error = raised_of(e);
     }
-    print_warnings(path, warnings);
+    write(Stream::kErr, err);
+    print_warnings(path, found);
     if (error) throw *error;
     return text;
   }
@@ -600,7 +646,39 @@ class Compile {
     std::string link_name;
   };
 
-  // compile.py's `_cpp_build`: `-c` (`defsyms` null) or a link.
+  // Returns the object of `in`: a C input compiled with the link
+  // metadata block and assembled, an `.asm` file assembled, or for a
+  // link an object read from its bytes. What a C input's preprocessor
+  // wrote to stderr and its warnings are written first, even when it
+  // fails.
+  binutils::elf::ElfFile object_of(const Input& in, const Args& args) {
+    if (in.kind == "asm") return binutils::assembler::assemble(in.data, in.name);
+    if (in.kind == "object") return binutils::elf::read(in.data, in.name);
+    passes::FrontEndOptions front = front_options(args);
+    front.filename = in.filename;
+    passes::CodegenOptions codegen;
+    codegen.optimize = args.optimize;
+    codegen.inline_calls = options_.inline_calls;
+    codegen.link_metadata = true;
+    std::string err;
+    std::vector<diagnostics::CompileWarning> found;
+    std::optional<std::string> text;
+    std::optional<Raised> error;
+    try {
+      text = generate(in.data, front, codegen, err, found).emitted.text;
+    } catch (const CompileError& e) {
+      error = raised_of(e);
+    }
+    write(Stream::kErr, err);
+    print_warnings(in.path, found);
+    if (error) throw *error;
+    return binutils::assembler::assemble(*text, in.name);
+  }
+
+  // compile.py's `_cpp_build`: `-c` (`defsyms` null) or a link. Every
+  // input is read before any is compiled, and the first that can't be
+  // read ends the list, which compile.py reports after the inputs
+  // before it.
   long long build(const Args& args,
                   const std::vector<std::pair<std::string, asdl::Int>>* defsyms) {
     const bool link = defsyms != nullptr;
@@ -632,80 +710,42 @@ class Compile {
       inputs.push_back(std::move(in));
     }
     const std::string output = args.output && !args.output->empty() ? *args.output : "a.out";
-    std::string kwargs = "{" + common_args(args) + ", \"optimize\": " + bool_json(args.optimize) +
-                         ", \"inline\": " + bool_json(options_.inline_calls) +
-                         ", \"check_ir\": " + bool_json(options_.check_ir) + ", \"inputs\": [";
-    for (std::size_t i = 0; i < inputs.size(); ++i) {
-      const Input& in = inputs[i];
-      if (i != 0) kwargs += ", ";
-      kwargs += "{\"kind\": " + json::quote(in.kind) + ", \"name\": " + json::quote(in.name) +
-                ", \"filename\": " + (in.filename ? json::quote(*in.filename) : "null") +
-                ", \"link_name\": " + json::quote(in.link_name) + "}";
-    }
-    kwargs += "]";
-    if (link) {
-      // argparse's `type=_number` has read the origin already.
-      const std::optional<asdl::Int> origin =
-          args.origin ? number(*args.origin) : std::optional<asdl::Int>();
-      kwargs += ", \"run_link\": " + bool_json(!stop_object && !stop_error);
-      kwargs += ", \"script\": " +
-                (args.script && !args.script->empty() ? json::quote(*args.script) : "null");
-      kwargs += ", \"origin\": " + (origin ? asdl::int_to_string(*origin) : "null");
-      kwargs += ", \"defsyms\": [";
-      for (std::size_t i = 0; i < defsyms->size(); ++i) {
-        if (i != 0) kwargs += ", ";
-        kwargs += "[" + json::quote((*defsyms)[i].first) + ", " +
-                  asdl::int_to_string((*defsyms)[i].second) + "]";
-      }
-      kwargs += "], \"output\": " + json::quote(output);
-    }
-    kwargs += "}";
-    std::string request = "c6502-backend 3\nmode " + std::string(link ? "link" : "objects") +
-                          "\nargs " + kwargs + "\n";
+    const passes::ir_check::Enabled checks(options_.check_ir);
+    binutils::ld::Objects objects;
     for (const Input& in : inputs) {
-      request += "input " + std::to_string(in.data.size()) + "\n" + in.data;
-    }
-    const std::vector<Record> response = records(backend::respond(request));
-    // The response's records by input, and the link's record.
-    std::vector<std::vector<const Record*>> per_input;
-    const Record* link_record = nullptr;
-    for (const Record& r : response) {
-      if (r.key == "input") {
-        per_input.emplace_back();
-      } else if (r.key == "link-error" || r.key == "output-error" || r.key == "executable" ||
-                 (r.key == "write-error" && link)) {
-        link_record = &r;
-      } else if (!per_input.empty()) {
-        per_input.back().push_back(&r);
-      }
-    }
-    for (std::size_t i = 0; i < per_input.size() && i < inputs.size(); ++i) {
-      const Input& in = inputs[i];
-      std::optional<Raised> error;
-      std::optional<Raised> write_error;
-      std::string warnings = "[]";
-      const std::string* object = nullptr;
-      for (const Record* r : per_input[i]) {
-        if (r->key == "stderr") write(Stream::kErr, r->body);
-        if (r->key == "warnings") warnings = r->value;
-        if (r->key == "error") error = from_backend(json::parse(r->value));
-        if (r->key == "write-error") write_error = from_backend(json::parse(r->value));
-        if (r->key == "object") object = &r->body;
-      }
-      if (in.kind == "c") print_warnings(in.path, warnings);
-      if (error) {
-        if (!is_input_error(error->type)) throw *error;
-        report(in.path, *error);
+      std::optional<binutils::elf::ElfFile> obj;
+      try {
+        obj = object_of(in, args);
+      } catch (const CompileError& e) {
+        const Raised error = raised_of(e);
+        if (!is_input_error(error.type)) throw error;
+        report(in.path, error);
+        return 1;
+      } catch (const Raised& e) {
+        if (!is_input_error(e.type)) throw;
+        report(in.path, e);
         return 1;
       }
-      if (!link) {
-        const std::string out_path =
-            args.output && !args.output->empty() ? *args.output : stem_of(in.path) + ".o";
-        if (const int e = write_bytes(out_path, object != nullptr ? *object : ""); e != 0) {
-          throw os_error(e, out_path);
-        }
-        if (write_error) throw *write_error;
+      if (link) {
+        // The link takes the object the assembler made, as compile.py's
+        // does, without writing and reading it.
+        objects.emplace_back(in.link_name, std::move(*obj));
+        continue;
       }
+      // compile.py opens the object's file before `elf.write` packs the
+      // fields, so a `struct.error` leaves the file empty.
+      std::string bytes;
+      std::optional<Raised> write_error;
+      try {
+        bytes = binutils::elf::write(*obj);
+      } catch (const CompileError& e) {
+        if (e.python_type() != "struct.error") throw;
+        write_error = raised_of(e);
+      }
+      const std::string out_path =
+          args.output && !args.output->empty() ? *args.output : stem_of(in.path) + ".o";
+      if (const int e = write_bytes(out_path, bytes); e != 0) throw os_error(e, out_path);
+      if (write_error) throw *write_error;
     }
     if (stop_object) {
       eprint("c6502: " + *stop_object + " is already an object");
@@ -716,27 +756,50 @@ class Compile {
       return 1;
     }
     if (!link) return 0;
-    if (link_record == nullptr) throw std::runtime_error("the response has no link record");
-    if (link_record->key == "link-error") {
-      const Raised e = from_backend(json::parse(link_record->value));
-      if (!is_link_error(e.type)) throw e;
-      eprint("c6502: link error: " + e.message);
+
+    // compile.py reads the script after the inputs, links, opens the
+    // output, and then writes the executable's bytes.
+    binutils::ld::Names names;
+    for (const auto& [name, value] : *defsyms) {
+      names.insert_or_assign(name, address(value, "--defsym value"));
+    }
+    // argparse's `type=_number` has read the origin already.
+    const std::optional<asdl::Int> given =
+        args.origin ? number(*args.origin) : std::optional<asdl::Int>();
+    const bool wide_origin =
+        given && (*given < asdl::Int(INT64_MIN) || *given > asdl::Int(INT64_MAX));
+    const std::int64_t origin = !given        ? passes::linker::kDefaultOrigin
+                                : wide_origin ? 0
+                                              : address(*given, "origin");
+    binutils::elf::ElfFile exe;
+    try {
+      std::optional<passes::link_script::Script> script;
+      if (args.script && !args.script->empty()) {
+        script = passes::link_script::read_script(*args.script);
+      }
+      // An origin too wide for the linker's 64 bits is outside the
+      // address space too, and link_objects reports that after its check
+      // for no objects. A link with a script doesn't read the origin.
+      if (wide_origin && !script) {
+        if (objects.empty()) throw CompileError("LinkError", "linking needs at least one object");
+        throw CompileError("LinkError", passes::linker::origin_message(*given));
+      }
+      exe = passes::linker::link_objects(std::move(objects), script, origin, names);
+    } catch (const CompileError& e) {
+      if (!is_link_error(e.python_type())) throw raised_of(e);
+      eprint("c6502: link error: " + std::string(e.what()));
       return 1;
     }
-    if (link_record->key == "write-error") {
+    std::string data;
+    try {
+      data = binutils::elf::write(exe);
+    } catch (const CompileError& e) {
+      if (e.python_type() != "struct.error") throw;
       // Python opens the executable's file before `elf.write` raises.
-      if (const int e = write_bytes(output, ""); e != 0) throw os_error(e, output);
-      throw from_backend(json::parse(link_record->value));
+      if (const int error = write_bytes(output, ""); error != 0) throw os_error(error, output);
+      throw raised_of(e);
     }
-    if (link_record->key == "output-error") {
-      const json::Value v = json::parse(link_record->value);
-      const int error = static_cast<int>(v.get("errno")->integer);
-      Raised e = os_error(error, output);
-      e.strerror = v.get("strerror")->string;
-      e.message = "[Errno " + std::to_string(error) + "] " + e.strerror + ": " +
-                  pyrepr::string(output);
-      throw e;
-    }
+    if (const int error = write_bytes(output, data); error != 0) throw os_error(error, output);
     return 0;
   }
 };
@@ -764,96 +827,7 @@ void set_binary(std::FILE* f) {
 #endif
 }
 
-// Reads exactly `n` bytes of stdin, or throws.
-std::string read_exactly(std::size_t n) {
-  std::string data(n, '\0');
-  if (n != 0 && std::fread(data.data(), 1, n, stdin) != n) {
-    throw std::runtime_error("compile's frames end early");
-  }
-  return data;
-}
-
-std::string read_line() {
-  std::string line;
-  for (int c = std::fgetc(stdin); c != '\n'; c = std::fgetc(stdin)) {
-    if (c == EOF) throw std::runtime_error("compile's frames end early");
-    line += static_cast<char>(c);
-  }
-  return line;
-}
-
 void put(std::string_view s, std::FILE* f) { std::fwrite(s.data(), 1, s.size(), f); }
-
-// Runs the command in frames with cpp_backend.py's `run_tool`, which
-// sends a header line, the JSON object
-//
-//     {"include_dir": ..., "columns": ..., "inline": ..., "check_ir": ...}
-//
-// on stdin, and reads the frames on stdout:
-//
-//     stdin                          (a request for `sys.stdin.read()`)
-//     write-out <length>             (a write to stdout)
-//     <the text>
-//     write-err <length>             (a write to stderr)
-//     <the text>
-//
-// and last one of
-//
-//     status <n>                     (main returned n)
-//     exit <n>                       (main raised SystemExit(n))
-//     raised <JSON {"type": ..., "message": ...}>
-//
-// Python answers a request for stdin with
-//
-//     stdin <length>
-//     <the text>
-//
-// or with `stdin-error <JSON {"type": ..., "message": ..., "strerror":
-// ...}>` for the exception `sys.stdin.read()` raised.
-int framed(const std::vector<std::string>& argv) {
-  set_binary(stdin);
-  set_binary(stdout);
-  const json::Value header = json::parse(read_line());
-  Options options;
-  options.include_dir = header.get("include_dir")->string;
-  options.columns = static_cast<int>(header.get("columns")->integer);
-  options.inline_calls = header.get("inline")->boolean;
-  options.check_ir = header.get("check_ir")->boolean;
-  options.read_stdin = []() -> std::string {
-    put("stdin\n", stdout);
-    std::fflush(stdout);
-    const std::string line = read_line();
-    const std::size_t space = line.find(' ');
-    const std::string key = line.substr(0, space);
-    const std::string rest = space == std::string::npos ? "" : line.substr(space + 1);
-    if (key == "stdin") return read_exactly(std::stoull(rest));
-    if (key == "stdin-error") {
-      const json::Value e = json::parse(rest);
-      const json::Value* strerror = e.get("strerror");
-      throw Raised{e.get("type")->string, e.get("message")->string,
-                   strerror != nullptr && strerror->kind == json::Value::Kind::kString
-                       ? strerror->string
-                       : ""};
-    }
-    throw std::runtime_error("compile's answer for stdin is " + line);
-  };
-  const Outcome o = run(argv, options);
-  for (const Write& w : o.writes) {
-    put((w.stream == Stream::kOut ? "write-out " : "write-err ") + std::to_string(w.text.size()) +
-            "\n",
-        stdout);
-    put(w.text, stdout);
-  }
-  if (o.raised) {
-    put("raised {\"type\": " + json::quote(o.raised->type) +
-            ", \"message\": " + json::quote(o.raised->message) + "}\n",
-        stdout);
-  } else {
-    put(std::string(o.exited ? "exit " : "status ") + std::to_string(*o.status) + "\n", stdout);
-  }
-  std::fflush(stdout);
-  return 0;
-}
 
 bool is_checkout(const fs::path& root) {
   std::error_code ec;
@@ -905,39 +879,6 @@ std::string read_text(const std::string& path) {
   }
 }
 
-std::vector<Record> records(const std::string& data) {
-  static const std::set<std::string, std::less<>> kSections = {
-      "stderr", "tac", "asm", "asm2", "text", "object"};
-  std::vector<Record> out;
-  std::size_t pos = 0;
-  while (pos < data.size()) {
-    const std::size_t end = data.find('\n', pos);
-    if (end == std::string::npos) throw std::runtime_error("a response line without its newline");
-    const std::string line = data.substr(pos, end - pos);
-    pos = end + 1;
-    Record r;
-    const std::size_t space = line.find(' ');
-    r.key = line.substr(0, space);
-    r.value = space == std::string::npos ? "" : line.substr(space + 1);
-    if (kSections.count(r.key) != 0) {
-      const std::size_t n = std::stoull(r.value);
-      r.body = data.substr(pos, n);
-      pos += n;
-    }
-    out.push_back(std::move(r));
-  }
-  return out;
-}
-
-std::string string_list_json(const std::vector<std::string>& v) {
-  std::string s = "[";
-  for (std::size_t i = 0; i < v.size(); ++i) {
-    if (i != 0) s += ", ";
-    s += json::quote(v[i]);
-  }
-  return s + "]";
-}
-
 std::optional<asdl::Int> number(std::string_view text) {
   const std::string_view t = py_strip(text);
   if (!t.empty() && t[0] == '$') return py_int(t.substr(1), 16);
@@ -951,7 +892,6 @@ Outcome run(const std::vector<std::string>& argv, const Options& options) {
 int command(const std::vector<std::string>& args, const std::string& self) {
   std::vector<std::string> argv{"c6502"};
   argv.insert(argv.end(), args.begin(), args.end());
-  if (env_is_one("C6502CPP_FRAMES")) return framed(argv);
   Options options;
   options.include_dir = find_include_dir(self);
   options.columns = argparse::terminal_columns();

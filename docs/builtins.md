@@ -100,8 +100,7 @@ operand the result is whatever the NMOS 6502's decimal mode produces.
 example. The compiler folds constants, and the simulator and the TAC
 interpreter compute, with the same model of the CPU, copied from
 py65's `opADC` and `opSBC` (`adc_byte` and `sbc_byte` in
-cpp/src/builtin_functions.h, with a Python copy in
-builtin_functions.py). cpp/tests/test_bcd_builtins.cpp checks the C++
+cpp/src/builtin_functions.h). cpp/tests/test_bcd_builtins.cpp checks the C++
 model against the simulator's CPU, and the CPU against py65's results
 frozen in cpp/tests/frozen/cpu/decimal.txt, for every pair of bytes and
 both carries. For the accumulator and

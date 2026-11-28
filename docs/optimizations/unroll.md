@@ -35,8 +35,8 @@ void fill(uint8_t v) {
 ```
 
 The pass changes the AST, which has no printed form in the pass
-tracing script, so the listings below are the output of `compile.py
---tac -O` on the same source without the attribute and with it,
+tracing script, so the listings below are the output of `c6502cpp
+compile --tac -O` on the same source without the attribute and with it,
 printed one instruction per line.
 
 ### Before
@@ -126,7 +126,7 @@ A marked loop that never ends is a compile error too. The loop's
 state is the induction variable alone, so when the variable takes a
 value a second time the pass reports "loop never terminates". In
 `for (uint8_t i = 0; i <= 255; i++)`, `i` wraps from 255 to 0, and
-`compile.py` prints one line ending in "unroll: loop never
+`c6502cpp compile` prints one line ending in "unroll: loop never
 terminates (`i` wraps at the width of `unsigned char` and the
 condition stays true)". A loop that ends after more than 256
 iterations fails with "iteration count exceeds cap of 256".

@@ -15,7 +15,10 @@ now the C++ file of the same path under cpp/src, whose functions keep
 their names without a leading underscore ([cpp_port.md](cpp_port.md)),
 and the tests of the removed modules are now the cases in cpp/tests,
 such as cpp/tests/test_long_branches_calls.cpp for
-`tests/test_long_branches.py`.
+`tests/test_long_branches.py`. The simulator's Python hooks below,
+in `sim/runtime.py`, are the C++ hooks of cpp/src/sim/runtime.h now,
+which compute floating point with cpp/src/fp_arith.h, and group R of
+step 9 removed the Python simulator.
 
 Numbers are at the time of the simulator's first run:
 

@@ -1,16 +1,16 @@
 # Linker scripts and sections
 
 A program compiled from several source files is linked by
-`compile.py` from their objects. Given a linker script with `-T`, the
+`c6502cpp compile` from their objects. Given a linker script with `-T`, the
 linker places the program in memory: which code and data go in ROM
 and which in RAM, at what addresses, with what alignment. The script
 language is a subset of GNU ld's, so a script written for a GCC
 toolchain mostly reads the same.
 
 ```sh
-uv run python compile.py -O -c main.c io.c          # main.o and io.o
-uv run python compile.py -T prog.ld main.o io.o -o prog
-uv run python objdump.py -h prog                    # where each section went
+cpp/build/bin/c6502cpp compile -O -c main.c io.c   # main.o and io.o
+cpp/build/bin/c6502cpp compile -T prog.ld main.o io.o -o prog
+cpp/build/bin/c6502cpp objdump -h prog             # where each section went
 ```
 
 The output is an ELF executable with a loadable segment for each output
@@ -187,7 +187,7 @@ takes them too, and a script with neither fails the link on the
 first helper it leaves out:
 
 ```
-compile.py: link error: no output section in the script takes `udivmod16` (section .text, runtime.o)
+c6502: link error: no output section in the script takes `udivmod16` (section .text, runtime.o)
 ```
 
 Without a script, the helpers follow the program's code in `.text`. A
@@ -196,13 +196,13 @@ end up next to each other, as with any two functions.
 
 A helper that a file defines, or whose address `--defsym` gives, isn't
 taken from the library. That's how the tests run a program on the
-simulator's copies of the helpers (`sim.linked.defsym_args`). The
+simulator's copies of the helpers (`sim::defsym_args`). The
 helpers for floating point, for 64-bit integers, and for calls
 through a pointer have no 6502 code yet, so a program that calls one
 links only when `--defsym` gives its address:
 
 ```
-compile.py: link error: a.o: undefined symbol `fadd` (a runtime helper that has no 6502 code in the runtime library yet, so give its address with --defsym)
+c6502: link error: a.o: undefined symbol `fadd` (a runtime helper that has no 6502 code in the runtime library yet, so give its address with --defsym)
 ```
 
 The helpers work in `HARGS`, at the address the linker gives it, and
@@ -237,7 +237,7 @@ region, or whose load bytes run past the end of its load region,
 fails the link:
 
 ```
-compile.py: link error: section .text runs past the end of region rom by 12 bytes
+c6502: link error: section .text runs past the end of region rom by 12 bytes
 ```
 
 Before laying the program out, the linker gives each instruction the
@@ -250,10 +250,10 @@ object keeps. Then it applies each relocation. A segment of the
 executable runs at its section's run address and is loaded at its
 load address, which is how `.data` goes in ROM to be copied to RAM.
 
-`objdump.py -D` writes the executable as dasm source, each output
-section a `SEG` (`SEG.U` for `NOLOAD`) with its `ORG`, and a `RORG`
-for a section with a load address. The examples check in that listing
-of their linked programs.
+`c6502cpp objdump -D` writes the executable as dasm source, each
+output section a `SEG` (`SEG.U` for `NOLOAD`) with its `ORG`, and a
+`RORG` for a section with a load address. examples/zork/interpreter.asm
+is that listing of Zork's linked interpreter.
 
 ## Zero page
 

@@ -8,9 +8,9 @@ can be read without the others, so a reader looking for one stage
 can go straight to it.
 
 The compiler is written in C++, in cpp/, whose build makes the
-executable `c6502cpp`. Until step 9 of the port
-([cpp_port.md](cpp_port.md)), `compile.py`, `nm.py`, and `objdump.py`
-stay as shims that hand their command lines to it. The "Layout"
+executable `c6502cpp`. It was ported from a Python compiler
+([cpp_port.md](cpp_port.md)), whose command lines `c6502cpp compile`,
+`c6502cpp nm`, and `c6502cpp objdump` keep. The "Layout"
 section of [../cpp/README.md](../cpp/README.md) lists the C++ files,
 the `CLAUDE.md` of each directory has the details of its modules, and
 the comments at the top of the larger files describe their own
@@ -20,7 +20,7 @@ conventions have [calling_conventions.md](calling_conventions.md).
 
 ## The pipeline
 
-`c6502cpp` runs every stage for `compile.py`, and `--lex`, `--parse`,
+`c6502cpp compile` runs every stage, and `--lex`, `--parse`,
 `--resolve`, `--tac`, `-S`, and `-c` stop it at the stage they name.
 The labels on the arrows mark the steps that only one of the two
 pipelines runs.
@@ -74,7 +74,7 @@ is why it isn't a box of its own.
 
 | Stage | Module | Detail |
 |---|---|---|
-| Preprocessing | `cpp/src/preprocessor.cpp`, `pcpp_*.cpp` | A port of pcpp. `include/` is on the search path. Flags `compile.py` doesn't know are passed to it. In `#if`, `true` is 1 and `false` is 0, as in C23, and each `_Bool` gets a warning (`cpp/src/diagnostics.h`). |
+| Preprocessing | `cpp/src/preprocessor.cpp`, `pcpp_*.cpp` | A port of pcpp. `include/` is on the search path. Flags `c6502cpp compile` doesn't know are passed to it. In `#if`, `true` is 1 and `false` is 0, as in C23, and each `_Bool` gets a warning (`cpp/src/diagnostics.h`). |
 | Parsing | `cpp/src/parser*.cpp`, `cpp/generated/c99_lalr.cpp`, `cpp/src/lexer.cpp` | LALR, with the AST built as each rule reduces, so that `typedef` names are known while parsing. See "Parser" in [../CLAUDE.md](../CLAUDE.md). |
 | Name resolution | `cpp/src/passes/identifier_resolution.cpp`, `string_lifting.cpp`, `label_resolution.cpp`, `loop_labeling.cpp` | [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), passes 2 to 5. string_lifting first rewrites designated initializers into positional lists (`cpp/src/passes/designators.cpp`). |
 | Type checking | `cpp/src/passes/type_checker*.cpp` | Promotions, conversions, and the symbol table. [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), pass 6 |
@@ -84,20 +84,21 @@ is why it isn't a box of its own.
 | The optimizer | `cpp/src/passes/translate_for_codegen.cpp`, `optimized_front.cpp`, `optimized_asm.cpp`, and the rest of `cpp/src/passes/` | [optimizations/README.md](optimizations/README.md) |
 | Lowering to asm2 | `cpp/src/passes/asm_to_asm2.cpp` | [../cpp/src/passes/CLAUDE.md](../cpp/src/passes/CLAUDE.md), pass 10 |
 | Emit | `cpp/src/asm_emit.cpp` | The comment at the top of the file gives the text for each instruction. |
-| Assembling | `cpp/src/binutils/assembler.cpp`, `cpp/src/binutils/elf.cpp` | [../binutils/CLAUDE.md](../binutils/CLAUDE.md) |
+| Assembling | `cpp/src/binutils/assembler.cpp`, `cpp/src/binutils/elf.cpp` | [../cpp/src/binutils/CLAUDE.md](../cpp/src/binutils/CLAUDE.md) |
 | Linking | `cpp/src/passes/linker.cpp`, `cpp/src/passes/link_layout.cpp`, `cpp/src/binutils/ld.cpp` | [linker_scripts.md](linker_scripts.md) and "Linking" below |
 
-The simulator's harness, `sim/harness.py`, has c6502cpp compile the
-source with the same stages (`codegen` in
-cpp/src/passes/codegen_stage.cpp), stopping before `asm_to_asm2`, so
-that the tests run the code the command line writes.
+The simulator's harness (`build_source_sim` in
+cpp/src/sim/source_sim.h) compiles the source with the same stages
+(`codegen` in cpp/src/passes/codegen_stage.cpp), stopping before
+`asm_to_asm2`, so that the tests run the code the command line
+writes.
 
 ## The four IRs
 
-Each IR is declared in an ASDL file, from which `asdl.py` generates a
-module of Python dataclasses and asdlgen (cpp/tools/asdlgen.h) the C++
-classes in cpp/generated/. A sum type's base class is `Type_<name>`, and
-each constructor keeps its ASDL name.
+Each IR is declared in an ASDL file, from which asdlgen
+(cpp/tools/asdlgen.h) generates the C++ classes in cpp/generated/. A
+sum type is `Type_<name>`, a `std::variant` of its constructors'
+structs, and each constructor keeps its ASDL name.
 
 | IR | Declared in | Made by | What it holds |
 |---|---|---|---|
@@ -250,7 +251,7 @@ block in `.bss` when linking with a script.
 
 `SSP`, `FP`, `HARGS`, and `DPTR` belong to the runtime, and the
 startup code sets `SSP` before calling `__zp_init` and `main`. The
-simulator's boot stub (`sim/runtime.py`, `build_boot_stub`) is an
+simulator's boot stub (`boot_stub` in cpp/src/sim/runtime.h) is an
 example.
 
 ### The soft stack and zp_abi
@@ -311,7 +312,8 @@ to that width (`odd_width_helper_op` in cpp/src/tac_to_asm_arith.cpp).
 `icall`, the trampoline for calls through a pointer, is
 `JMP (DPTR)`.
 
-The layouts above are the ones `sim/runtime.py`'s Python hooks read,
+The layouts above are the ones the simulator's hooks read
+(cpp/src/sim/runtime.h),
 and the 6502 helpers of cpp/src/rtlib/helpers.cpp, which the linker
 adds to a program from the runtime library, follow them too.
 `helper_footprints` in cpp/src/passes/zp_globals.h gives how many
@@ -335,7 +337,7 @@ allocates zero page from it.
 
 Each object holds one section for each function and object, its
 symbols, its relocations, the link metadata, and the assembly text it
-came from ([../binutils/CLAUDE.md](../binutils/CLAUDE.md)). The
+came from ([../cpp/src/binutils/CLAUDE.md](../cpp/src/binutils/CLAUDE.md)). The
 linker treats every unit's zero-page slots as unplaced and places
 them again for the whole program, in this order.
 
@@ -362,6 +364,6 @@ places their sections as `runtime.o(.text)` or with a pattern such as
 `*(.text)`, and without one they follow the program's code in
 `.text`.
 
-`sim/linked.py` runs the executable in the simulator. A program linked
-with the simulator's helper addresses (`sim.linked.defsym_args`) calls
-the simulator's copies instead of holding its own.
+The simulator runs the executable (cpp/src/sim/harness.h). A program
+linked with the simulator's helper addresses (`sim::defsym_args`)
+calls the simulator's copies instead of holding its own.

@@ -339,7 +339,7 @@ The unoptimized pipeline runs the peephole fixed point once.
 
 ## Pipeline order
 
-`compile.py -S -O` applies the optimizations in the
+`c6502cpp compile -S -O` applies the optimizations in the
 order below. Steps that aren't optimizations are listed in plain text
 without a link, so that each optimization's neighbors can be seen. A
 group marked *fixed point* runs every member in order, then repeats
@@ -553,7 +553,7 @@ pass on the whole program.
 
 ### Without `-O`
 
-`compile.py -S` without `-O` runs none of the TAC or
+`c6502cpp compile -S` without `-O` runs none of the TAC or
 asm SSA optimizations. It translates to asm, replaces
 pseudoregisters, and runs the peephole fixed point above once, with
 every member but [element stepped in place](element_in_place.md),

@@ -194,7 +194,7 @@ caller reads back, and 4 for an early return's store and `JMP`.
 | Ali Baba | 15213 | 14994 | 219 |
 | The single-file examples | 2982 | 2982 | 0 |
 
-The bytes are the sums of each unit's function sizes (`nm.py -S` of
+The bytes are the sums of each unit's function sizes (`c6502cpp nm -S` of
 its `-c -O` object, without `__zp_init`). 105 functions are inlined,
 13 of them with several calls: Ali Baba's `next_string` (text.c),
 `is_player_character` (util.c), `pending_xp` and `current_slot`

@@ -42,7 +42,7 @@ parsed by any tool.
   sizes, the functions a program reaches by address (defined in each
   unit, with internal linkage), the header's other names, the errors,
   and the limits.
-- `linker_scripts.md` — user guide to linking with `compile.py -T`:
+- `linker_scripts.md` — user guide to linking with `c6502cpp compile -T`:
   sections (the defaults and `[[c6502::section("name")]]`), the GNU
   ld script subset, the runtime library and where its helpers go,
   the section symbols, the startup copy and clear, and how the

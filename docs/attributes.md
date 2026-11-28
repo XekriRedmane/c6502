@@ -472,7 +472,7 @@ whose message points to the fixed type.
 
 `section` puts a function or an object with static storage in a
 named section instead of the one it would go in (`.text`, `.rodata`,
-`.data`, or `.bss`). A linker script given to `compile.py -T`
+`.data`, or `.bss`). A linker script given to `c6502cpp compile -T`
 then decides where the section goes in memory:
 
 ```c
@@ -951,11 +951,11 @@ files give a name different addresses.
 ## What the compiler rejects
 
 Each of these stops the compile with a message that names the
-declaration and the reason. `compile.py` prints it on one line, as
+declaration and the reason. `c6502cpp compile` prints it on one line, as
 `<file>: error: <message>`, and exits with status 1.
 
 ```
-$ compile.py rom.c -S
+$ cpp/build/bin/c6502cpp compile rom.c -S
 rom.c: error: function 'f' has `preserves_x` but returns an int, whose high byte comes back in X
 ```
 

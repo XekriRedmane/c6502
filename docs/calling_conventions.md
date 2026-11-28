@@ -571,7 +571,7 @@ zero-page bytes of its own, as the last condition above says.
 
 Each source file is compiled on its own, and the parameter and local
 bytes it binds with `EQU` lines are only right for that file. So
-source files compiled with `-O` are linked by `compile.py`,
+source files compiled with `-O` are linked by `c6502cpp compile`,
 which assigns the bytes for the whole program at once. A function declared `extern` and defined in another file gets
 zp_abi on both sides by the same rules, and the linker checks that
 the files agree on the size of its parameters and the registers they

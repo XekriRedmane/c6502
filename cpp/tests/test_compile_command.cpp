@@ -17,7 +17,6 @@ namespace {
 
 namespace cc = c6502::compile_command;
 
-// c6502's usage at 41 columns.
 const char kUsage41[] =
     "usage: c6502 [-h] [-o OUTPUT]\n"
     "             [--lex | --parse | --resolve | --tac | -S | -c]\n"

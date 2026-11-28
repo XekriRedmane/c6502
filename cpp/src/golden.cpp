@@ -159,8 +159,6 @@ std::string normalize(std::string text, const Root& root) {
   return text;
 }
 
-// The directory of c6502's own headers, with the platform's
-// separators.
 std::string compile_include_dir(const Root& root) {
   return (root.path / "include").make_preferred().string();
 }
@@ -185,7 +183,6 @@ std::vector<std::string> tacsim_lines(const std::vector<std::string>& argv,
   front.filename = argv[0];
   front.include_dir = include_dir;
   const passes::ir_check::Enabled checks(false);
-  // Each of the two checks starts from a translation of its own.
   const auto translate = [&] {
     std::string err;
     std::vector<diagnostics::CompileWarning> warnings;

@@ -1,8 +1,3 @@
-// Tests of src/passes/linker.*: Python's message for each of the seven
-// raise sites of `link_objects` and `link_files`, five of which
-// tools/capture_binutils.py's records don't reach.
-// `c6502cpp check-binutils` links every `link` record of the corpus and
-// the suite in C++ and compares the executables byte for byte.
 #include <filesystem>
 #include <fstream>
 #include <functional>

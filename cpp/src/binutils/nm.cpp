@@ -122,7 +122,6 @@ std::string read_path(const std::string& path) {
 int main(const std::vector<std::string>& argv, const ReadFile& read_file, int columns,
          std::string& out, std::string& err, bool* help) {
   if (help != nullptr) *help = false;
-  // The program's name, as Python's argparse takes it from `argv[0]`.
   const std::string prog = argparse::path_name(argv.at(0));
   argparse::Parser ap(prog, "List the symbols of c6502 objects and executables.");
   ap.add_positional("files", "object or executable files");

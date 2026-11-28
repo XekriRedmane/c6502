@@ -186,7 +186,6 @@ std::vector<std::string> full_contents(const elf::ElfFile& elf, const std::set<s
 int main(const std::vector<std::string>& argv, const nm::ReadFile& read_file, int columns,
          std::string& out, std::string& err, bool* help) {
   if (help != nullptr) *help = false;
-  // The program's name, as Python's argparse takes it from `argv[0]`.
   const std::string prog = argparse::path_name(argv.at(0));
   argparse::Parser ap(prog, "Show what's in c6502 objects and executables.", false);
   ap.add_help({"--help"}, "show this message and exit");

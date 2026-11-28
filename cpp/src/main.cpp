@@ -1,5 +1,3 @@
-// c6502cpp: the compiler (`compile`), nm, and objdump, and the checks
-// the port to C++ is measured by (cpp/README.md).
 #include <algorithm>
 #include <cstdio>
 #include <exception>
@@ -693,8 +691,6 @@ int main(int argc, char** argv) {
       const auto tool = command == "nm" ? binutils::nm::main : binutils::objdump::main;
       const int status =
           tool(argv_tool, binutils::nm::read_path, argparse::terminal_columns(), out, err, &help);
-      // nm.py and objdump.py wrote the listing's bytes, and the help as
-      // text, which on Windows ends each line with CR LF.
       if (help) {
         std::fwrite(out.data(), 1, out.size(), stdout);
       } else {

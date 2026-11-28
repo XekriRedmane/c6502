@@ -1,16 +1,3 @@
-// Tests of the stages `c6502cpp compile` runs on one source: the `-S`
-// text with and without `-O`, with inlining off, and for a parameter
-// with no name, the warnings and the error of a rejected program, what
-// the preprocessor writes to stderr, and the text of `--lex`, `--parse`,
-// `--resolve`, and `--tac -O`. The expected texts are what Python's
-// compile.py gave for the same programs, which `c6502cpp backend`'s
-// tests held until group R of step 9 removed the backend. The first
-// program is
-//
-//     static unsigned char add1(unsigned char x) { return x + 1; }
-//     int main(void) { return add1(2); }
-//
-// and under `-O`, `add1` is inlined into `main` and dropped.
 #include <string>
 
 #include "compile_case.h"
@@ -26,8 +13,6 @@ const char kSource[] =
     "static unsigned char add1(unsigned char x) { return x + 1; }\n"
     "int main(void) { return add1(2); }\n";
 
-// Compiles `source` to `stage` with the IR checks as `check_ir` gives
-// them.
 suite::Compiled compiled(Stage stage, const std::string& source, bool optimize,
                          bool inline_calls = true, bool check_ir = false, bool preprocess = true) {
   suite::Options options;
@@ -38,8 +23,6 @@ suite::Compiled compiled(Stage stage, const std::string& source, bool optimize,
   return suite::compile(stage, source, options);
 }
 
-// Returns whether `c` compiled with no warning, nothing on stderr, and
-// the text `text`.
 bool gives(const suite::Compiled& c, const std::string& text) {
   return !c.error && c.err.empty() && c.warnings.empty() && c.text == text;
 }
@@ -205,8 +188,6 @@ main:
    RTS
 )req";
 
-// A program that declares a parameter without a name, whose slot is
-// spelled by its position, `__zpabi_put__0`.
 const char kUnnamedSource[] =
     "[[c6502::zp_abi]] unsigned char put(unsigned char);\n"
     "unsigned char f(void) { return put(3); }\n";
@@ -259,16 +240,12 @@ TEST_CASE("compile stages: an unnamed parameter's slot is spelled by its positio
 }
 
 TEST_CASE("compile stages: the IR checks leave the text as it is") {
-  // The checks run in C++, so the text is the one without them, and
-  // they are off again once the compile is done.
   const suite::Compiled c = compiled(Stage::kCodegen, kSource, true, true, true);
   CHECK(gives(c, kOptimized));
   CHECK_FALSE(c6502::passes::ir_check::enabled());
 }
 
 TEST_CASE("compile stages: the warnings and the error of a rejected program") {
-  // The preprocessor warns of `_Bool`, and identifier resolution
-  // rejects `c`.
   const suite::Compiled c =
       compiled(Stage::kCodegen, "_Bool b;\nint main(void) { return c; }\n", false);
   REQUIRE(c.warnings.size() == 1);
@@ -280,7 +257,6 @@ TEST_CASE("compile stages: the warnings and the error of a rejected program") {
 }
 
 TEST_CASE("compile stages: what the preprocessor writes to stderr") {
-  // pcpp reports an `#if` it can't evaluate and goes on.
   const suite::Compiled c =
       compiled(Stage::kCodegen, "#if 1 +\n#endif\nint main(void) { return 0; }\n", false);
   CHECK(c.err.find("error: Could not evaluate expression") != std::string::npos);
@@ -289,7 +265,6 @@ TEST_CASE("compile stages: what the preprocessor writes to stderr") {
 }
 
 TEST_CASE("compile stages: --lex gives the tokens") {
-  // Python's `compile.py --lex` printed these lines for the program.
   const std::string tokens =
       "1:1\tkeyword\tint\n1:5\tidentifier\tx\n1:7\tsymbol\t=\n1:9\tconstant\t0x1F\n"
       "1:13\tsymbol\t;\n2:1\tkeyword\tchar\n2:6\tsymbol\t*\n2:7\tidentifier\ts\n"
@@ -299,8 +274,6 @@ TEST_CASE("compile stages: --lex gives the tokens") {
 }
 
 TEST_CASE("compile stages: --lex of text the preprocessor has already read") {
-  // Without the preprocessor, a `#define` line reaches the lexer, which
-  // takes the `#` as a symbol, and Python's lexer gave these lines.
   const std::string tokens =
       "1:1\tsymbol\t#\n1:2\tidentifier\tdefine\n1:9\tidentifier\tN\n1:11\tconstant\t1\n"
       "2:1\tkeyword\tint\n";
@@ -328,7 +301,6 @@ TEST_CASE("compile stages: the warnings and the error of --lex") {
 }
 
 TEST_CASE("compile stages: --parse gives pretty.py's tree") {
-  // Python's `compile.py --parse` printed this text for the program.
   const std::string tree =
       "Program(\n"
       "  declaration=[\n"
@@ -360,14 +332,10 @@ TEST_CASE("compile stages: --resolve gives the error of the pass it stops after"
   REQUIRE(c.error);
   CHECK(c.error->type == "IdentifierResolutionError");
   CHECK(c.error->message == "undeclared identifier 'y'");
-  // `--parse` stops before the name is looked up.
   CHECK_FALSE(compiled(Stage::kParse, source, false).error);
 }
 
 TEST_CASE("compile stages: --tac -O gives the optimized TAC") {
-  // Python's `compile.py --tac -O` folded the sum to the constant 3.
-  // With the IR checks on, the driver checks the TAC itself, so the
-  // text is the same.
   const std::string tree =
       "Program(\n"
       "  top_level=[\n"

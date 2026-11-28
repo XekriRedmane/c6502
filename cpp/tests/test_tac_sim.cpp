@@ -1,6 +1,3 @@
-// Tests of the TAC interpreter (src/tac_sim.h) and of the runs of it
-// that check-golden and the fuzzers make (src/tac_sim_modes.h).
-//
 // The first cases are tests/test_tac_sim.py's: each compiles a C
 // program with the front end and `c99_to_tac`, without the
 // preprocessor, as that module's `_compile_to_tac` does, and runs it.
@@ -412,7 +409,6 @@ namespace {
 
 namespace tsm = c6502::tac_sim_modes;
 
-// Returns the TAC of `source`, which the preprocessor doesn't read.
 tsm::Translated translated(const std::string& source) {
   c6502::passes::FrontEndOptions options;
   options.include_dir = "include";
@@ -442,7 +438,6 @@ TEST_CASE("tac_sim: the runs that check-golden and the fuzzers make") {
     CHECK(tsm::outcome_json(c6502::tac_sim::run_main(t.tac, t.symbols, &t.types)) ==
           "{\"value\": -3}");
   }
-  // The optimizer runs only when the first run gives a value.
   const tsm::PlainAndOptimized divided =
       tsm::run_plain_and_optimized(translated("int main(void) { int x = 0; return 1 / x; }"));
   CHECK(tsm::outcome_json(divided.plain) ==

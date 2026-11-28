@@ -306,7 +306,6 @@ argparse::Parser compile_parser(const std::string& prog) {
   return ap;
 }
 
-// The program's name, as Python's argparse takes it from `argv[0]`.
 std::string prog_name(const std::vector<std::string>& argv) {
   return argv.empty() ? "" : argparse::path_name(argv[0]);
 }
@@ -404,10 +403,6 @@ bool is_link_error(std::string_view type) {
 
 Raised raised_of(const CompileError& e) { return Raised{e.python_type(), e.what(), ""}; }
 
-// Returns `v` as a 64-bit value, the width the linker holds an address
-// in. compile.py read an origin or a `--defsym` with Python's unbounded
-// integers, so a wider one throws `InternalError`, which says the port
-// doesn't take it.
 std::int64_t address(const asdl::Int& v, std::string_view what) {
   if (v < asdl::Int(INT64_MIN) || v > asdl::Int(INT64_MAX)) {
     throw InternalError("the C++ linker holds an address in 64 bits, and the " +
@@ -422,10 +417,6 @@ passes::TextStage text_stage(std::string_view stage) {
   return passes::TextStage::kTac;
 }
 
-// Runs the front end and code generation on `source`. What the
-// preprocessor writes to stderr is appended to `err`, and the front
-// end's warnings to `found`, which keep what they were given when a
-// pass throws, since compile.py prints them before the error.
 passes::StageResult generate(const std::string& source, const passes::FrontEndOptions& front,
                              const passes::CodegenOptions& options, std::string& err,
                              std::vector<diagnostics::CompileWarning>& found) {
@@ -469,8 +460,6 @@ class Compile {
         outcome_.raised = e;
       }
     } catch (const InternalError& e) {
-      // cpp_backend.py raised the C++ side's internal error as an
-      // AssertionError, which the golden files hold.
       outcome_.raised = Raised{"AssertionError", e.what(), ""};
     }
     return std::move(outcome_);
@@ -624,8 +613,6 @@ class Compile {
         codegen.inline_calls = options_.inline_calls;
         text = generate(source, front, codegen, err, found).emitted.text;
       } else {
-        // Of the text stages, only `--tac` checks the IR, in the TAC
-        // optimizer's driver.
         const passes::ir_check::Enabled checks(args.stage == "tac" && options_.check_ir);
         diagnostics::Collecting block(found);
         const std::string preprocessed = passes::preprocess_source(source, front, err);
@@ -654,11 +641,6 @@ class Compile {
     std::string link_name;
   };
 
-  // Returns the object of `in`: a C input compiled with the link
-  // metadata block and assembled, an `.asm` file assembled, or for a
-  // link an object read from its bytes. What a C input's preprocessor
-  // wrote to stderr and its warnings are written first, even when it
-  // fails.
   binutils::elf::ElfFile object_of(const Input& in, const Args& args) {
     if (in.kind == "asm") return binutils::assembler::assemble(in.data, in.name);
     if (in.kind == "object") return binutils::elf::read(in.data, in.name);
@@ -735,13 +717,9 @@ class Compile {
         return 1;
       }
       if (link) {
-        // The link takes the object the assembler made, as compile.py's
-        // does, without writing and reading it.
         objects.emplace_back(in.link_name, std::move(*obj));
         continue;
       }
-      // compile.py opens the object's file before `elf.write` packs the
-      // fields, so a `struct.error` leaves the file empty.
       std::string bytes;
       std::optional<Raised> write_error;
       try {
@@ -765,13 +743,10 @@ class Compile {
     }
     if (!link) return 0;
 
-    // compile.py reads the script after the inputs, links, opens the
-    // output, and then writes the executable's bytes.
     binutils::ld::Names names;
     for (const auto& [name, value] : *defsyms) {
       names.insert_or_assign(name, address(value, "--defsym value"));
     }
-    // argparse's `type=_number` has read the origin already.
     const std::optional<asdl::Int> given =
         args.origin ? number(*args.origin) : std::optional<asdl::Int>();
     const bool wide_origin =
@@ -785,9 +760,6 @@ class Compile {
       if (args.script && !args.script->empty()) {
         script = passes::link_script::read_script(*args.script);
       }
-      // An origin too wide for the linker's 64 bits is outside the
-      // address space too, and link_objects reports that after its check
-      // for no objects. A link with a script doesn't read the origin.
       if (wide_origin && !script) {
         if (objects.empty()) throw CompileError("LinkError", "linking needs at least one object");
         throw CompileError("LinkError", passes::linker::origin_message(*given));

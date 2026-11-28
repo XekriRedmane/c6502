@@ -182,10 +182,8 @@ struct ElfFile {
 // signed bits, a symbol's or a section's size outside 32 unsigned bits,
 // or a section's address or alignment, the entry, or a segment's
 // addresses or size outside 32 unsigned bits (an executable linked from
-// an origin such as -1). The class's name is "error", which `re.error`
-// has too, so the type gives its module, which cpp_backend.py needed
-// to tell the two apart. Throws `CompileError("ElfError", ...)` for a relocation
-// that names a symbol the symbol table doesn't hold.
+// an origin such as -1). Throws `CompileError("ElfError", ...)` for a
+// relocation that names a symbol the symbol table doesn't hold.
 std::string write(const ElfFile& elf);
 
 // Returns the `ElfFile` in `data`. `name` is for error messages. Throws

@@ -60,7 +60,6 @@ struct Outcome {
 };
 
 struct Options {
-  // The directory of c6502's own headers.
   std::string include_dir;
   // The terminal's width, which argparse wraps the usage and help to.
   int columns = 80;

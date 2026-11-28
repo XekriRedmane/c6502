@@ -26,8 +26,6 @@ namespace {
 namespace ir = ::c6502::tac_ast;
 namespace c99 = ::c6502::c99_ast;
 
-// The function that no program defines, whose call `falls_off_end`
-// appends to each function that returns a value.
 constexpr std::string_view kFellOff = "__reduce_fell_off";
 
 // Appends `__reduce_fell_off();` to the body of each function
@@ -48,7 +46,6 @@ void append_fell_off_calls(c99::Program& prog) {
   }
 }
 
-// Returns an outcome as `changing_pass_json` writes a result.
 std::string observed_json(const tac_sim::Outcome& o) {
   if (o.error_type) return json::quote("ERR " + *o.error_type + ": " + o.error_message);
   return o.value ? asdl::int_to_string(*o.value) : "null";

@@ -1,7 +1,5 @@
 // The CRC-32 and the digest of the CPU's state that the games' event
-// lists and the tests' checks of what a run gave are written with. The
-// lockstep runs with py65 of step 9 of the port compared the same
-// digests.
+// lists and the tests' checks of what a run gave are written with.
 #pragma once
 
 #include <cstdint>

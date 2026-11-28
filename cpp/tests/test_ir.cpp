@@ -133,8 +133,6 @@ TEST_CASE("optional fields and product types round-trip") {
   CHECK(asdl::dump(m) == "member_decl(\"m\" UChar)\n");
   CHECK(asdl::load<c99::Type_member_decl>(asdl::dump(m)) == m);
 
-  // The string "None" is a string, and the bare word is the empty
-  // optional.
   const tac::Type_instruction ret_none_name = tac::Ret{.val = tac::Var{.name = "None"}};
   CHECK(asdl::dump(ret_none_name) == "Ret(Var(\"None\"))\n");
   CHECK(asdl::load<tac::Type_instruction>(asdl::dump(ret_none_name)) == ret_none_name);
@@ -148,8 +146,6 @@ TEST_CASE("the reader rejects a malformed value") {
 }
 
 TEST_CASE("a string of any code point round-trips") {
-  // The code points 0 to U+017F, then U+1F600, then the lone surrogate
-  // U+D800, which ir_dump.py wrote as `\u{d800}` too.
   const auto utf8 = [](char32_t c) {
     std::string out;
     if (c < 0x80) {
@@ -175,8 +171,6 @@ TEST_CASE("a string of any code point round-trips") {
   s += utf8(0xD800);
   const ir::Type_instruction label = ir::Label{.name = s};
   const std::string text = asdl::dump(label);
-  // ir_dump.py's text for the same value had 1,664 characters and ended
-  // so.
   CHECK(text.size() == 1664);
   CHECK(text.ends_with("\\u{17e}\\u{17f}\\u{1f600}\\u{d800}\")\n"));
   CHECK(asdl::load<ir::Type_instruction>(text) == label);

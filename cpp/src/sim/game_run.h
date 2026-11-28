@@ -1,8 +1,6 @@
 // `c6502cpp game-run`, which plays one of the games' scripts on its
 // machine (sim/games.h) and writes the run as text, so that a run can be
-// looked at on its own and compared with another run's text. Step 9 of
-// the port compared it with the Python machines' text, which
-// tools/compare_game_machines.py wrote from sim/ before both went.
+// looked at on its own and compared with another run's text.
 //
 //     c6502cpp game-run GAME SCRIPT [--exe PATH] [--events N] [--ld PATH]
 //                       [--steps-after EVENT --steps N] [-o FILE]

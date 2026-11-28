@@ -1,8 +1,3 @@
-// The tests of tests/test_tac_sim_optimized.py: fuzz/tac_passes.py's
-// `first_changing_pass`, which runs the TAC interpreter after each step
-// of the TAC optimizer, names no step for a program the optimizer
-// compiles correctly. Its C++ form is `first_changing_pass` in
-// src/tac_sim_modes.h.
 #include <string>
 
 #include "compile_case.h"
@@ -14,8 +9,6 @@ namespace {
 
 namespace suite = c6502::suite;
 
-// Returns check-golden's `found` line for `source`, with the IR checks
-// on, as the Python test ran it under `C6502_CHECK_IR=1`.
 std::string found(const std::string& source) {
   const c6502::passes::ir_check::Enabled checks(true);
   c6502::passes::FrontEndOptions options;

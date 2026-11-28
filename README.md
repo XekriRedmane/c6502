@@ -5,13 +5,11 @@ with some C23 features. It writes assembly in
 [dasm](https://dasm-assembler.github.io/)'s syntax, and it has its own
 assembler and linker, which write ELF objects and executables.
 
-The compiler was written in Python and is now written in C++, in
-`cpp/`, which builds one executable, `c6502cpp`. `compile.py`,
-`nm.py`, and `objdump.py` stay as Python shims that run it, with the
-same command lines and messages as before, and so do the simulator
-and the tests that are still in Python. They move to C++ in the
-next step of the port ([docs/cpp_port.md](docs/cpp_port.md)). The
-fuzzers are C++ already.
+The compiler was first written in Python and has been ported to C++
+([docs/cpp_port.md](docs/cpp_port.md)). It's in `cpp/`, which builds
+one executable, `c6502cpp`. That executable holds the compiler, the
+assembler, the linker, nm, objdump, the simulator that the tests run
+programs on, and the fuzzers.
 
 ## Status
 
@@ -181,8 +179,8 @@ These parts are missing.
   call helpers (`fadd`, `mul64`, `icall`, and so on) that have no
   6502 code yet. A program that uses them links only when `--defsym`
   gives each such helper's address, so you have to write those
-  helpers. The simulator has Python stand-ins for them, which is how
-  the tests run such programs.
+  helpers. The simulator runs its own versions of them, written in
+  C++, which is how the tests run such programs.
 - There's no startup code. Something has to set the soft stack
   pointer `SSP`, call `__zp_init`, and then call `main` (see
   [Zero page](#zero-page) below).
@@ -204,19 +202,14 @@ These parts are missing.
 
 ## Installation
 
-1. Install Python 3.11 or later,
-   [uv](https://docs.astral.sh/uv/getting-started/installation/),
-   CMake 3.20 or later, and a C++20 compiler: on Windows, the Visual
-   Studio 2022 Build Tools (whose CMake is in
-   `Common7\IDE\CommonExtensions\Microsoft\CMake`), and on Linux,
+1. Install CMake 3.20 or later and a C++20 compiler. On Windows that
+   is the Visual Studio 2022 Build Tools, whose CMake is in
+   `Common7\IDE\CommonExtensions\Microsoft\CMake`. On Linux it is
    GCC 12 or Clang 14 or later.
 2. Clone the repository with
    `git clone https://github.com/XekriRedmane/c6502.git`, and `cd`
    into it.
-3. Run `uv sync`. It creates a virtual environment in `.venv` and
-   installs the dependencies, py65 for the simulator, and
-   the development dependencies pytest and pytest-xdist.
-4. Build the compiler, from the repository's directory. On Windows:
+3. Build the compiler, from the repository's directory. On Windows:
 
    ```sh
    cmake -S cpp -B cpp/build -G "Visual Studio 17 2022" -A x64
@@ -230,43 +223,39 @@ These parts are missing.
    cmake --build cpp/build --parallel --target c6502cpp
    ```
 
-   `compile.py`, `nm.py`, and `objdump.py` find `cpp/build/bin/c6502cpp`
-   there, or the executable that the environment variable `C6502_CPP`
-   names. Without `--target c6502cpp`, the build makes the C++ unit
-   tests too, which [cpp/README.md](cpp/README.md) describes.
-5. Check that it works with `cpp/build/bin/c6502cpp check-golden -j 12`.
+   The executable is `cpp/build/bin/c6502cpp` (`c6502cpp.exe` on
+   Windows). Without `--target c6502cpp`, the build makes the C++
+   unit tests too, which [cpp/README.md](cpp/README.md) describes.
+4. Check that it works with `cpp/build/bin/c6502cpp check-golden -j 12`.
    It compiles every program of the corpus, the examples in
    `examples/` among them, compares the output with the copies under
    `golden/`, and should end with `0 differ`.
-6. Optionally, install dasm and put it on your `PATH`. Compiling,
+5. Optionally, install dasm and put it on your `PATH`. Compiling,
    linking, and running programs in the simulator don't use it, but
    the tests that compare c6502's assembler with dasm run only where
    dasm is installed.
 
-`requirements.txt` lists the same Python packages for a plain `pip`
-environment. It's kept by hand and may be behind `uv.lock`.
-
 ## Usage
 
-`compile.py`'s flags follow gcc's where the two have the same
+`c6502cpp compile`'s flags follow gcc's where the two have the same
 options. Every command below runs from the repository's directory.
 
 ```sh
-uv run python compile.py prog.c -S             # assembly in prog.s
-uv run python compile.py prog.c -S -O          # the same, optimized
-uv run python compile.py prog.c -S -O -o -     # to stdout
-uv run python compile.py -O -c a.c b.c         # objects a.o and b.o
-uv run python compile.py a.o b.o -o prog       # link them
-uv run python compile.py -O -T prog.ld a.c b.o -o prog   # both, with a linker script
-uv run python compile.py a.o -o prog --defsym fadd=0x9000    # give a helper's address
-uv run python nm.py a.o                        # an object's symbols
-uv run python objdump.py -d a.o                # disassembly, in dasm's syntax
+cpp/build/bin/c6502cpp compile prog.c -S             # assembly in prog.s
+cpp/build/bin/c6502cpp compile prog.c -S -O          # the same, optimized
+cpp/build/bin/c6502cpp compile prog.c -S -O -o -     # to stdout
+cpp/build/bin/c6502cpp compile -O -c a.c b.c         # objects a.o and b.o
+cpp/build/bin/c6502cpp compile a.o b.o -o prog       # link them
+cpp/build/bin/c6502cpp compile -O -T prog.ld a.c b.o -o prog   # both, with a linker script
+cpp/build/bin/c6502cpp compile a.o -o prog --defsym fadd=0x9000    # give a helper's address
+cpp/build/bin/c6502cpp nm a.o                        # an object's symbols
+cpp/build/bin/c6502cpp objdump -d a.o                # disassembly, in dasm's syntax
 ```
 
 Without `-S` or `-c`, the inputs (C sources, `.asm` files, and
 objects) are linked into an ELF executable, `a.out` unless `-o` names
 it. Without `-T`, the code starts at `$0800`, and `-Ttext=ADDR` moves
-it. Flags that `compile.py` doesn't recognize go to the preprocessor,
+it. Flags that `c6502cpp compile` doesn't recognize go to the preprocessor,
 so `-D`, `-U`, and `-I` work as usual. `--lex`, `--parse`,
 `--resolve`, and `--tac` stop after the stage they name and print
 that stage's output.
@@ -291,7 +280,7 @@ uint8_t sum(void) {
 }
 ```
 
-`uv run python compile.py sum.c -S -O -o -` prints this.
+`cpp/build/bin/c6502cpp compile sum.c -S -O -o -` prints this.
 
 ```
 SSP	EQU	$00
@@ -486,22 +475,21 @@ it.
 ### Running the tests
 
 ```sh
-uv run python -m unittest                          # every test
-uv run python -m unittest tests.test_ir_dump       # one module
-C6502_CHECK_IR=1 uv run python -m unittest         # check the IR after every pass
-C6502_CHECK_IR=1 uv run pytest -n auto --dist worksteal -q   # the same, in parallel
-ctest --test-dir cpp/build -C Release --output-on-failure   # the C++ tests and the next two
+ctest --test-dir cpp/build -C Release --output-on-failure   # the doctest cases and the checks below
+cpp/build/bin/c6502_tests                          # the doctest cases
+cpp/build/bin/c6502_tests -tc="parser:*"           # the cases of one module
 cpp/build/bin/c6502cpp check-golden -j 12          # the corpus against golden/
 cpp/build/bin/c6502cpp check-frozen                # the frozen calls of each pass
 ```
 
-`ctest` needs the whole C++ build, step 4 above without `--target`,
-and the others need only `c6502cpp`. `C6502_CHECK_IR=1` checks the IR after
-every optimizer pass and at each stage boundary. `check-golden`
+`ctest` and `c6502_tests` need the whole C++ build, step 3 above
+without `--target`, and the others need only `c6502cpp`. With
+`C6502_CHECK_IR=1` in the environment, `c6502cpp compile` checks the
+IR after every optimizer pass and at each stage boundary. `check-golden`
 compares what the compiler gives for every program of the corpus with
 the golden files under `golden/`, and a change to the output made on
 purpose rewrites them with `check-golden --update`, whose diff is the
-review of the change (cpp/README.md, "The checks after Python").
+review of the change (cpp/README.md, "The golden files").
 
 The runs of the three example games read files from each game's
 reverse-engineering project, which aren't in this repository. Without
@@ -545,17 +533,15 @@ cpp/build/bin/c6502cpp fuzz reduce fuzz_out/calls/calls534.c   # shrink a failin
 Failing programs land in `fuzz_out/`. [fuzz/CLAUDE.md](fuzz/CLAUDE.md)
 describes each generator and the other forms of `c6502cpp fuzz`.
 
-### Regenerating the AST modules
+### Regenerating the IR classes
 
-Each `*_ast.py` module is generated from the matching `.asdl` file
-by `asdl.py`, and the C++ IR classes in `cpp/generated/` by asdlgen
-(`cpp/tools/asdlgen.h`), which the C++ build runs. After editing an
-ASDL file, regenerate the Python modules and build the compiler, and
-commit the files in `cpp/generated/` that the build rewrote.
+The C++ IR classes in `cpp/generated/` are generated from the four
+`.asdl` files by asdlgen (`cpp/tools/asdlgen.h`), which the C++ build
+runs when an `.asdl` file or the tool changes. After editing an ASDL
+file, build the compiler and commit the files in `cpp/generated/`
+that the build rewrote. This command checks that the checked-in files
+match what asdlgen writes.
 
 ```sh
-uv run python asdl.py c99.asdl c99_ast.py
-uv run python asdl.py tac.asdl tac_ast.py
-uv run python asdl.py asm.asdl asm_ast.py
-uv run python asdl.py asm2.asdl asm2_ast.py
+cpp/build/bin/asdlgen --check cpp/generated c99.asdl tac.asdl asm.asdl asm2.asdl
 ```

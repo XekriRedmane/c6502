@@ -25,8 +25,8 @@ class CompileError : public std::runtime_error {
   std::string python_type_;
 };
 
-// A bug in the compiler, where the Python code raises `AssertionError`
-// or `IRCheckError`. The CLI prints it with "internal error" in front.
+// A bug in the compiler. The CLI prints it with "internal error" in
+// front and exits with status 3.
 class InternalError : public std::logic_error {
  public:
   using std::logic_error::logic_error;

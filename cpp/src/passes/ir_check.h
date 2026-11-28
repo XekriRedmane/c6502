@@ -1,6 +1,6 @@
 // Checks of the IR between passes. They're off unless `enable()` turns
 // them on. A failed check throws `InternalError`, which `c6502cpp
-// compile` reports as an AssertionError.
+// compile` reports as an internal error.
 //
 // TAC (`check_tac`):
 //

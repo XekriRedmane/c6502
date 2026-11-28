@@ -452,7 +452,7 @@ class Compile {
         outcome_.raised = e;
       }
     } catch (const InternalError& e) {
-      outcome_.raised = Raised{"AssertionError", e.what(), ""};
+      outcome_.raised = Raised{"InternalError", e.what(), ""};
     }
     return std::move(outcome_);
   }
@@ -880,6 +880,10 @@ int command(const std::vector<std::string>& args, const std::string& self) {
     std::FILE* f = w.stream == Stream::kOut ? stdout : stderr;
     put(w.text, f);
     std::fflush(f);
+  }
+  if (o.raised && o.raised->type == "InternalError") {
+    std::fprintf(stderr, "internal error: %s\n", o.raised->message.c_str());
+    return 3;
   }
   if (o.raised) {
     // Python ends its traceback with the exception's line.

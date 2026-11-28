@@ -2227,8 +2227,9 @@ below) runs `passes::front_end` on each C input's source text and
 own process. The preprocessor's stderr and the warnings come first, and
 a problem with the program (`CompileError`) is reported with its Python
 class and message, after the warnings and stderr of the rejected
-program. A bug the passes report (`InternalError`) is reported as an
-`AssertionError` with the C++ message, as compile.py let one out. Under
+program. A bug the passes report (`InternalError`) is reported as
+`internal error: <message>` with exit status 3, as c6502cpp's other
+commands report one. Under
 `C6502_CHECK_IR=1` the command turns the IR checks on ("The IR
 checks").
 
@@ -2399,9 +2400,8 @@ simulator (tests/compile_case.h and tests/sim_case.h) unless a case
 turns them off, and
 the fuzzers' runner (src/fuzz/runner.h) for every path. A failed check
 throws `InternalError` with the message of Python's `IRCheckError`,
-which `c6502cpp compile` reports as an `AssertionError`, of which
-`IRCheckError` was a subclass. Each check runs where the Python
-pipeline ran it.
+which `c6502cpp compile` reports as an internal error. Each check runs
+where the Python pipeline ran it.
 
 | After | Python | C++ |
 |---|---|---|

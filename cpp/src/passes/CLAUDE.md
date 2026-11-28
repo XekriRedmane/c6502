@@ -150,8 +150,8 @@ its document in [docs/optimizations/](../../../docs/optimizations/README.md):
   `c6502cpp compile` when `C6502_CHECK_IR=1` is set, in the tests'
   compiles unless a case turns them off, and always in the fuzzers'
   runner (cpp/src/fuzz/runner.h). A failed check throws
-  `InternalError`, which `c6502cpp compile` reports as an
-  AssertionError.
+  `InternalError`, which `c6502cpp compile` reports as an internal
+  error.
   `check_tac` runs after every TAC optimizer pass (from
   `PhaseDriver::apply`): labels unique and jumped to, names in the
   symbol table, and in SSA form one definition per SSA name that

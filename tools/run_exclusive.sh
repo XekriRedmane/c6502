@@ -3,7 +3,7 @@
 # that only one build or test run uses the CPU at a time. A build already
 # takes every core (MSVC's /MP and MSBuild's /m), so agents working in
 # parallel run each configure, build, c6502_tests, check-golden,
-# check-frozen, and pytest run through this script and take turns.
+# check-frozen, and fuzzing run through this script and take turns.
 #
 #   bash tools/run_exclusive.sh LABEL COMMAND [ARGS...]
 #

@@ -42,6 +42,7 @@
 #include "compile_command.h"
 #include "errors.h"
 #include "frozen.h"
+#include "fuzz/command.h"
 #include "golden.h"
 #include "helper_checks.h"
 #include "json.h"
@@ -85,6 +86,12 @@ const char kUsage[] =
     "       c6502cpp pass-order\n"
     "       c6502cpp game-run <game> <script> [--exe <path>] [--events <n>] [--ld <path>]\n"
     "                         [--steps-after <event> --steps <n>] [-o <file>]\n"
+    "       c6502cpp fuzz <generator> [--start <n>] [--count <n>] [--out <dir>] [-j <n>]\n"
+    "                     [--verbose]\n"
+    "       c6502cpp fuzz programs <generator> [--start <n>] [--count <n>] --out <dir>\n"
+    "       c6502cpp fuzz run <path>...\n"
+    "       c6502cpp fuzz reduce [--tac-opt] <path>\n"
+    "       c6502cpp fuzz tac-passes <path>...\n"
     "\n"
     "roundtrip reads a dump of an IR value of <module> (asm_ast, asm2_ast,\n"
     "tac_ast, or c99_ast) from <file> or stdin and writes its dump again,\n"
@@ -145,6 +152,12 @@ const char kUsage[] =
     "game-run plays a script of zork, lode_runner, or ali_baba on the\n"
     "game's machine, the original or with --exe a linked C program, and\n"
     "writes each event and the machine's state at the end (src/sim/game_run.h).\n"
+    "\n"
+    "fuzz generates random programs with one of the generators (exprs,\n"
+    "calls, stmts, or yarpgen), runs each on the TAC interpreter and in the\n"
+    "simulator in both pipelines, and saves those some path gets wrong. Its\n"
+    "other forms write the programs, check given files, reduce a failing\n"
+    "program, and find the TAC pass that changes a result (src/fuzz/command.h).\n"
     "\n"
     "compile takes compile.py's command line and does what compile.py does,\n"
     "with its options, messages, files, and exit status, in this process\n"
@@ -861,6 +874,10 @@ int main(int argc, char** argv) {
       write_stdout(out.str());
       std::fputs(err.str().c_str(), stderr);
       return status;
+    }
+    if (command == "fuzz") {
+      const std::vector<std::string> utf8 = utf8_args(argc, argv);
+      return fuzz::command(std::vector<std::string>(utf8.begin() + 2, utf8.end()), argv[0]);
     }
     if (command == "pass-order" && args.empty()) {
       write_stdout(pass_order::listing());

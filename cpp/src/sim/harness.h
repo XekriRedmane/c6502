@@ -81,8 +81,8 @@ class Simulation {
 // Assembles `program` at `origin` with the runtime for the layout that
 // `symbols` give (their SSP, FP, HARGS, and DPTR, or the classic ones),
 // with the runtime's helpers and `symbols` as extra symbols, and loads
-// it, as sim/harness.py's `build_sim` does with the program and the
-// symbols the backend's `source` mode returns. Throws
+// it, as sim/harness.py's `build_sim` did with the program and the
+// symbols the code generation stage returns. Throws
 // `std::invalid_argument` when the program has no `main`.
 Simulation build_sim(const asm_ast::Program& program, const passes::OrderedSymbolAddrs& symbols,
                      std::int64_t origin = kDefaultOrigin);

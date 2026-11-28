@@ -156,7 +156,7 @@
 // ul2f, ll2f, ull2f, the same into double, f2i to f2ull, d2i to d2ull,
 // f2d, and d2f) take their input at HARGS+0 and write the output right
 // after it. The repository has no 6502 code for them, and the
-// simulator's are Python hooks (sim/runtime.py), whose sizes the
+// simulator's are hooks (src/sim/runtime.h), whose sizes the
 // lowering follows. `>` and `>=` on floating values swap the operands of
 // `<` and `<=`, and `==` and `!=` compare the bit patterns, which is
 // wrong for the two zeros of IEEE 754 and stays that way until the

@@ -538,8 +538,8 @@ std::string cpp_header(const Module& mod, std::string_view source, std::string_v
   out.push_back("");
   extend(out, equalities);
   out.push_back("");
-  out.push_back("// The dump format's writers and readers (ir_dump.py describes");
-  out.push_back("// the format). `asdl::dump` and `asdl::load` call them.");
+  out.push_back("// The dump format's writers and readers (cpp/README.md, \"The dump");
+  out.push_back("// format\"). `asdl::dump` and `asdl::load` call them.");
   for (const Type& t : mod.types) {
     out.push_back("void write(" + kRt + "::Writer& w, const Type_" + t.name + "& v);");
     out.push_back("Type_" + t.name + " read(" + kRt + "::Reader& r, " + kRt + "::Tag<Type_" +

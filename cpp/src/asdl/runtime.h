@@ -127,8 +127,8 @@ class ParseError : public std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-// Writes the dump format (ir_dump.py describes it). The generated
-// `write` functions call these.
+// Writes the dump format (cpp/README.md, "The dump format"). The
+// generated `write` functions call these.
 class Writer {
  public:
   void write_name(std::string_view name) { out_ += name; }

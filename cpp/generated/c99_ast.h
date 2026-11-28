@@ -1387,8 +1387,8 @@ inline bool Function::operator==(const Function& other) const {
       && body == other.body;
 }
 
-// The dump format's writers and readers (ir_dump.py describes
-// the format). `asdl::dump` and `asdl::load` call them.
+// The dump format's writers and readers (cpp/README.md, "The dump
+// format"). `asdl::dump` and `asdl::load` call them.
 void write(::c6502::asdl::Writer& w, const Type_program& v);
 Type_program read(::c6502::asdl::Reader& r, ::c6502::asdl::Tag<Type_program>);
 void write(::c6502::asdl::Writer& w, const Program& v);

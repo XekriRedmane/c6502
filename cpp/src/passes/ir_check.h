@@ -1,6 +1,6 @@
 // Checks of the IR between passes. They're off unless `enable()` turns
-// them on. A failed check throws `InternalError`, which cpp_backend.py
-// raises as an AssertionError.
+// them on. A failed check throws `InternalError`, which `c6502cpp
+// compile` reports as an AssertionError, as cpp_backend.py raised it.
 //
 // TAC (`check_tac`):
 //

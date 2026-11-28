@@ -1,5 +1,5 @@
 // The stages `--parse`, `--resolve`, and `--tac`, which print an IR tree
-// and which `c6502cpp backend` runs for compile.py's `_run_stage`.
+// and which `c6502cpp compile` runs for its options of the same names.
 #pragma once
 
 #include <string>

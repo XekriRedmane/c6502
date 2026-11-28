@@ -1,5 +1,5 @@
 // The front end, from the source text to the type-checked c99 program
-// and its tables, which `c6502cpp backend` runs before code generation.
+// and its tables, which `c6502cpp compile` runs before code generation.
 #pragma once
 
 #include <optional>

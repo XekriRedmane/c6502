@@ -1,7 +1,7 @@
 // Decodes the tagged JSON of the values that the work after the back
-// end's region and emission take, for `c6502cpp backend` and for the
-// registry's entries of those functions, and writes their results in
-// the tagged JSON of the frozen capture records.
+// end's region and emission take, for the registry's entries of those
+// functions, and writes their results in the tagged JSON of the frozen
+// capture records.
 #pragma once
 
 #include <map>

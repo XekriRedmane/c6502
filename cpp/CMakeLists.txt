@@ -11,7 +11,7 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
 endif()
 
 # The executables go in build/bin, whatever the generator, so the
-# Python tools find them there (a Debug build of a multi-config
+# documents' commands find them there (a Debug build of a multi-config
 # generator goes in build/bin/debug).
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
     "${CMAKE_BINARY_DIR}/bin$<$<CONFIG:Debug>:/debug>")
@@ -121,7 +121,7 @@ target_compile_definitions(c6502_tests PRIVATE C6502_SOURCE_ROOT="${C6502_ROOT}"
 enable_testing()
 # The slow simulator cases are named "shard: <name>", and each runs as
 # a ctest entry of its own, so that `ctest -j` spreads them over the
-# cores, as pytest-xdist spread the Python tests' shards. The names are
+# cores. The names are
 # read from the test files when CMake runs, so a new shard needs CMake
 # run again.
 add_test(NAME c6502_tests COMMAND c6502_tests "-tce=shard: *")

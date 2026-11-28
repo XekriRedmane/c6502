@@ -475,6 +475,7 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
 }
 
 struct UndefinedBehavior {};
+struct PastStepLimit {};
 struct Returned {
   Int value;
 };
@@ -549,7 +550,7 @@ class Interp {
   }
 
   void count_step() {
-    if (++steps_ > kStepLimit) throw UndefinedBehavior{};
+    if (++steps_ > kStepLimit) throw PastStepLimit{};
   }
 
   std::string loc(const Lvalue& l) {
@@ -1365,11 +1366,13 @@ GeneratedProgram make_program(Int seed) {
       interp.run_program(p);
     } catch (const UndefinedBehavior&) {
       continue;
+    } catch (const PastStepLimit&) {
+      continue;
     }
     const std::int64_t expected = interp.acc() & 0x7FFF;
     return {render(p, expected, types), expected};
   }
-  throw std::runtime_error("seed " + decimal(seed) + ": no program without undefined behavior");
+  throw std::runtime_error("seed " + decimal(seed) + ": no program that ends without undefined behavior");
 }
 
 }  // namespace c6502::fuzz::stmts

@@ -3657,10 +3657,11 @@ for how to use them).
   where Python's integers had no bound. A product of two 64-bit values
   is taken modulo 2^128 (`wrapping_mul`), which keeps its low 64 bits,
   the bits an unsigned result keeps. A signed one fits in 128 bits.
-  stmts's interpreter throws `UndefinedBehavior`, `Returned`, `Broke`,
-  and `Continued` where Python raised its exceptions, and counts its
-  steps as Python's did, with the arms that `type_of` evaluates for
-  their type, so the same programs reach the limit.
+  stmts's interpreter throws `UndefinedBehavior`, `PastStepLimit`,
+  `Returned`, `Broke`, and `Continued` where Python raised its
+  exceptions, and counts its steps as Python's did, with the arms that
+  `type_of` evaluates for their type, so the same programs reach the
+  limit.
 - runner.h runs a program on the three paths in process: the TAC
   interpreter through tac_sim_modes.h, and the simulator through
   src/sim/source_sim.h, which the test library's `build_sim` calls too.

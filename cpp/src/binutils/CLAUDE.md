@@ -1,38 +1,40 @@
-# binutils/CLAUDE.md
+# cpp/src/binutils/CLAUDE.md
 
-c6502's object-file tools are written in C++, in cpp/src/binutils/
-(cpp/README.md, "The object-file tools"): the ELF reader and writer
-(`elf.*`), the opcode table (`opcodes.*`), the assembler that
-`compile.py -c` runs (`assembler.*`), the generic half of linking
-(`ld.*`), the disassembler behind `objdump.py -d` (`disasm.*`), and nm
-and objdump themselves (`nm.*`, `objdump.*`). The linker's zero-page
-allocation and the layout by a script are in cpp/src/passes/
-(`linker.*`, `link_script.*`, `link_layout.*`). nm.py and objdump.py at
-the root are shims over `c6502cpp nm` and `c6502cpp objdump`.
+c6502's object-file tools: the ELF reader and writer, the opcode
+table, the assembler that `c6502cpp compile -c` runs, the generic half
+of linking, the disassembler behind `c6502cpp objdump -d`, and nm and
+objdump themselves. The linker's zero-page allocation and the layout by
+a script are in cpp/src/passes/ (`linker.*`, `link_script.*`,
+`link_layout.*`). cpp/README.md, "The object-file tools", describes how
+each file was ported from the Python tools and checked against them.
 
-This directory keeps the two Python modules that the simulator reads
-until step 9 of the port (docs/cpp_port.md).
+- `elf.h` / `elf.cpp` — `ElfFile`, its sections, symbols, relocations,
+  and segments, and `read` and `write` for ELF32, little-endian. The
+  constants are llvm-mos's: `EM_MOS` (6502), `EF_MOS_ARCH_6502`,
+  `STO_MOS_ZEROPAGE`, and the `R_MOS_*` relocation numbers from its
+  `ELFRelocs/MOS.def`. Relocations are `SHT_RELA`. `write` puts local
+  symbols first, as ELF requires, and builds `.symtab`, `.strtab`,
+  `.shstrtab`, and a `.rela<name>` section for each section with
+  relocations, which aren't among `ElfFile`'s sections. A file it can't
+  read throws an `ElfError`.
+- `opcodes.h` / `opcodes.cpp` — the 151 documented NMOS opcodes, by
+  mnemonic and addressing mode (`opcode`) and back (`decode`), with each
+  mode's size and the zero-page form of each absolute mode (`zp_form`).
+  The games' machines in cpp/src/sim/ decode each instruction with
+  `decode` to find its soft-switch access.
+- `assembler.h` / `assembler.cpp` — the assembler of dasm's text that c6502
+  writes, which makes an object of one unit's `-S` text.
+- `ld.h` / `ld.cpp` — `global_definitions`, the `Resolver`, `relax`,
+  `relocate`, and `executable`, which the linker in cpp/src/passes/
+  runs.
+- `disasm.h` / `disasm.cpp` — the listing in dasm's syntax that
+  `objdump -d` and `-D` print.
+- `nm.h`, `objdump.h` — `c6502cpp nm` and `c6502cpp objdump`, whose
+  usage and messages name the programs `c6502-nm` and `c6502-objdump`.
+- `checks.h` / `checks.cpp` — `c6502cpp check-binutils`, which
+  `check-frozen` runs on the frozen binutils records.
 
-- `elf.py` — `ElfFile`, `Section`, `Symbol`, `Reloc`, `Segment`, and
-  `read` / `write` for ELF32, little-endian, which sim/linked.py,
-  sim/lode_runner.py, sim/ali_baba.py, and the tests read executables
-  with. The constants are llvm-mos's: `EM_MOS` (6502),
-  `EF_MOS_ARCH_6502`, `STO_MOS_ZEROPAGE`, and the `R_MOS_*` relocation
-  numbers from its `ELFRelocs/MOS.def`. Relocations are `SHT_RELA`.
-  `write` puts local symbols first, as ELF requires, and builds
-  `.symtab`, `.strtab`, `.shstrtab`, and a `.rela<name>` section for
-  each section with relocations; those aren't in `ElfFile.sections`.
-  `ElfError` is the error of a file it can't read, which errors.py
-  re-exports.
-- `opcodes.py` — the 151 documented NMOS opcodes, by mnemonic and
-  addressing mode (`OPCODES`) and back (`DECODE`), with each mode's
-  size and the zero-page form of each absolute mode. sim/lode_runner.py
-  and sim/ali_baba.py decode with `DECODE`.
-
-A change to either module has to be made in cpp/src/binutils/ too,
-since the C++ tools write the files these read.
-
-The rest of this file describes the formats and the rules that the C++
+The rest of this file describes the formats and the rules that the
 tools follow.
 
 ## The object format
@@ -124,14 +126,15 @@ replaced.
 
 ## The disassembly
 
-`objdump.py -d` on an object writes the unit back as dasm text, with
+`objdump -d` on an object writes the unit back as dasm text, with
 each relocation's symbol and addend in the operand it fills. On an
 executable, `-D` writes `PROCESSOR`, an `EQU` for each absolute
 symbol, and each output section as `SEG` and `ORG` (`RORG` when it
 runs elsewhere), naming each address operand after the symbol there
 or the object it's inside (`src+1`). An absolute instruction with an
-operand below $100 gets dasm's `.w` extension. The examples check in
-this listing of their linked programs (`suite::listing` in
-cpp/tests/compile_case.h).
-`tests/test_binutils.py` checks with dasm, where it's installed, that
-the listing assembles into the executable's bytes.
+operand below $100 gets dasm's `.w` extension.
+examples/zork/interpreter.asm is this listing of the linked Zork
+interpreter, which cpp/tests/test_zork_interpreter.cpp compares
+(`suite::listing` in cpp/tests/compile_case.h).
+cpp/tests/test_binutils_source.cpp checks with dasm, where it's on the
+PATH, that the listing assembles into the executable's bytes.

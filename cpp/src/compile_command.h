@@ -99,11 +99,11 @@ Outcome run(const std::vector<std::string>& argv, const Options& options);
 int command(const std::vector<std::string>& args, const std::string& self);
 
 // Returns the include/ of the c6502 checkout the executable is in (the
-// first directory up from the executable's that is one), or else of the
-// source tree it was built from, with the platform's separators, as
-// cpp_backend.py's `_INCLUDE_DIR` spells it. `self` is the path the
-// program was started by. Throws `std::runtime_error` when neither is a
-// checkout.
+// first directory up from the executable's that holds both
+// cpp/CMakeLists.txt and include/stdint.h), or else of the source tree
+// it was built from, with the platform's separators. `self` is the path
+// the program was started by. Throws `std::runtime_error` when neither
+// is a checkout.
 std::string find_include_dir(const std::string& self);
 
 // --- Helpers that check-golden shares ---

@@ -857,7 +857,7 @@ int framed(const std::vector<std::string>& argv) {
 
 bool is_checkout(const fs::path& root) {
   std::error_code ec;
-  return fs::is_regular_file(root / "compile.py", ec) &&
+  return fs::is_regular_file(root / "cpp" / "CMakeLists.txt", ec) &&
          fs::is_regular_file(root / "include" / "stdint.h", ec);
 }
 
@@ -876,7 +876,7 @@ std::string find_include_dir(const std::string& self) {
 #endif
   throw std::runtime_error(
       "compile can't find c6502's include/ above the executable, which it looks for beside "
-      "compile.py");
+      "cpp/CMakeLists.txt");
 }
 
 int write_bytes(const std::string& path, std::string_view data) {

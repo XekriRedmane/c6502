@@ -69,12 +69,16 @@ enum class ExprKind { kConst, kRead, kCast, kUnary, kBinary, kShift, kCompare, k
 struct Expr {
   ExprKind kind = ExprKind::kConst;
   Int value = 0;
-  std::string type;
-  Lvalue lv;
+  std::string value_type;
+  Lvalue read_from;
+  std::string cast_to;
   std::string op;
+  int shift_count = 0;
   OpKind op_kind = OpKind::kPreInc;
-  int count = 0;
-  std::string name;
+  Lvalue target;
+  int right_operand = 0;
+  std::string callee;
+  std::string address_of;
   std::vector<ExprPtr> operands;
 };
 
@@ -84,14 +88,14 @@ ExprPtr constant(Int v, std::string t) {
   Expr e;
   e.kind = ExprKind::kConst;
   e.value = v;
-  e.type = std::move(t);
+  e.value_type = std::move(t);
   return make(std::move(e));
 }
 
 ExprPtr read(Lvalue lv) {
   Expr e;
   e.kind = ExprKind::kRead;
-  e.lv = std::move(lv);
+  e.read_from = std::move(lv);
   return make(std::move(e));
 }
 
@@ -119,11 +123,14 @@ enum class StmtKind { kAssign, kExpr, kMix, kIf, kFor, kWhile, kDo, kSwitch, kBr
 struct Stmt {
   StmtKind kind = StmtKind::kExpr;
   Lvalue lv;
-  ExprPtr e;
+  ExprPtr value;
+  ExprPtr cond;
   Block then;
   Block els;
   std::string counter;
   int count = 0;
+  Block body;
+  ExprPtr selector;
   std::vector<SwitchCase> cases;
   std::optional<Block> default_body;
 };
@@ -133,6 +140,7 @@ enum class ObjKind { kLocal, kParam, kStatic, kGlobal, kZeroPage, kArray, kStruc
 struct Member {
   std::string name;
   std::string type;
+  Int init = 0;
 };
 
 struct Obj {
@@ -140,8 +148,8 @@ struct Obj {
   std::string type;
   ObjKind kind = ObjKind::kLocal;
   Int init = 0;
-  std::vector<Int> inits;
-  std::string target;
+  std::vector<Int> elements;
+  std::string pointee;
   bool vol = false;
   std::vector<Member> members;
 };
@@ -257,23 +265,24 @@ class Renderer {
 
   std::string ex(const Expr& e) const {
     switch (e.kind) {
-      case ExprKind::kConst: return types_.lit(e.value, e.type);
-      case ExprKind::kRead: return lv(e.lv);
-      case ExprKind::kCast: return "((" + types_.at(e.type).spelling + ")(" + ex(*e.operands[0]) + "))";
+      case ExprKind::kConst: return types_.lit(e.value, e.value_type);
+      case ExprKind::kRead: return lv(e.read_from);
+      case ExprKind::kCast: return "((" + types_.at(e.cast_to).spelling + ")(" + ex(*e.operands[0]) + "))";
       case ExprKind::kUnary: return "(" + e.op + ex(*e.operands[0]) + ")";
       case ExprKind::kBinary:
       case ExprKind::kCompare:
       case ExprKind::kLogic:
         return "(" + ex(*e.operands[0]) + " " + e.op + " " + ex(*e.operands[1]) + ")";
       case ExprKind::kShift:
-        return "(" + ex(*e.operands[0]) + " " + e.op + " " + std::to_string(e.count) + ")";
+        return "(" + ex(*e.operands[0]) + " " + e.op + " " + std::to_string(e.shift_count) + ")";
       case ExprKind::kCond:
         return "(" + ex(*e.operands[0]) + " ? " + ex(*e.operands[1]) + " : " + ex(*e.operands[2]) + ")";
       case ExprKind::kOp: {
         std::string text = op_format(e.op_kind);
-        const std::string x = lv(e.lv);
+        const std::string x = lv(e.target);
+        const std::string k = std::to_string(e.right_operand);
         if (const auto at = text.find("{x}"); at != std::string::npos) text.replace(at, 3, x);
-        if (const auto at = text.find("{k}"); at != std::string::npos) text.replace(at, 3, std::to_string(e.count));
+        if (const auto at = text.find("{k}"); at != std::string::npos) text.replace(at, 3, k);
         return "(" + text + ")";
       }
       case ExprKind::kCall: {
@@ -282,9 +291,9 @@ class Renderer {
           if (i != 0) args += ", ";
           args += ex(*e.operands[i]);
         }
-        return e.name + "(" + args + ")";
+        return e.callee + "(" + args + ")";
       }
-      case ExprKind::kAddress: return "&" + e.name;
+      case ExprKind::kAddress: return "&" + e.address_of;
     }
     return "";
   }
@@ -297,16 +306,16 @@ class Renderer {
     const std::string nxt = ind + "    ";
     switch (s.kind) {
       case StmtKind::kAssign:
-        out.push_back(ind + lv(s.lv) + " = " + ex(*s.e) + ";");
+        out.push_back(ind + lv(s.lv) + " = " + ex(*s.value) + ";");
         return;
       case StmtKind::kExpr:
-        out.push_back(ind + ex(*s.e) + ";");
+        out.push_back(ind + ex(*s.value) + ";");
         return;
       case StmtKind::kMix:
-        out.push_back(ind + "mix(" + ex(*s.e) + ");");
+        out.push_back(ind + "mix(" + ex(*s.value) + ");");
         return;
       case StmtKind::kIf:
-        out.push_back(ind + "if (" + ex(*s.e) + ") {");
+        out.push_back(ind + "if (" + ex(*s.cond) + ") {");
         stmts(s.then, nxt, out);
         if (!s.els.empty()) {
           out.push_back(ind + "} else {");
@@ -318,24 +327,24 @@ class Renderer {
         const std::string& c = s.counter;
         out.push_back(ind + "for (unsigned char " + c + " = 0; " + c + " < " + std::to_string(s.count) +
                       "; " + c + "++) {");
-        stmts(s.then, nxt, out);
+        stmts(s.body, nxt, out);
         out.push_back(ind + "}");
         return;
       }
       case StmtKind::kWhile:
         out.push_back(ind + s.counter + " = 0;");
         out.push_back(ind + "while (" + s.counter + "++ < " + std::to_string(s.count) + ") {");
-        stmts(s.then, nxt, out);
+        stmts(s.body, nxt, out);
         out.push_back(ind + "}");
         return;
       case StmtKind::kDo:
         out.push_back(ind + s.counter + " = 0;");
         out.push_back(ind + "do {");
-        stmts(s.then, nxt, out);
+        stmts(s.body, nxt, out);
         out.push_back(ind + "} while (++" + s.counter + " < " + std::to_string(s.count) + ");");
         return;
       case StmtKind::kSwitch:
-        out.push_back(ind + "switch (" + ex(*s.e) + ") {");
+        out.push_back(ind + "switch (" + ex(*s.selector) + ") {");
         for (const SwitchCase& c : s.cases) {
           out.push_back(ind + "case " + std::to_string(c.value) + ":");
           if (c.body.empty()) {
@@ -362,7 +371,7 @@ class Renderer {
         out.push_back(ind + "continue;");
         return;
       case StmtKind::kReturn:
-        out.push_back(ind + "return " + ex(*s.e) + ";");
+        out.push_back(ind + "return " + ex(*s.value) + ";");
         return;
     }
   }
@@ -391,9 +400,9 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
         break;
       case ObjKind::kArray: {
         std::string vals;
-        for (std::size_t i = 0; i < g.inits.size(); ++i) {
+        for (std::size_t i = 0; i < g.elements.size(); ++i) {
           if (i != 0) vals += ", ";
-          vals += types.lit(g.inits[i], g.type);
+          vals += types.lit(g.elements[i], g.type);
         }
         lines.push_back(c + " " + g.name + "[4] = {" + vals + "};");
         break;
@@ -407,14 +416,14 @@ std::string render(const Prog& p, std::int64_t expected, const Types& types) {
             vals += ", ";
           }
           fields += types.at(g.members[i].type).spelling + " " + g.members[i].name + ";";
-          vals += types.lit(g.inits[i], g.members[i].type);
+          vals += types.lit(g.members[i].init, g.members[i].type);
         }
         lines.push_back("struct S_" + g.name + " { unsigned char pad; " + fields + " };");
         lines.push_back("struct S_" + g.name + " " + g.name + " = {0, " + vals + "};");
         break;
       }
       case ObjKind::kGlobalPointer:
-        lines.push_back(c + " *" + g.name + " = &" + g.target + ";");
+        lines.push_back(c + " *" + g.name + " = &" + g.pointee + ";");
         break;
       default:
         break;
@@ -488,14 +497,12 @@ class Interp {
           set_object(global_key(g.name), g.init, g.type);
           break;
         case ObjKind::kArray:
-          for (std::size_t i = 0; i < g.inits.size(); ++i) {
-            set_object(element_key(g.name, static_cast<int>(i)), g.inits[i], g.type);
+          for (std::size_t i = 0; i < g.elements.size(); ++i) {
+            set_object(element_key(g.name, static_cast<int>(i)), g.elements[i], g.type);
           }
           break;
         case ObjKind::kStruct:
-          for (std::size_t i = 0; i < g.members.size(); ++i) {
-            set_object(member_key(g.name, g.members[i].name), g.inits[i], g.members[i].type);
-          }
+          for (const Member& m : g.members) set_object(member_key(g.name, m.name), m.init, m.type);
           break;
         default:
           break;
@@ -505,7 +512,7 @@ class Interp {
       for (const Obj& o : f.statics) set_object(static_key(o.name), o.init, o.type);
     }
     for (const Obj& g : p.globals) {
-      if (g.kind == ObjKind::kGlobalPointer) gptr_[g.name] = global_key(g.target);
+      if (g.kind == ObjKind::kGlobalPointer) gptr_[g.name] = global_key(g.pointee);
     }
   }
 
@@ -609,13 +616,13 @@ class Interp {
     count_step();
     switch (e.kind) {
       case ExprKind::kConst:
-        return {e.value, e.type};
+        return {e.value, e.value_type};
       case ExprKind::kRead: {
-        const std::string k = loc(e.lv);
+        const std::string k = loc(e.read_from);
         return {mem_.at(k), obj_types_.at(k)};
       }
       case ExprKind::kCast:
-        return {types_.wrap(ev(*e.operands[0]).v, e.type), e.type};
+        return {types_.wrap(ev(*e.operands[0]).v, e.cast_to), e.cast_to};
       case ExprKind::kUnary: {
         const Value a = ev(*e.operands[0]);
         if (e.op == "!") return {Int(a.v == 0 ? 1 : 0), "int"};
@@ -632,7 +639,7 @@ class Interp {
       case ExprKind::kShift: {
         const Value a = ev(*e.operands[0]);
         const std::string pt = Types::promote(a.type);
-        return {shift(e.op == "<<", types_.wrap(a.v, pt), e.count, pt), pt};
+        return {shift(e.op == "<<", types_.wrap(a.v, pt), e.shift_count, pt), pt};
       }
       case ExprKind::kCompare: {
         const Value a = ev(*e.operands[0]);
@@ -674,9 +681,9 @@ class Interp {
         return {types_.wrap(v.v, ct), ct};
       }
       case ExprKind::kOp:
-        return op(e.op_kind, e.lv, e.count);
+        return op(e.op_kind, e.target, e.right_operand);
       case ExprKind::kCall:
-        return call(e.name, e.operands);
+        return call(e.callee, e.operands);
       case ExprKind::kAddress:
         break;
     }
@@ -731,7 +738,7 @@ class Interp {
     for (std::size_t i = 0; i < f.params.size() && i < args.size(); ++i) {
       const Obj& p = f.params[i];
       if (p.kind == ObjKind::kPointerParam) {
-        vals.push_back({true, 0, loc(var(args[i]->name))});
+        vals.push_back({true, 0, loc(var(args[i]->address_of))});
       } else {
         vals.push_back({false, types_.wrap(ev(*args[i]).v, p.type), ""});
       }
@@ -789,25 +796,25 @@ class Interp {
     count_step();
     switch (s.kind) {
       case StmtKind::kAssign: {
-        const Int v = ev(*s.e).v;
+        const Int v = ev(*s.value).v;
         store(loc(s.lv), v);
         return;
       }
       case StmtKind::kExpr:
-        ev(*s.e);
+        ev(*s.value);
         return;
       case StmtKind::kMix:
-        mix(ev(*s.e).v);
+        mix(ev(*s.value).v);
         return;
       case StmtKind::kIf:
-        run(ev(*s.e).v != 0 ? s.then : s.els);
+        run(ev(*s.cond).v != 0 ? s.then : s.els);
         return;
       case StmtKind::kFor: {
         const std::string key = local_key(frames_.size() - 1, s.counter);
         frames_.back()[s.counter] = key;
         set_object(key, 0, "uchar");
         while (mem_.at(key) < s.count) {
-          if (!run_iteration(s.then)) break;
+          if (!run_iteration(s.body)) break;
           mem_[key] = types_.wrap(mem_.at(key) + 1, "uchar");
         }
         return;
@@ -819,7 +826,7 @@ class Interp {
           const Int old = mem_.at(key);
           mem_[key] = types_.wrap(old + 1, "uchar");
           if (!(old < s.count)) break;
-          if (!run_iteration(s.then)) break;
+          if (!run_iteration(s.body)) break;
         }
         return;
       }
@@ -827,14 +834,14 @@ class Interp {
         const std::string key = frames_.back().at(s.counter);
         mem_[key] = 0;
         while (true) {
-          if (!run_iteration(s.then)) break;
+          if (!run_iteration(s.body)) break;
           mem_[key] = types_.wrap(mem_.at(key) + 1, "uchar");
           if (!(mem_.at(key) < s.count)) break;
         }
         return;
       }
       case StmtKind::kSwitch: {
-        const Int v = ev(*s.e).v;
+        const Int v = ev(*s.selector).v;
         std::optional<std::size_t> start;
         for (std::size_t i = 0; i < s.cases.size(); ++i) {
           if (s.cases[i].value == v) {
@@ -859,7 +866,7 @@ class Interp {
       case StmtKind::kContinue:
         throw Continued{};
       case StmtKind::kReturn:
-        throw Returned{ev(*s.e).v};
+        throw Returned{ev(*s.value).v};
     }
   }
 
@@ -933,14 +940,14 @@ class Generator {
     {
       const std::string t = typ();
       Obj o{fresh("ga"), t, ObjKind::kArray};
-      for (int i = 0; i < 4; ++i) o.inits.push_back(value(t));
+      for (int i = 0; i < 4; ++i) o.elements.push_back(value(t));
       globals.push_back(std::move(o));
     }
     {
       std::vector<Member> members;
       for (int i = 0; i < 2; ++i) members.push_back({"m" + std::to_string(i), typ()});
       Obj o{fresh("gs"), "", ObjKind::kStruct};
-      for (const Member& m : members) o.inits.push_back(value(m.type));
+      for (Member& m : members) m.init = value(m.type);
       o.members = std::move(members);
       globals.push_back(std::move(o));
     }
@@ -956,7 +963,7 @@ class Generator {
       Obj& target = globals[scalars[pick]];
       target.vol = false;
       Obj gp{fresh("gp"), target.type, ObjKind::kGlobalPointer};
-      gp.target = target.name;
+      gp.pointee = target.name;
       globals.push_back(std::move(gp));
     }
     globals_ = globals;
@@ -1048,7 +1055,7 @@ class Generator {
     if (!is_main) {
       Stmt ret;
       ret.kind = StmtKind::kReturn;
-      ret.e = expr(1);
+      ret.value = expr(1);
       fn.body.push_back(std::move(ret));
     }
     fn_ = nullptr;
@@ -1083,7 +1090,7 @@ class Generator {
           }
           break;
         case ObjKind::kGlobalPointer:
-          out.push_back({Lvalue{Lvalue::Kind::kDeref, g.name, "", nullptr}, g.type, g.target});
+          out.push_back({Lvalue{Lvalue::Kind::kDeref, g.name, "", nullptr}, g.type, g.pointee});
           break;
         default:
           break;
@@ -1124,7 +1131,7 @@ class Generator {
       ExprPtr a = expr(depth - 1, avoid);
       Expr e;
       e.kind = ExprKind::kCast;
-      e.type = typ();
+      e.cast_to = typ();
       e.operands = {std::move(a)};
       return make(std::move(e));
     }
@@ -1139,7 +1146,7 @@ class Generator {
       Expr e;
       e.kind = ExprKind::kShift;
       e.op = r.choice(kShifts);
-      e.count = static_cast<int>(r.randint(0, 7));
+      e.shift_count = static_cast<int>(r.randint(0, 7));
       e.operands = {std::move(a)};
       return make(std::move(e));
     }
@@ -1176,13 +1183,13 @@ class Generator {
     const Writable& w = rng_.choice(choices);
     Expr e;
     e.kind = ExprKind::kOp;
-    e.lv = w.lv;
+    e.target = w.lv;
     e.op_kind = kOpKinds[rng_.choice_index(std::size(kOpKinds))];
     if (e.op_kind == OpKind::kShl || e.op_kind == OpKind::kShr) {
-      e.count = static_cast<int>(rng_.randint(0, 7));
+      e.right_operand = static_cast<int>(rng_.randint(0, 7));
     } else {
       static const std::vector<int> kOperands = {1, 3, 5, 0x5A, 0x81, 0xFF};
-      e.count = rng_.choice(kOperands);
+      e.right_operand = rng_.choice(kOperands);
     }
     return SideOp{make(std::move(e)), w.key};
   }
@@ -1210,7 +1217,7 @@ class Generator {
     const Fn& f = rng_.choice(*callees_);
     Expr e;
     e.kind = ExprKind::kCall;
-    e.name = f.name;
+    e.callee = f.name;
     for (const Obj& p : f.params) {
       if (p.kind == ObjKind::kPointerParam) {
         std::vector<std::string> locals;
@@ -1219,7 +1226,7 @@ class Generator {
         }
         Expr addr;
         addr.kind = ExprKind::kAddress;
-        addr.name = rng_.choice(locals);
+        addr.address_of = rng_.choice(locals);
         e.operands.push_back(make(std::move(addr)));
       } else {
         e.operands.push_back(expr(1));
@@ -1245,7 +1252,7 @@ class Generator {
     const Context inner{ctx.depth + 1, ctx.loops, ctx.breakable, ctx.in_loop};
     if (nested && k < 0.12) {
       s.kind = StmtKind::kIf;
-      s.e = with_op(op_depth()).e;
+      s.cond = with_op(op_depth()).e;
       s.then = block(static_cast<int>(r.randint(1, 3)), inner);
       if (r.random() < 0.5) s.els = block(static_cast<int>(r.randint(1, 2)), inner);
       return s;
@@ -1257,7 +1264,7 @@ class Generator {
       s.counter = fresh(s.kind == StmtKind::kFor ? "i" : "w");
       if (s.kind != StmtKind::kFor) fn_->counters.push_back(s.counter);
       counters_in_scope_.push_back(s.counter);
-      s.then = block(static_cast<int>(r.randint(1, 4)), Context{ctx.depth + 1, ctx.loops + 1, true, true});
+      s.body = block(static_cast<int>(r.randint(1, 4)), Context{ctx.depth + 1, ctx.loops + 1, true, true});
       counters_in_scope_.erase(std::find(counters_in_scope_.begin(), counters_in_scope_.end(), s.counter));
       return s;
     }
@@ -1266,9 +1273,9 @@ class Generator {
       ExprPtr e = with_op(op_depth()).e;
       Expr cast;
       cast.kind = ExprKind::kCast;
-      cast.type = "int";
+      cast.cast_to = "int";
       cast.operands = {std::move(e)};
-      s.e = with_operands(ExprKind::kBinary, "&", {make(std::move(cast)), constant(7, "int")});
+      s.selector = with_operands(ExprKind::kBinary, "&", {make(std::move(cast)), constant(7, "int")});
       const auto n_values = static_cast<std::size_t>(r.randint(1, 4));
       std::vector<std::size_t> values = r.sample_indices(8, n_values);
       std::sort(values.begin(), values.end());
@@ -1293,7 +1300,7 @@ class Generator {
     }
     if (fn_->name != "main" && ctx.depth > 0 && k < 0.43) {
       s.kind = StmtKind::kReturn;
-      s.e = with_op(op_depth()).e;
+      s.value = with_op(op_depth()).e;
       return s;
     }
     if (k < 0.5) {
@@ -1301,20 +1308,20 @@ class Generator {
         const std::string local = r.choice(fn_->locals).name;
         static const std::vector<StmtKind> kUses = {StmtKind::kExpr, StmtKind::kMix, StmtKind::kAssign};
         s.kind = r.choice(kUses);
-        s.e = std::move(c);
+        s.value = std::move(c);
         if (s.kind == StmtKind::kAssign) s.lv = var(local);
         return s;
       }
     }
     if (k < 0.62) {
       s.kind = StmtKind::kMix;
-      s.e = with_op(op_depth()).e;
+      s.value = with_op(op_depth()).e;
       return s;
     }
     if (k < 0.78) {
       if (std::optional<SideOp> so = side_op()) {
         s.kind = StmtKind::kExpr;
-        s.e = so->e;
+        s.value = so->e;
         return s;
       }
     }
@@ -1322,7 +1329,7 @@ class Generator {
     const std::vector<Writable> targets = lvalues_except(w.written);
     s.kind = StmtKind::kAssign;
     s.lv = r.choice(targets).lv;
-    s.e = std::move(w.e);
+    s.value = std::move(w.e);
     return s;
   }
 
